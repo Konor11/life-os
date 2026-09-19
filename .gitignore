@@ -1,0 +1,20 @@
+# node
+node_modules/
+dist/
+*.log
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# backups / editor
+*.bak
+.DS_Store
+*.swp
+
+# OS
+os.dktunnel.xyz/
+
+# runtime data
+*.local

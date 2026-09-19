@@ -1,0 +1,2 @@
+#!/bin/bash
+export PATH="/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:/root/.opencode/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin:/bin:/sbin:$PATH"; cd /root && opencode serve --port 4096 --hostname 0.0.0.0 --log-level WARN >> /tmp/lifeos-web-opencode.log 2>&1

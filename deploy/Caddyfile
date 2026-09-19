@@ -1,0 +1,165 @@
+admin.dktunnel.xyz {
+    handle {
+        reverse_proxy web-frontend:80
+    }
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3004 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    handle /ws/* {
+        reverse_proxy 127.0.0.1:3004
+    }
+}
+
+hermes.dktunnel.xyz {
+    reverse_proxy 127.0.0.1:9119
+}
+
+workspace.dktunnel.xyz {
+    reverse_proxy 127.0.0.1:3001
+}
+
+# OpenCode on its OWN subdomain, served at the ROOT path (no /agent/opencode/ prefix).
+# The v2 web SPA routes strictly on window.location.pathname.split("/"): it requires a
+# clean "/<base64dir>/session/<id>" path, otherwise it always falls back to {type:"home"}
+# (the "only 2 buttons" empty screen). Behind a path prefix the app cannot open sessions.
+# PROTECTION: this subdomain is private — only reachable through Life OS. Caddy lets
+# through requests whose Referer is Life OS (os.dktunnel.xyz — the parent iframe navigate)
+# or itself (oc.dktunnel.xyz — same-origin API/assets from inside the SPA). Direct visits
+# (no Referer or a foreign one) get 403, so the UI is not exposed to the public internet.
+oc.dktunnel.xyz {
+    @fromLifeOS {
+        header Referer *os.dktunnel.xyz*
+    }
+    @self {
+        header Referer *oc.dktunnel.xyz*
+    }
+    handle @fromLifeOS {
+        reverse_proxy 127.0.0.1:4096
+    }
+    handle @self {
+        reverse_proxy 127.0.0.1:4096
+    }
+    respond 403
+}
+
+# DeepSeek (dsh) — SAME pattern as opencode: it is a v2-style SPA whose JS calls
+# ROOT-absolute paths (/plugins/*, /api/*, /open-in-app/*). Under a path prefix
+# those land on the orchestrator -> 403. So it gets its own private subdomain.
+# Only reachable WITHIN Life OS: requests must carry Referer from os.dktunnel.xyz
+# (parent iframe navigate) or itself (same-origin SPA/API). Direct visits -> 403.
+ds.dktunnel.xyz {
+    @fromLifeOS {
+        header Referer *os.dktunnel.xyz*
+    }
+    @self {
+        header Referer *ds.dktunnel.xyz*
+    }
+    @authed {
+        header Cookie *dsh-auth*
+    }
+    handle @fromLifeOS {
+        reverse_proxy 172.18.0.1:3090
+    }
+    handle @self {
+        reverse_proxy 172.18.0.1:3090
+    }
+    handle @authed {
+        reverse_proxy 172.18.0.1:3090
+    }
+    respond 403
+}
+
+# Agent web UI asset routing: SPA assets are requested with absolute paths (/assets/...)
+# from within the iframe; route them to the right backend based on the Referer.
+os.dktunnel.xyz {
+    @ocAssets {
+        header Referer *os.dktunnel.xyz/agent/opencode*
+    }
+    handle @ocAssets {
+        reverse_proxy 127.0.0.1:4096
+    }
+
+    @dsAssets {
+        path /*
+        header Referer *os.dktunnel.xyz/agent/deepseek*
+    }
+    handle @dsAssets {
+        reverse_proxy 172.18.0.1:3090
+    }
+
+    @ocApi {
+        path /api/*
+        header Referer *os.dktunnel.xyz/agent/opencode*
+    }
+    handle @ocApi {
+        reverse_proxy 127.0.0.1:4096
+    }
+    # opencode workspace picker
+    @ocPicker {
+        path /api/directoryPicker/*
+        header Referer *os.dktunnel.xyz/agent/opencode*
+    }
+    handle @ocPicker {
+        reverse_proxy 127.0.0.1:4096
+    }
+
+    # opencode SPA also calls root paths (no /api prefix) during init; route by Referer
+    @ocRoot {
+        path /global/* /provider /path /project /session/* /config* /task/* /event* /experimental/* /auth
+        header Referer *os.dktunnel.xyz/agent/opencode*
+    }
+    handle @ocRoot {
+        reverse_proxy 127.0.0.1:4096
+    }
+
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3004
+    }
+    handle /ws/* {
+        reverse_proxy 127.0.0.1:3004
+    }
+    # Built-in web UIs of agent harnesses.
+    # deepseek (dsh) is private: only reachable WITHIN Life OS. The iframe load, the
+    # ?token prefetch and all internal SPA/assets calls carry Referer os.dktunnel.xyz
+    # (same-origin). So we let through only our Life OS origin; direct public visits
+    # (no/foreign Referer) get 403 — the dsh UI is not exposed to the open internet.
+    handle /agent/deepseek/* {
+        @lifeos {
+            header Referer *os.dktunnel.xyz*
+        }
+        handle @lifeos {
+            uri strip_prefix /agent/deepseek
+            reverse_proxy 172.18.0.1:3090 {
+                # dsh redirects /?token=.. -> "/" (absolute, host included); keep it inside the /agent/deepseek/ prefix
+                header_down Location "os.dktunnel.xyz/" "os.dktunnel.xyz/agent/deepseek/"
+            }
+        }
+        respond 403
+    }
+    handle /ocapi/* {
+        uri replace /ocapi /api
+        reverse_proxy 127.0.0.1:4096
+    }
+    handle /agent/opencode/* {
+        reverse_proxy 127.0.0.1:4096 {
+            header_down Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' wss://os.dktunnel.xyz https://os.dktunnel.xyz; frame-ancestors 'self' https://os.dktunnel.xyz; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' wss://os.dktunnel.xyz https://os.dktunnel.xyz ws://localhost:* ws://127.0.0.1:*; img-src 'self' data: https:; font-src 'self' data:;"
+        }
+    }
+    handle /agent/openclaw/* {
+        reverse_proxy 127.0.0.1:6286
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3002
+        # never cache index.html so browsers pick up freshly built assets
+        header Cache-Control "no-store, no-cache, max-age=0"
+    }
+    header {
+        Content-Security-Policy "default-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' wss://os.dktunnel.xyz https://os.dktunnel.xyz https://oc.dktunnel.xyz https://ds.dktunnel.xyz; frame-src 'self' https://workspace.dktunnel.xyz https://os.dktunnel.xyz https://oc.dktunnel.xyz https://ds.dktunnel.xyz"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}
