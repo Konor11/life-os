@@ -23,6 +23,12 @@ const HERMES_ENTRY = '/usr/local/lib/hermes-agent/hermes'
 const DEFAULT_FILES = {
   plan: { date: new Date().toISOString().slice(0,10), timeBlocks: [], priorities: [], metrics: { deepWorkHours: 0, meetingsHours: 0 } },
   tasks: [], notes: [], habits: [],
+  finances: { accounts: [], transactions: [], budgets: [], goals: [] },
+  health: { metrics: [], workouts: [], sleep: [], nutrition: [], appointments: [] },
+  learning: { courses: [], topics: [], progress: [], resources: [] },
+  contacts: { people: [], organizations: [], interactions: [], tags: [] },
+  automations: { workflows: [], triggers: [], runs: [] },
+  memory: { documents: [], embeddings: [], queries: [] },
 }
 
 async function loadJson(name) {
@@ -83,6 +89,11 @@ const PROFILE_MODELS = {
   knowledge: 'nvidia/nemotron-3-ultra-550b-a55b:free',
   habits: 'nvidia/nemotron-3.5-lightning:free',
   coordinator: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  financial_planner: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  health_coach: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  learning_coach: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  crm_agent: 'google/gemma-4-26b-a4b-it:free',
+  automation_engineer: 'nvidia/nemotron-3-ultra-550b-a55b:free',
 }
 
 // --- FS safety: resolve & ensure path under an allowed root ---
@@ -103,12 +114,26 @@ app.get('/api/plan', async (_, res) => res.json(await loadJson('plan')))
 app.get('/api/tasks', async (_, res) => res.json(await loadJson('tasks')))
 app.get('/api/notes', async (_, res) => res.json(await loadJson('notes')))
 app.get('/api/habits', async (_, res) => res.json(await loadJson('habits')))
+app.get('/api/finances', async (_, res) => res.json(await loadJson('finances')))
+app.get('/api/health', async (_, res) => res.json(await loadJson('health')))
+app.get('/api/learning', async (_, res) => res.json(await loadJson('learning')))
+app.get('/api/contacts', async (_, res) => res.json(await loadJson('contacts')))
+app.get('/api/automations', async (_, res) => res.json(await loadJson('automations')))
+app.get('/api/memory', async (_, res) => res.json(await loadJson('memory')))
 app.post('/api/plan', async (req, res) => { await saveJson('plan', req.body); res.json({ ok: true }) })
 app.post('/api/tasks', async (req, res) => { await saveJson('tasks', req.body); res.json({ ok: true }) })
 app.post('/api/notes', async (req, res) => { await saveJson('notes', req.body); res.json({ ok: true }) })
 app.post('/api/habits', async (req, res) => { await saveJson('habits', req.body); res.json({ ok: true }) })
+app.post('/api/finances', async (req, res) => { await saveJson('finances', req.body); res.json({ ok: true }) })
+app.post('/api/health', async (req, res) => { await saveJson('health', req.body); res.json({ ok: true }) })
+app.post('/api/learning', async (req, res) => { await saveJson('learning', req.body); res.json({ ok: true }) })
+app.post('/api/contacts', async (req, res) => { await saveJson('contacts', req.body); res.json({ ok: true }) })
+app.post('/api/automations', async (req, res) => { await saveJson('automations', req.body); res.json({ ok: true }) })
+app.post('/api/memory', async (req, res) => { await saveJson('memory', req.body); res.json({ ok: true }) })
 app.get('/api/all', async (_, res) => res.json({
-  plan: await loadJson('plan'), tasks: await loadJson('tasks'), notes: await loadJson('notes'), habits: await loadJson('habits')
+  plan: await loadJson('plan'), tasks: await loadJson('tasks'), notes: await loadJson('notes'), habits: await loadJson('habits'),
+  finances: await loadJson('finances'), health: await loadJson('health'), learning: await loadJson('learning'),
+  contacts: await loadJson('contacts'), automations: await loadJson('automations'), memory: await loadJson('memory')
 }))
 
 // ---- Keys manager: list available API keys & sync into agent configs ----
@@ -474,6 +499,70 @@ app.post('/api/keys/sync', async (req, res) => {
     } catch (e) { results.push({ id: h.id, ok: false, reason: e.message }) }
   }
   res.json({ ok: true, keyVar, results })
+})
+
+// ---- Integrations ----
+app.get('/api/integrations/google/status', async (_, res) => {
+  const hasCreds = readEnvKeys().some(k => /GOOGLE|GCAL|GMAIL/.test(k.env))
+  res.json({ connected: hasCreds, services: ['calendar', 'gmail'] })
+})
+app.post('/api/integrations/google/calendar/events', async (req, res) => {
+  // Placeholder: requires googleapis + OAuth token exchange
+  res.json({ ok: false, error: 'Google Calendar integration not yet implemented — needs OAuth flow' })
+})
+app.get('/api/integrations/notion/status', async (_, res) => {
+  const hasCreds = readEnvKeys().some(k => /NOTION/.test(k.env))
+  res.json({ connected: hasCreds, databases: [] })
+})
+app.post('/api/integrations/notion/sync', async (req, res) => {
+  res.json({ ok: false, error: 'Notion sync not yet implemented — needs integration token + database IDs' })
+})
+app.get('/api/integrations/github/status', async (_, res) => {
+  const hasCreds = readEnvKeys().some(k => /GITHUB|GH_/.test(k.env))
+  res.json({ connected: hasCreds, repos: [] })
+})
+app.post('/api/integrations/github/issues', async (req, res) => {
+  res.json({ ok: false, error: 'GitHub Issues sync not yet implemented — needs PAT + repo config' })
+})
+
+// ---- Specialized agent endpoints (finances, health, learning, contacts, automations) ----
+const DOMAIN_AGENTS = {
+  finances: 'financial_planner',
+  health: 'health_coach',
+  learning: 'learning_coach',
+  contacts: 'crm_agent',
+  automations: 'automation_engineer',
+}
+
+for (const [domain, profile] of Object.entries(DOMAIN_AGENTS)) {
+  app.post(`/api/agent/${domain}`, async (req, res) => {
+    const { message = '', context = {} } = req.body || {}
+    const domainData = await loadJson(domain)
+    const contextPrompt = `Domain data for ${domain}: ${JSON.stringify(domainData).slice(0, 2000)}`
+    const answer = await askFast(profile, `${contextPrompt}\n\nUser context: ${JSON.stringify(context)}\n\nUser: ${message}`)
+    res.json({ domain, profile, answer })
+  })
+}
+
+// ---- Memory/RAG ----
+app.post('/api/memory/ingest', async (req, res) => {
+  const { content, source, metadata = {} } = req.body || {}
+  if (!content) return res.status(400).json({ error: 'content required' })
+  const mem = await loadJson('memory')
+  const doc = { id: `doc-${Date.now()}`, content, source, metadata, created: new Date().toISOString() }
+  mem.documents.push(doc)
+  await saveJson('memory', mem)
+  res.json({ ok: true, id: doc.id })
+})
+app.post('/api/memory/search', async (req, res) => {
+  const { query, limit = 5 } = req.body || {}
+  const mem = await loadJson('memory')
+  // Simple text search (replace with vector search later)
+  const results = mem.documents
+    .filter(d => d.content.toLowerCase().includes((query || '').toLowerCase()))
+    .slice(0, limit)
+    .map(d => ({ id: d.id, content: d.content.slice(0, 300), source: d.source, metadata: d.metadata }))
+  res.json({ results })
 })
 
 // ---- Agent chat proxy ----
