@@ -2,28 +2,41 @@ import { useState, useEffect } from 'react'
 
 const API = '/api'
 
+// Tabs: each installed/all agent + an "Все ключи" overview.
 export function KeysView() {
-  const [keys, setKeys] = useState([])
+  const [agents, setAgents] = useState([])
+  const [allKeys, setAllKeys] = useState([])
   const [harnesses, setHarnesses] = useState([])
-  const [busy, setBusy] = useState(null)  // keyVar being synced
-  const [lastSync, setLastSync] = useState(null)  // {keyVar, results}
+  const [tab, setTab] = useState('all')
+  const [busy, setBusy] = useState(null)  // {agentId, keyVar}
+  const [lastSync, setLastSync] = useState(null)
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(null)
 
   const load = async () => {
     try {
-      setKeys((await (await fetch(`${API}/keys`)).json()).keys || [])
-      setHarnesses((await (await fetch(`${API}/harnesses`)).json()).harnesses || [])
+      const [ka, kd, hd] = await Promise.all([
+        fetch(`${API}/keys/agents`).then(r => r.json()),
+        fetch(`${API}/keys`).then(r => r.json()),
+        fetch(`${API}/harnesses`).then(r => r.json()),
+      ])
+      setAgents(ka.agents || [])
+      setAllKeys(kd.keys || [])
+      setHarnesses(hd.harnesses || [])
     } catch (e) { setError(e.message) }
   }
   useEffect(() => { load() }, [])
 
-  const sync = async (keyVar) => {
-    setBusy(keyVar); setError(null)
+  const sync = async (agentId, keyVar, value) => {
+    setBusy(`${agentId}:${keyVar}`); setError(null)
     try {
-      const r = await fetch(`${API}/keys/sync`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ keyVar }) })
+      // Prefer the agent-scoped endpoint so OpenClaw's gateway token is written to its
+      // own config, not mirrored as an env var it can't read.
+      const r = await fetch(`${API}/agent-keys/sync`, { method: 'POST', headers: { 'Content-Type':'application/json' },
+        body: JSON.stringify({ agent: agentId, keyVar, value: value || null }) })
       const d = await r.json()
-      setLastSync({ keyVar, results: d.results || [] })
+      if (d.agents) setLastSync({ agentId, keyVar, results: d.agents })
+      else setLastSync({ agentId, keyVar, msg: d.error || d.detail || 'ok' })
     } catch (e) { setError(e.message) }
     setBusy(null)
   }
@@ -32,73 +45,112 @@ export function KeysView() {
     try { await navigator.clipboard.writeText(v); setCopied(v); setTimeout(() => setCopied(null), 1200) } catch {}
   }
 
-  const installedHarnessNames = harnesses.filter(h => h.installed).map(h => h.name).join(', ') || '—'
+  const agentTabs = ['all', ...agents.map(a => a.id)]
+  const activeAgent = tab === 'all' ? null : agents.find(a => a.id === tab)
+  const installedNames = harnesses.filter(h => h.installed).map(h => h.name).join(', ') || '—'
+
+  const renderKey = (k, agentId) => (
+    <div key={k.env} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-black/40 border border-border">
+      <div className="flex flex-col min-w-0 flex-1">
+        <button onClick={() => copyName(k.env)} title="Скопировать название"
+          className={`text-sm font-mono text-left truncate ${copied === k.env ? 'text-success' : 'text-text'}`}>
+          {k.env} {copied === k.env ? '✓' : ''}
+        </button>
+        <span className="text-[11px] text-text-muted truncate">
+          {k.length} символов · {k.masked}
+          {k.agentToken ? ' · из конфига агента' : ` · ${k.source || ''}`}
+        </span>
+        {k.desc && <span className="text-[11px] text-text-muted/70 mt-0.5">{k.desc}</span>}
+      </div>
+      <button onClick={() => sync(agentId, k.env, k.value)} disabled={busy}
+        className={`ml-3 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 ${busy === `${agentId}:${k.env}` ? 'opacity-60' : ''}`}
+        style={{ background: busy === `${agentId}:${k.env}` ? '#444' : 'linear-gradient(180deg,#6a7bff,#5865f2)', color: '#fff' }}>
+        {busy === `${agentId}:${k.env}` ? 'Синхронизирую...' : '🔄 Синхронизировать'}
+      </button>
+    </div>
+  )
 
   return (
     <div className="space-y-5">
-      {/* Шапка */}
       <div>
-        <h1 className="text-2xl font-bold text-text">Ключи</h1>
+      <h1 className="text-2xl font-bold text-text">Ключи</h1>
         <p className="text-text-muted">
-          Список API-ключей провайдеров. Кнопка <b>«Синхронизировать»</b> распространяет ключ на все установленные harness
-          (сейчас: <b>{installedHarnessNames}</b>; добавишь Pi или DeepSeek harness — они подхватятся автоматически).
+          Ключи сгруппированы по агентам. Кнопка <b>«Синхронизировать»</b> передаёт ключ конкретному агенту.
+          Установлено: <b>{installedNames}</b>.
         </p>
       </div>
 
-      {/* Установленные harness */}
-      <div className="glass rounded-xl p-3">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="text-sm font-semibold text-text">Установленные harness</h3>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {harnesses.map(h => (
-            <div key={h.id} className={`px-3 py-1.5 rounded-lg border text-xs flex items-center gap-1.5 ${h.installed ? 'bg-success/15' : 'bg-bg-elevated'}`}
-              style={{ color: h.installed ? '#10b981' : '#667085', borderColor: 'transparent' }}>
-              <span className={`w-2 h-2 rounded-full ${h.installed ? 'bg-success' : 'bg-text-muted/30'}`} />
-              {h.name}
-              {h.installed ? '' : ' · не установлен'}
-            </div>
-          ))}
-        </div>
+      {/* Вкладки по агентам */}
+      <div className="flex flex-wrap gap-1.5 border-b border-border pb-2">
+        <button onClick={() => setTab('all')}
+          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${tab === 'all' ? 'bg-accent text-white' : 'text-text-muted hover:bg-bg-elevated hover:text-text'}`}>
+          Все ключи
+        </button>
+        {agents.map(a => (
+          <button key={a.id} onClick={() => setTab(a.id)}
+            className={`px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-1.5 ${tab === a.id ? 'bg-accent text-white' : 'text-text-muted hover:bg-bg-elevated hover:text-text'}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${a.installed ? 'bg-success' : 'bg-text-muted/40'}`} />
+            {a.name}
+            {!a.installed && <span className="text-[10px] opacity-70">· не уст.</span>}
+          </button>
+        ))}
       </div>
 
-      {/* Список ключей */}
-      <div className="glass rounded-xl p-4">
-        <h3 className="font-semibold text-text mb-1">Ключи провайдеров ({keys.length})</h3>
-        <p className="text-[11px] text-text-muted mb-3">Синхронизация присваивает этот ключ всем установленным harness (значения ключей не показываются — только маска).</p>
-        <div className="space-y-2">
-          {keys.map(k => (
-            <div key={k.env} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-black/40 border border-border">
-              <div className="flex flex-col">
-                <button onClick={() => copyName(k.env)} title="Скопировать название"
-                  className={`text-sm font-mono text-left ${copied === k.env ? 'text-success' : 'text-text'}`}>
-                  {k.env} {copied === k.env ? '✓' : ''}
-                </button>
-                <span className="text-[11px] text-text-muted">{k.length} символов · {k.masked}</span>
+      {tab === 'all' ? (
+        <div className="glass rounded-xl p-4">
+          <h3 className="font-semibold text-text mb-1">Все ключи ({allKeys.length})</h3>
+          <p className="text-[11px] text-text-muted mb-3">Общий список из .env. Ниже — по агентам.</p>
+          <div className="space-y-2">
+            {allKeys.map(k => (
+              <div key={k.env} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-black/40 border border-border">
+                <div className="flex flex-col">
+                  <button onClick={() => copyName(k.env)} title="Скопировать название"
+                    className={`text-sm font-mono text-left ${copied === k.env ? 'text-success' : 'text-text'}`}>
+                    {k.env} {copied === k.env ? '✓' : ''}
+                  </button>
+                  <span className="text-[11px] text-text-muted">{k.length} символов · {k.masked}</span>
+                </div>
               </div>
-              <button onClick={() => sync(k.env)} disabled={busy}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium ${busy === k.env ? 'opacity-60' : ''}`}
-                style={{ background: busy === k.env ? '#444' : 'linear-gradient(180deg,#6a7bff,#5865f2)', color: '#fff' }}>
-                {busy === k.env ? 'Синхронизирую...' : '🔄 Синхронизировать'}
-              </button>
-            </div>
-          ))}
-          {keys.length === 0 && <p className="text-xs text-text-muted">Не найдено ключей.</p>}
+            ))}
+            {allKeys.length === 0 && <p className="text-xs text-text-muted">Не найдено ключей.</p>}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="glass rounded-xl p-4">
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="font-semibold text-text">
+              {activeAgent?.name} · ключи ({activeAgent?.keys.length ?? 0})
+            </h3>
+            <span className={`text-[11px] px-2 py-0.5 rounded ${activeAgent?.installed ? 'text-success bg-success/15' : 'text-text-muted bg-bg-elevated'}`}>
+              {activeAgent?.installed ? '● установлен' : '○ не установлен'}
+            </span>
+          </div>
+          <p className="text-[11px] text-text-muted mb-3">
+            Провайдер: {activeAgent?.provider || '—'}. Синхронизация применяет ключ именно этому агенту.
+          </p>
+          <div className="space-y-2">
+            {(activeAgent?.keys || []).map(k => renderKey(k, activeAgent.id))}
+            {(activeAgent?.keys || []).length === 0 && <p className="text-xs text-text-muted">Похоже, у этого агента нет привязанных ключей.</p>}
+          </div>
+        </div>
+      )}
 
       {/* Статус последней синхронизации */}
       {lastSync && (
         <div className="glass rounded-xl p-4">
-          <h3 className="font-semibold text-text mb-2">Результат: {lastSync.keyVar}</h3>
-          <div className="space-y-1.5">
-            {lastSync.results.map(r => (
-              <div key={r.id} className="flex items-center gap-2 text-sm">
-                <span className={r.ok ? 'text-success' : 'text-danger'}>{r.ok ? '✓' : '✕'} {r.id}</span>
-                <span className="text-text-muted text-xs">{r.ok ? (r.detail || '') : r.reason}</span>
-              </div>
-            ))}
-          </div>
+          <h3 className="font-semibold text-text mb-2">Результат: {lastSync.agentId} · {lastSync.keyVar}</h3>
+          {lastSync.results ? (
+            <div className="space-y-1.5">
+              {lastSync.results.map(r => (
+                <div key={r.id} className="flex items-center gap-2 text-sm">
+                  <span className={r.ok ? 'text-success' : 'text-danger'}>{r.ok ? '✓' : '✕'} {r.id}</span>
+                  <span className="text-text-muted text-xs">{r.ok ? (r.detail || '') : r.reason}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-text-muted">{lastSync.msg}</p>
+          )}
         </div>
       )}
 

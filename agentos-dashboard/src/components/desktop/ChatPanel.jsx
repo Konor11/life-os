@@ -141,6 +141,10 @@ export function ChatPanel({ fullscreen = false }) {
   // dsh (DeepSeek) is the same style v2 SPA: its JS calls ROOT-absolute paths that
   // must reach its own backend, so it needs its own private subdomain root too.
   const deepseekWebBase = 'https://ds.dktunnel.xyz'
+  // OpenClaw Control UI must load from its own subdomain root: the Gateway enforces
+  // browser-origin allowlist (gateway.controlUi.allowedOrigins) and serves SPA + WS
+  // over the gateway port, so it cannot be prefixed under os.dktunnel.xyz.
+  const openclawWebBase = 'https://openclaw.dktunnel.xyz'
 
   // Build iframe src. Keep trailing slash so Caddy's /agent/<engine>/* matcher fires,
   // then query string. opencode has no token -> ?session first; deepseek uses cookie.
@@ -312,6 +316,19 @@ export function ChatPanel({ fullscreen = false }) {
         webState === 'starting' ? (
           <div className="flex-1 flex items-center justify-center text-text-muted text-sm" style={{ minHeight: '280px' }}>
             ⏳ Запускаю {engine} web-интерфейс...
+          </div>
+        ) : engine === 'openclaw' ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-muted" style={{ minHeight: '420px' }}>
+            <div className="text-6xl mb-2" style={{ lineHeight: 1 }}>🧠</div>
+            <div className="text-base font-semibold text-text">OpenClaw Control</div>
+            <div className="text-sm max-w-md text-center">
+              OpenClaw защищён от встраивания во фрейм (frame-ancestors) — он открывается в отдельной вкладке.
+              Секрет входа — токен gateway (см. Harness → OpenClaw → Ключи).
+            </div>
+            <a href={openclawWebBase} target="_blank" rel="noopener"
+              className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">
+              Открыть OpenClaw в новой вкладке →
+            </a>
           </div>
         ) : (
           <iframe

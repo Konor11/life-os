@@ -169,6 +169,54 @@ function readEnvKeys() {
   return Array.from(found.values())
 }
 
+// Which provider-key a harness consumes. Used to slot each discovered key under its
+// agent(s) in the "Ключи" tab and to know which AGENT consumes a key for sync.
+const HARNESS_KEY_CONSUMERS = {
+  hermes: ['OPENROUTER_API_KEY'],
+  opencode: ['OPENROUTER_API_KEY'],
+  codex: ['OPENROUTER_API_KEY', 'OPENAI_API_KEY'],
+  claude: ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY'],
+  openclaw: ['OPENROUTER_API_KEY'],
+  pi: ['OPENROUTER_API_KEY'],
+  deepseek: ['DEEPSEEK_API_KEY', 'OPENROUTER_API_KEY'],
+}
+
+// Extra per-harness secrets that live outside the shared .env files and are read
+// straight from the harness's own config. Masked the same way as env keys.
+function agentExtraTokens(id) {
+  if (id === 'openclaw') {
+    try {
+      const p = '/root/.openclaw/openclaw.json'
+      if (!existsSync(p)) return []
+      const cfg = JSON.parse(readFileSync(p, 'utf8'))
+      const t = cfg?.gateway?.auth?.token
+      if (!t) return []
+      const masked = t.length > 10 ? t.slice(0, 6) + '…' + t.slice(-4) : '•••'
+      return [{ env: 'OPENCLAW_GATEWAY_TOKEN', agentToken: true, value: t, masked, length: t.length,
+                 source: p, desc: 'Токен Control UI OpenClaw (вход в openclaw.dktunnel.xyz)' }]
+    } catch { return [] }
+  }
+  return []
+}
+
+// Keys grouped per harness: shared provider keys that the agent consumes + its own
+// config secrets. Returns { harnessId -> [key,...] } so the UI can render tabs.
+function groupKeysByAgent() {
+  const all = new Map()  // env -> key
+  for (const k of readEnvKeys()) all.set(k.env, k)
+  const out = {}
+  for (const id of Object.keys(HARNESS_KEY_CONSUMERS)) {
+    const cons = HARNESS_KEY_CONSUMERS[id] || []
+    const hits = []
+    for (const k of all.values()) if (cons.includes(k.env)) hits.push({ ...k, agents: null })
+    for (const t of agentExtraTokens(id)) {
+      if (all.has(t.env)) { /* already in shared */ } else hits.push(t)
+    }
+    out[id] = hits
+  }
+  return out
+}
+
 function patchKeyEnv(cfgPath, keyEnvVar) {
   let txt = readFileSync(cfgPath, 'utf8')
   if (/key_env:\s*/.test(txt)) {
@@ -220,7 +268,7 @@ const HARNESSES_DEF = [
     install: "curl -fsSL https://openclaw.ai/install.sh | bash </dev/null",
     desc: 'Multi-channel AI gateway. Официальный установщик (npm требует Node 24.16+).',
     provider: 'OpenRouter', key: null,
-    web: { port: 6286, cmd: 'openclaw dashboard --host 0.0.0.0' },
+    web: { port: 18789, cmd: 'systemctl --user start openclaw-gateway' },
     uninstall: "npm uninstall -g openclaw 2>/dev/null; rm -f /usr/local/bin/openclaw $(command -v openclaw 2>/dev/null); rm -rf /root/.openclaw /root/.config/openclaw /root/.local/share/openclaw",
   },
   {
@@ -474,9 +522,90 @@ app.get('/api/harness/web/status', async (req, res) => {
 
 // GET /api/keys — all discovered keys (masked)
 app.get('/api/keys', (_, res) => res.json({ keys: readEnvKeys() }))
+app.get('/api/keys/agents', async (_, res) => {
+  const harnesses = await discoverHarnesses()
+  const groups = groupKeysByAgent()
+  // build per-agent payload ordered by HARNESSES_DEF, each with name/installed/keys
+  const agents = (await Promise.all(Object.entries(groups).map(async ([id, keys]) => {
+    const def = HARNESSES_DEF.find(h => h.id === id)
+    const hinst = harnesses.find(h => h.id === id)
+    return {
+      id, name: def?.name || id,
+      installed: hinst?.installed ?? false,
+      provider: def?.provider,
+      keys,
+    }
+  })))
+  res.json({ agents })
+})
 
 // GET /api/harnesses — what's installed
 app.get('/api/harnesses', async (_, res) => res.json({ harnesses: await discoverHarnesses() }))
+
+// PUT a masked value into an agent's own JSON config (e.g. OpenClaw gateway token /
+// OpenRouter key live in ~/.openclaw/openclaw.json, not in .env). Values never echo back.
+function writeAgentConfigToken(agentId, keyVar, value) {
+  if (agentId !== 'openclaw') return null
+  const p = '/root/.openclaw/openclaw.json'
+  if (!existsSync(p)) return { ok: false, reason: 'config not found' }
+  const cfg = JSON.parse(readFileSync(p, 'utf8'))
+  if (keyVar === 'OPENCLAW_GATEWAY_TOKEN') {
+    cfg.gateway = cfg.gateway || {}
+    cfg.gateway.auth = cfg.gateway.auth || {}
+    cfg.gateway.auth.mode = 'token'
+    cfg.gateway.auth.token = value
+  } else if (keyVar === 'OPENROUTER_API_KEY') {
+    cfg.env = cfg.env || {}
+    cfg.env.vars = cfg.env.vars || {}
+    cfg.env.vars.OPENROUTER_API_KEY = value
+  } else {
+    return { ok: false, reason: `неизвестный ключ для ${agentId}` }
+  }
+  writeFileSync(p, JSON.stringify(cfg, null, 2) + '\n')
+  return { ok: true, detail: `записано в ${p}` }
+}
+
+// POST /api/agent-keys/sync — apply ONE key to ONE specific agent (agent tab).
+// body: { agent, keyVar, value? } . For OpenClaw this writes into its own config
+// (gateway token / OpenRouter key); for Hermes it patches profile key_env.
+app.post('/api/agent-keys/sync', async (req, res) => {
+  const { agent, keyVar, value } = req.body || {}
+  if (!agent || !keyVar || !/^[A-Z0-9_]+$/.test(keyVar)) return res.status(400).json({ error: 'неверный agent/keyVar' })
+
+  const harnesses = await discoverHarnesses()
+  const def = HARNESSES_DEF.find(h => h.id === agent)
+  const hinst = harnesses.find(h => h.id === agent)
+  const agentResults = harnesses
+    .filter(h => h.id === agent && h.installed)
+    .map(h => ({ id: h.id }))
+
+  const out = { ok: true, agent, keyVar }
+  try {
+    if (agent === 'hermes') {
+      const profileNames = ['coordinator','planner','tasks','knowledge','habits']
+      let n = 0
+      for (const name of profileNames) {
+        const cfg = path.join(PROFILE_DIR, name, 'config.yaml')
+        if (!existsSync(cfg)) continue
+        patchKeyEnv(cfg, keyVar); n++
+      }
+      out.agents = [{ id: agent, ok: true, detail: `обновлено профилей: ${n}` }]
+    } else if (agent === 'openclaw') {
+      if (!value) return res.status(400).json({ error: 'нужно значение ключа для записи в конфиг OpenClaw' })
+      const wr = writeAgentConfigToken(agent, keyVar, value)
+      out.agents = [{ id: agent, ok: wr.ok, detail: wr.ok ? wr.detail : wr.reason }]
+    } else {
+      // generic harness: value lives in shared .env already; just confirm
+      out.agents = agentResults.map(h => ({ id: h.id, ok: true, detail: 'env готов (значение из общих ключей)' }))
+      if (out.agents.length === 0) out.agents = [{ id: agent, ok: false, reason: def ? 'не установлен' : 'неизвестный агент' }]
+    }
+  } catch (e) {
+    out.agents = [{ id: agent, ok: false, reason: e.message }]
+  }
+  // Reflect the new token back so the UI list re-fetched by caller shows the change
+  out.existing = def ? (HARNESS_KEY_CONSUMERS[agent] || []) : []
+  res.json(out)
+})
 
 // POST /api/keys/sync — propagate one key to ALL installed harnesses.
 // body: { keyVar } . The key value lives in server .env already; this mirrors it
