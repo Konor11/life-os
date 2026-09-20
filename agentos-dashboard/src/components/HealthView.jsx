@@ -97,7 +97,7 @@ function MetricList({ metrics, onUpdate }) {
       ) : (
         <div className="space-y-2">
           {metrics.map(m => (
-            <MetricCard key={m.id} metric={m} onUpdate={handleUpdate} />
+            <MetricRow key={m.id} metric={m} onUpdate={handleUpdate} />
           ))}
         </div>
       )}
@@ -105,7 +105,23 @@ function MetricList({ metrics, onUpdate }) {
   )
 }
 
-function MetricCard({ metric, onUpdate }) {
+function MetricCard({ label, value, icon, color }) {
+  return (
+    <div className="glass p-4 rounded-xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-text-muted uppercase tracking-wider">{label}</p>
+          <p className="text-2xl font-bold text-text mt-1">{value}</p>
+        </div>
+        <div className={`w-12 h-12 rounded-xl bg-${color}/10 flex items-center justify-center`}>
+          <Icon name={icon} size={24} className={`text-${color}`} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MetricRow({ metric, onUpdate }) {
   return (
     <div className="glass p-4 rounded-lg hover:bg-bg-elevated/50 transition-colors group flex items-center justify-between">
       <div className="flex items-center gap-4 flex-1 min-w-0">
