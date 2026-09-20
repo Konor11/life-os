@@ -67,6 +67,16 @@ export async function saveProjects(data) {
   return r.json()
 }
 
+// Obsidian sync
+export async function obsidianImport(filename, content) {
+  const r = await fetch(`${API}/obsidian/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename, content }) })
+  return r.json()
+}
+export async function obsidianExport() {
+  const r = await fetch(`${API}/obsidian/export`)
+  return r.json()
+}
+
 export async function askAgent(profile, message) {
   const r = await fetch(`${API}/agent`, {
     method: 'POST',

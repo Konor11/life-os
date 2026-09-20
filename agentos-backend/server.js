@@ -576,6 +576,79 @@ app.post('/api/memory/search', async (req, res) => {
   res.json({ results })
 })
 
+// ---- Obsidian sync: import .md files (frontmatter + [[wikilinks]]) into notes ----
+function parseFrontmatter(md) {
+  const match = md.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/)
+  const tags = [], aliases = [], meta = {}
+  if (match) {
+    match[1].split(/\r?\n/).forEach(line => {
+      const m = line.match(/^\s*([A-Za-z_][\w:]*)\s*:\s*(.+)$/)
+      if (!m) return
+      meta[m[1]] = m[2].trim().replace(/^["']|["']$/g, '')
+      if (m[1] === 'tags' || m[1] === 'aliases') {
+        m[2].split(',').forEach(t => { const x = t.trim().replace(/^["']|["']$/g, ''); if (x) (m[1] === 'tags' ? tags : aliases).push(x) })
+      }
+    })
+  }
+  const body = match ? md.slice(match[0].length).trim() : md.trim()
+  return { tags, aliases, meta, body }
+}
+
+// Extract [[wikilinks]] from note body
+function extractWikilinks(md) {
+  const links = []
+  const re = /\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g
+  let m
+  while ((m = re.exec(md))) { if (m[1].trim()) links.push(m[1].trim()) }
+  return [...new Set(links)]
+}
+
+// import a single .md (Obsidian-style) → creates/updates a note
+app.post('/api/obsidian/import', async (req, res) => {
+  const { filename = 'Untitled.md', content = '' } = req.body || {}
+  if (!content) return res.status(400).json({ error: 'content required' })
+  let file = filename
+  if (!file.endsWith('.md')) file += '.md'
+  const title = file.replace(/\.md$/i, '').split('/').pop().split('\\').pop()
+  const { tags, aliases, meta, body: rawBody } = parseFrontmatter(content)
+  //   strip leading "# Title" heading if it duplicates the filename title
+  let body = rawBody
+  const h1 = body.split(/\r?\n/, 1)[0].replace(/^#\s+/, '').trim()
+  if (h1 && h1.toLowerCase() === title.toLowerCase()) body = body.replace(/^#[^\n]*\r?\n?/, '').trim()
+  const wikilinks = extractWikilinks(body)
+  const notes = await loadJson('notes')
+  const existing = notes.find(n => n.title === title)
+  const now = new Date().toISOString()
+  let note
+  if (existing) {
+    note = { ...existing, content: body, tags: tags.length ? tags : existing.tags, aliases, wikilinks, updated: now }
+    await saveJson('notes', notes.map(n => n.id === existing.id ? note : n))
+  } else {
+    note = { id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, title, content: body, type: meta.type || 'reference', tags, aliases, wikilinks, source: meta.source || 'obsidian', created: meta.created || now, updated: now }
+    await saveJson('notes', [note, ...notes])
+  }
+  res.json({ ok: true, note, title, wikilinks })
+})
+
+// export all notes as Obsidian-style .md documents
+app.get('/api/obsidian/export', async (_, res) => {
+  const notes = await loadJson('notes')
+  const docs = notes.map(n => {
+    const fm = ['---']
+    if (n.tags && n.tags.length) fm.push(`tags: ${n.tags.join(', ')}`)
+    if (n.type) fm.push(`type: ${n.type}`)
+    if (n.created) fm.push(`created: ${n.created}`)
+    fm.push('---')
+    const body = [
+      `# ${n.title}`, '',
+      n.content || '', '',
+      (n.wikilinks || []).map(l => `- [[${l}]]`).join('\n'),
+    ].join('\n')
+    return { fileName: `${n.title.replace(/[^\wА-Яа-я0-9 _-]/g, '').trim() || 'note'}.md`, content: fm.join('\n') + '\n\n' + body }
+  })
+  res.json({ ok: true, docs, count: docs.length })
+})
+
 // ---- Agent chat proxy ----
 // Fast path (direct OpenRouter) default; pass "mode":"agent" for the full Hermes agent.
 app.post('/api/agent', async (req, res) => {

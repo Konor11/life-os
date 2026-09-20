@@ -1,233 +1,422 @@
-import { useState, useRef, useEffect } from 'react'
-import { searchMemory, ingestMemory } from '../data/api'
+import { useState } from 'react'
+import { searchMemory, ingestMemory, obsidianImport, obsidianExport } from '../data/api'
 import { Icon } from './Icons'
 
-// "Второй мозг" — объединённая система заметок: Knowledge (Zettelkasten) + Memory (RAG) +
-// быстрый захват + семантический поиск + связи (backlinks) между заметками.
+// «Второй мозг» — Obsidian-подобный центр знаний: заметки (Zettelkasten) + RAG-память,
+// wikilinks-граф связей, семантический поиск, импорт/экспорт Obsidian .md (frontmatter + [[wikilinks]]).
+
+const NOTE_COLORS = {
+  fleeting: '#e5484d', literature: '#f5a524', permanent: '#2f9e44', meeting: '#4f46e5',
+  project: '#0891b2', reference: '#7c3aed', memory: '#ec4899',
+}
+const NOTE_ICONS = {
+  fleeting: 'Zap', literature: 'BookOpen', permanent: 'Star', meeting: 'Users',
+  project: 'Folder', reference: 'Link', memory: 'Database',
+}
 
 export function SecondBrainView({ notes, memory, onUpdateNotes, onUpdateMemory }) {
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
-  const [semanticResults, setSemanticResults] = useState([])
-  const [selectedId, setSelectedId] = useState(null)
-  const [showCapture, setShowCapture] = useState(false)
-  const [capture, setCapture] = useState({ title: '', content: '', tags: '', toMemory: false })
-  const [mode, setMode] = useState('graph') // graph | search | read
+  const [semantic, setSemantic] = useState([])
+  const [draft, setDraft] = useState(null)        // открытая заметка (редактор)
+  const [mode, setMode] = useState('graph')       // graph | search | obsidian | editor
   const [flash, setFlash] = useState('')
 
   const allNotes = notes || []
-  const allDocs = (memory?.documents || [])
-    .map(d => ({ id: d.id, title: d.source || 'Memory doc', type: 'memory', content: d.content, tags: d.metadata?.tags || [], created: d.created, color: '#a855f7' }))
+  const docs = (memory?.documents || []).map(d => ({
+    id: d.id, title: d.source || 'RAG-док', type: 'memory', content: d.content,
+    tags: d.metadata?.tags || [], created: d.created,
+  }))
+  const allItems = [...allNotes, ...docs]
 
-  // Связи: заметки, которые упоминают заголовок другой заметки → backlink
-  const linkMap = {}
-  allNotes.forEach(n => {
-    allNotes.forEach(m => {
-      if (n.id !== m.id && (n.content || '').includes(m.title)) {
-        ;(linkMap[m.id] = linkMap[m.id] || []).push(n.id)
-      }
-    })
+  // backlink-карта: nodeId -> [nodeId ...] (кто на неё ссылается)
+  const backlinkMap = {}
+  allItems.forEach(i => {
+    const refs = findWikilinkTargets(i.content || '', allItems)
+    refs.forEach(t => { ;(backlinkMap[t.id] = backlinkMap[t.id] || []).push(i.id) })
   })
 
-  const selected = allNotes.find(n => n.id === selectedId) || allDocs.find(d => d.id === selectedId)
+  const flashNow = (m) => { setFlash(m); setTimeout(() => setFlash(''), 2800) }
 
   const runSearch = async () => {
-    const q = query.trim()
-    if (!q) return
+    const q = query.trim(); if (!q) return
     setSearching(true)
     try {
-      // 1) semantic по Memory
-      const mem = await searchMemory(q, 6)
-      const semantic = (mem?.results || []).map(r => ({ id: r.id, title: r.source || 'Memory', type: 'memory', content: r.content, relevance: 'semantic' }))
-      // 2) текстовый по заметкам
-      const local = allNotes
-        .filter(n => n.title.toLowerCase().includes(q.toLowerCase()) || n.content.toLowerCase().includes(q.toLowerCase()))
-        .map(n => ({ ...n, relevance: 'text' }))
-      // дедуп по id
-      const seen = new Set()
-      const merged = [...semantic, ...local].filter(r => !seen.has(r.id) && seen.add(r.id))
-      setSemanticResults(merged)
-      setMode('search')
-    } catch (e) { setFlash(`Ошибка поиска: ${e.message}`); setTimeout(() => setFlash(''), 3000) }
-    finally { setSearching(false) }
+      const mem = await searchMemory(q, 8)
+      const fromMem = (mem?.results || []).map(r => ({ id: r.id, title: r.source || 'RAG', type: 'memory', content: r.content, rel: 'semantic' }))
+      const fromNotes = allNotes.filter(n => (n.title + ' ' + n.content).toLowerCase().includes(q.toLowerCase())).map(n => ({ ...n, rel: 'text' }))
+      const seen = new Set(); const merged = [...fromMem, ...fromNotes].filter(r => !seen.has(r.id) && seen.add(r.id))
+      setSemantic(merged); setMode('search')
+    } catch (e) { flashNow(`Ошибка поиска: ${e.message}`) } finally { setSearching(false) }
   }
 
-  const handleCapture = async () => {
-    if (!capture.content.trim()) return
-    if (capture.toMemory) {
-      const r = await ingestMemory(capture.content, capture.title || 'quick-capture', { tags: capture.tags })
-      if (r?.ok) { onUpdateMemory(m => ({ ...m, documents: [...(m.documents || []), { id: r.id, content: capture.content, source: capture.title || 'quick-capture', created: new Date().toISOString() }] })) }
+  const openItem = (item) => { setDraft(JSON.parse(JSON.stringify(item))); setMode('editor') }
+  const newNote = () => {
+    setDraft({ id: `note-${Date.now()}-${Math.random().toString(36).slice(2,6)}`, title: '', content: '', type: 'fleeting', tags: [], created: new Date().toISOString(), wikilinks: [] })
+    setMode('editor')
+  }
+
+  const saveDraft = () => {
+    if (!draft?.title?.trim()) return flashNow('Название обязательно')
+    const obj = { ...draft, tags: draft.tags || [], updated: new Date().toISOString() }
+    if (draft.type === 'memory') {
+      onUpdateMemory(m => ({ ...m, documents: (m.documents || []).map(d => d.id === obj.id ? { ...d, content: obj.content, source: obj.title, metadata: { ...(d.metadata||{}), tags: obj.tags } } : d) }))
     } else {
-      const note = { id: `note-${Date.now()}`, title: capture.title || 'Untitled', content: capture.content, type: 'fleeting', tags: capture.tags ? capture.tags.split(',').map(t => t.trim()) : [], created: new Date().toISOString() }
-      onUpdateNotes(ns => [note, ...(ns || [])])
+      onUpdateNotes(ns => ns.some(n => n.id === obj.id) ? ns.map(n => n.id === obj.id ? obj : n) : [obj, ...ns])
     }
-    setCapture({ title: '', content: '', tags: '', toMemory: false })
-    setShowCapture(false)
-    setFlash(capture.toMemory ? 'Сохранено в Memory' : 'Заметка создана')
-    setTimeout(() => setFlash(''), 2500)
+    flashNow('Сохранено ✓'); setMode('graph'); setDraft(null)
+  }
+  const deleteItem = () => {
+    if (!draft?.id) return
+    if (draft.type === 'memory') onUpdateMemory(m => ({ ...m, documents: (m.documents||[]).filter(d => d.id !== draft.id) }))
+    else onUpdateNotes(ns => ns.filter(n => n.id !== draft.id))
+    flashNow('Удалено'); setMode('graph'); setDraft(null)
+  }
+
+  const handleImport = async (filename, content) => {
+    try {
+      const r = await obsidianImport(filename, content)
+      if (r?.ok) {
+        onUpdateNotes(ns => ns.some(n => n.id === r.note.id) ? ns.map(n => n.id === r.note.id ? r.note : n) : [r.note, ...ns])
+        flashNow(`Импортировано: ${r.title}${r.wikilinks?.length ? ` (+${r.wikilinks.length} wikilinks)` : ''}`)
+        return r
+      }
+      flashNow('Ошибка импорта'); return null
+    } catch (e) { flashNow(`Ошибка: ${e.message}`); return null }
+  }
+  const handleExport = async () => {
+    try {
+      const r = await obsidianExport()
+      if (!r?.docs?.length) return flashNow('Нет заметок для экспорта')
+      const zip = await buildSonZip(r.docs)
+      if (zip) { triggerDownload(URL.createObjectURL(zip), 'life-os-vault.zip'); flashNow(`Скачан vault: ${r.count} заметок (.md)`) }
+    } catch (e) { flashNow(`Ошибка экспорта: ${e.message}`) }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-text flex items-center gap-2"><Icon name="Brain" size={22} className="text-accent" /> Второй мозг</h1>
-          <p className="text-text-muted">Заметки + RAG-память • семант. поиск • связи между идеями</p>
+          <h1 className="text-2xl font-extrabold text-text flex items-center gap-2">
+            <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-accent via-purple-500 to-fuchsia-500 shadow-lg shadow-accent/30 flex items-center justify-center">
+              <Icon name="Brain" size={22} className="text-white" />
+            </span>
+            Второй мозг
+          </h1>
+          <p className="text-text-muted text-sm">Obsidian-стиль · заметки + RAG · граф связей · wikilinks</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowCapture(true)} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover flex items-center gap-2 transition-colors">
-            <Icon name="Plus" size={16} /> Быстрый захват
+        <button onClick={newNote} className="px-5 py-2.5 bg-gradient-to-r from-accent to-purple-500 text-white rounded-xl shadow-lg shadow-accent/25 hover:brightness-110 flex items-center gap-2 transition-all">
+          <Icon name="Plus" size={16} /> Новая заметка
+        </button>
+      </div>
+
+      {flash && <div className="px-4 py-2.5 rounded-xl bg-success/10 border border-success/40 text-success text-sm flex items-center gap-2"><Icon name="CheckCircle" size={15} /> {flash}</div>}
+
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-1 gap-2 min-w-[240px]">
+          <input type="text" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && runSearch()}
+            placeholder="Семантический поиск по всему мозгу..." className="flex-1 input rounded-xl" />
+          <button onClick={runSearch} disabled={searching} className="px-4 rounded-xl bg-accent text-white hover:bg-accent-hover flex items-center gap-2 transition-colors">
+            <Icon name="Search" size={15} /> {searching ? 'Ищу...' : 'Поиск'}
           </button>
         </div>
+        <TabBtn active={mode === 'graph'} onClick={() => setMode('graph')} icon="Sparkles" label="Граф" />
+        <TabBtn active={mode === 'search'} onClick={() => { setSemantic(allItems.map(i => ({ ...i, rel: 'all' }))); setMode('search') }} icon="Grid" label="Все" />
+        <TabBtn active={mode === 'obsidian'} onClick={() => setMode('obsidian')} icon="Boxes" label="Obsidian" />
       </div>
 
-      {flash && <div className="px-4 py-2 rounded-lg bg-success/10 border border-success/40 text-success text-sm flex items-center gap-2"><Icon name="CheckCircle" size={16} /> {flash}</div>}
-
-      {/* Global search bar */}
-      <div className="flex gap-2">
-        <input type="text" value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => e.key === 'Enter' && runSearch()}
-          placeholder="Искать по всем заметкам и памяти (семантически)..." className="flex-1 input" />
-        <button onClick={runSearch} disabled={searching} className="px-5 py-2 rounded-lg bg-accent text-white hover:bg-accent-hover flex items-center gap-2 transition-colors">
-          <Icon name="Search" size={16} /> {searching ? 'Ищу...' : 'Поиск'}
-        </button>
-        <button onClick={() => setMode('graph')} className={`px-4 py-2 rounded-lg border ${mode === 'graph' ? 'bg-accent/10 border-accent text-accent' : 'border-border text-text-muted hover:bg-bg-elevated'}`}>Граф</button>
-        <button onClick={() => { setSemanticResults(allNotes.concat(allDocs)); setMode('search') }} className={`px-4 py-2 rounded-lg border ${mode === 'search' ? 'bg-accent/10 border-accent text-accent' : 'border-border text-text-muted hover:bg-bg-elevated'}`}>Все</button>
-      </div>
-
-      {/* Quick capture */}
-      {showCapture && (
-        <div className="glass p-4 rounded-xl space-y-3 border border-accent/30">
-          <h4 className="font-semibold text-text flex items-center gap-2"><Icon name="Zap" size={16} className="text-accent" /> Быстрый захват идеи</h4>
-          <input type="text" value={capture.title} onChange={e => setCapture({ ...capture, title: e.target.value })} placeholder="Заголовок (необязательно)" className="input" autoFocus />
-          <textarea value={capture.content} onChange={e => setCapture({ ...capture, content: e.target.value })} placeholder="Запиши мысль, идею, фрагмент..." rows={3} className="input resize-y" />
-          <div className="flex items-center gap-3">
-            <input type="text" value={capture.tags} onChange={e => setCapture({ ...capture, tags: e.target.value })} placeholder="теги, через запятую" className="flex-1 input" />
-            <label className="flex items-center gap-2 text-sm text-text-muted cursor-pointer">
-              <input type="checkbox" checked={capture.toMemory} onChange={e => setCapture({ ...capture, toMemory: e.target.checked })} className="accent-accent" />
-              в RAG-память
-            </label>
-          </div>
-          <div className="flex justify-end gap-3 pt-1">
-            <button onClick={() => setShowCapture(false)} className="px-4 py-2 border border-border rounded-lg hover:bg-bg-elevated">Отмена</button>
-            <button onClick={handleCapture} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover" disabled={!capture.content.trim()}>Сохранить</button>
-          </div>
-        </div>
-      )}
-
-      {mode === 'graph' && <BrainGraph notes={allNotes} docs={allDocs} linkMap={linkMap} onSelect={id => { setSelectedId(id); setMode('read') }} />}
+      {mode === 'graph' && <BrainGraph items={allItems} backlinkMap={backlinkMap} onOpen={openItem} onNew={newNote} />}
 
       {mode === 'search' && (
-        <div className="glass p-4 rounded-xl">
-          {semanticResults.length === 0 ? (
-            <div className="text-center py-10 text-text-muted">
-              <Icon name="Brain" size={48} className="mx-auto mb-3 opacity-30" />
-              <p>Нет результатов. <button onClick={() => setShowCapture(true)} className="text-accent underline hover:underline-offset-2">Захвати первую идею</button></p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {semantic.length === 0 ? (
+            <div className="glass p-8 rounded-2xl text-center text-text-muted col-span-3">
+              <Icon name="Brain" size={52} className="mx-auto mb-3 opacity-30" />
+              <p className="text-base font-medium">Пока пусто. Создай первую заметку или захвати идею.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {semanticResults.slice(0, 30).map(r => (
-                <button key={r.id} onClick={() => { setSelectedId(r.id); setMode('read') }} className="glass p-4 rounded-lg text-left hover:bg-bg-elevated/50 border border-border transition-colors group">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className={`w-2 h-2 rounded-full ${r.type === 'memory' ? 'bg-danger' : 'bg-accent'}`} />
-                    <h4 className="font-semibold text-text truncate flex-1">{r.title}</h4>
-                    <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted">{r.relevance}</span>
-                  </div>
-                  <p className="text-sm text-text-muted line-clamp-3">{r.content}</p>
-                </button>
-              ))}
-            </div>
+            semantic.slice(0, 30).map(r => (
+              <button key={r.id} onClick={() => openItem(r)} className="glass p-4 rounded-2xl text-left hover:bg-bg-elevated/60 hover:scale-[1.01] hover:shadow-lg border border-border transition-all">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${NOTE_COLORS[r.type]}22`, color: NOTE_COLORS[r.type] }}>
+                    <Icon name={NOTE_ICONS[r.type] || 'FileText'} size={15} />
+                  </span>
+                  <h4 className="font-semibold text-text truncate flex-1">{r.title}</h4>
+                  <span className="text-[10px] uppercase px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted">{r.type}</span>
+                </div>
+                <p className="text-sm text-text-muted line-clamp-3 whitespace-pre-line">{r.content}</p>
+              </button>
+            ))
           )}
         </div>
       )}
 
-      {mode === 'read' && selected && (
-        <ReaderView item={selected} linkMap={linkMap} allNotes={allNotes} onSelect={id => setSelectedId(id)} onClose={() => setMode('graph')} onUpdate={onUpdateNotes} />
+      {mode === 'obsidian' && (
+        <ObsidianPanel notes={allNotes} onImport={handleImport} onExport={handleExport} flashNow={flashNow} />
+      )}
+
+      {mode === 'editor' && (
+        <EditorPanel draft={draft} allItems={allItems} setDraft={setDraft} onSave={saveDraft} onDelete={deleteItem} onCancel={() => { setMode('graph'); setDraft(null) }} />
       )}
     </div>
   )
 }
 
-// Граф связей: визуализация заметок + их backlinks (SVG-линки)
-function BrainGraph({ notes, docs, linkMap, onSelect }) {
-  const W = 100, scale = 10
-  const items = [...notes, ...docs].slice(0, 40)
-  if (items.length === 0) {
+function TabBtn({ active, onClick, icon, label }) {
+  return (
+    <button onClick={onClick} className={`px-3.5 py-2 rounded-xl text-sm border flex items-center gap-1.5 transition-all ${active ? 'bg-accent/15 border-accent text-accent font-medium' : 'border-border text-text-muted hover:bg-bg-elevated/60'}`}>
+      <Icon name={icon} size={15} /> {label}
+    </button>
+  )
+}
+
+// ---- Obsidian panel ----
+function ObsidianPanel({ notes, onImport, onExport, flashNow }) {
+  const [files, setFiles] = useState([])
+  const [sample, setSample] = useState('---\ntags: идея, zettel\ntype: permanent\n---\n# Название заметки\n\nКонтент с [[связью]] на другую заметку.')
+
+  const onDrop = (e) => { e.preventDefault(); const arr = [...(e.dataTransfer?.files || [])].filter(f => f.name.endsWith('.md')); if (arr.length) setFiles(arr) }
+  const browse = () => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.accept = '.md'; i.onchange = () => setFiles([...(i.files || [])]); i.click() }
+  const runImport = async () => {
+    if (!files.length) return flashNow('Добавь .md файлы')
+    let ok = 0
+    for (const f of files) { try { const r = await onImport(f.name, await f.text()); if (r?.ok) ok++ } catch {} }
+    flashNow(`Импортировано ${ok}/${files.length} файлов`); setFiles([])
+  }
+  const runPaste = async () => {
+    if (!sample.trim()) return
+    const title = sample.split('\n').find(l => l.startsWith('# '))?.slice(2).trim() || 'Untitled'
+    const r = await onImport(`${title}.md`, sample); if (r?.ok) setSample('')
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="glass p-5 rounded-2xl border border-border">
+        <h3 className="font-semibold text-text flex items-center gap-2"><Icon name="Download" size={16} className="text-accent" /> Импорт из Obsidian</h3>
+        <p className="text-xs text-text-muted mt-1">Перетащи .md файлы из vault — frontmatter и [[wikilinks]] распарсятся автоматически.</p>
+        <div onDragOver={e => e.preventDefault()} onDrop={onDrop} onClick={browse}
+          className="mt-4 rounded-2xl border-2 border-dashed border-border/60 p-8 text-center cursor-pointer hover:border-accent/50 hover:bg-accent/5 transition-all">
+          <Icon name="Upload" size={36} className="text-text-muted mx-auto opacity-50 mb-2" />
+          <p className="text-sm text-text-muted font-medium">Drop .md here or click to browse</p>
+          <p className="text-xs text-text-muted mt-1">{files.length ? `${files.length} файлов: ${files.slice(0,3).map(f=>f.name).join(', ')}${files.length>3?'…':''}` : 'Obsidian Markdown vault files'}</p>
+        </div>
+        <button onClick={runImport} disabled={!files.length} className="mt-3 w-full py-2.5 rounded-xl bg-accent text-white hover:bg-accent-hover disabled:opacity-40 flex items-center justify-center gap-2 transition-colors">
+          <Icon name="Download" size={15} /> Импортировать {files.length ? `(${files.length})` : ''}
+        </button>
+        <div className="mt-5 pt-4 border-t border-border">
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Или вставь текст</h4>
+          <textarea value={sample} onChange={e => setSample(e.target.value)} rows={5} className="input resize-y font-mono text-xs" />
+          <button onClick={runPaste} disabled={!sample.trim()} className="mt-2 px-4 py-2 rounded-lg border border-border text-accent hover:bg-accent/10 flex items-center gap-2 transition-colors">
+            <Icon name="Zap" size={14} /> Импортировать из текста
+          </button>
+        </div>
+      </div>
+
+      <div className="glass p-5 rounded-2xl border border-border">
+        <h3 className="font-semibold text-text flex items-center gap-2"><Icon name="Upload" size={16} className="text-accent" /> Экспорт в Obsidian</h3>
+        <p className="text-xs text-text-muted mt-1">Выгрузи все заметки как Obsidian-vault (.md + frontmatter + wikilinks), затем открой папку в Obsidian.</p>
+        <button onClick={onExport} className="mt-4 w-full py-2.5 rounded-xl bg-accent text-white hover:bg-accent-hover flex items-center justify-center gap-2 transition-colors">
+          <Icon name="Download" size={15} /> Скачать vault (.zip)
+        </button>
+        <div className="mt-5 pt-4 border-t border-border">
+          <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Текущий vault</h4>
+          <div className="grid grid-cols-3 gap-2 mt-2">
+            <StatBox label="Заметки" value={notes.filter(n => n.type !== 'memory').length} color="#7c3aed" />
+            <StatBox label="RAG-доки" value={notes.filter(n => n.type === 'memory').length} color="#ec4899" />
+            <StatBox label="Всего" value={notes.length} color="#0891b2" />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StatBox({ label, value, color }) {
+  return (
+    <div className="glass px-3 py-3 rounded-xl text-center">
+      <p className="text-2xl font-bold" style={{ color }}>{value}</p>
+      <p className="text-[10px] uppercase tracking-wider text-text-muted mt-0.5">{label}</p>
+    </div>
+  )
+}
+
+// ---- Graph ----
+function BrainGraph({ items, backlinkMap, onOpen, onNew }) {
+  const [zoom, setZoom] = useState(1)
+  const items_ = [...items].slice(0, 60)
+  if (items_.length === 0) {
     return (
-      <div className="glass p-4 rounded-xl text-center py-10 text-text-muted">
-        <Icon name="Brain" size={48} className="mx-auto mb-3 opacity-30" />
-        <p>Пока пусто. Создай первую заметку или захвати идею — и она появится на графе связей.</p>
+      <div className="glass p-10 rounded-2xl border border-border text-center">
+        <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-accent to-purple-500 shadow-xl shadow-accent/30 flex items-center justify-center mb-4"><Icon name="Brain" size={40} className="text-white" /></div>
+        <h3 className="text-lg font-bold text-text">Начни второй мозг</h3>
+        <p className="text-sm text-text-muted mt-2 max-w-md">Захвати идею, создай заметку или импортируй vault из Obsidian — и узлы начнут соединяться в сеть твоего знания.</p>
+        <button onClick={onNew} className="px-5 py-2.5 rounded-xl bg-accent text-white hover:bg-accent-hover flex items-center gap-2 mt-5 transition-colors"><Icon name="Plus" size={16} /> Создать заметку</button>
       </div>
     )
   }
-  // позиции по кругу
-  const pos = {}
-  items.forEach((it, i) => {
-    const ang = (i / Math.max(items.length, 1)) * 2 * Math.PI
-    pos[it.id] = { x: 50 + Math.cos(ang) * 42, y: 50 + Math.sin(ang) * 30 }
+
+  const nodes = {}
+  items_.forEach((it, i) => {
+    const ang = Math.PI * 2 * i / items_.length
+    nodes[it.id] = { x: 50 + Math.cos(ang) * 42, y: 47 + Math.sin(ang) * 30, size: 2.4 + Math.min(5, (backlinkMap[it.id]?.length || 0)) * 0.5 }
   })
   const edges = []
-  items.forEach(it => {
-    ;(linkMap[it.id] || []).forEach(nid => { if (pos[nid]) edges.push({ from: pos[it.id], to: pos[nid] }) })
+  items_.forEach(it => {
+    ;(backlinkMap[it.id] || []).forEach(src => { if (nodes[src]) edges.push({ x1: nodes[src].x, y1: nodes[src].y, x2: nodes[it.id].x, y2: nodes[it.id].y }) })
   })
+  const W = 100, H = 58
+
   return (
-    <div className="glass p-4 rounded-xl">
+    <div className="glass p-5 rounded-2xl border border-border">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="font-semibold text-text flex items-center gap-2"><Icon name="Sparkles" size={16} className="text-accent" /> Граф связей знаний</h4>
-        <span className="text-xs text-text-muted">{items.length} узлов · {edges.length} связей</span>
+        <h4 className="font-semibold text-text flex items-center gap-2"><Icon name="Sparkles" size={16} className="text-accent" /> Граф связей · {items_.length} узлов · {edges.length} связей</h4>
+        <div className="flex items-center gap-1.5 text-xs text-text-muted">
+          <button onClick={() => setZoom(Math.max(0.6, zoom - 0.15))} className="w-7 h-7 rounded-lg border border-border hover:bg-bg-elevated"><Icon name="Minus" size={12} /></button>
+          <span className="font-mono">{Math.round(zoom * 100)}%</span>
+          <button onClick={() => setZoom(Math.min(2, zoom + 0.15))} className="w-7 h-7 rounded-lg border border-border hover:bg-bg-elevated"><Icon name="Plus" size={12} /></button>
+          <button onClick={() => setZoom(1)} className="px-2 py-1 rounded-lg border border-border hover:bg-bg-elevated">Сброс</button>
+        </div>
       </div>
-      <div className="relative aspect-video rounded-lg overflow-hidden bg-bg-elevated/40 border border-border" style={{ minHeight: 340 }}>
-        <svg width="100%" height="100%" viewBox={`0 0 ${W} ${W * 0.6}`}>
-          {edges.map((e, i) => <line key={i} x1={e.from.x} y1={e.from.y} x2={e.to.x} y2={e.to.y} stroke="#5865f2" strokeWidth="0.6" opacity="0.35" />)}
+
+      <div className="relative overflow-hidden rounded-xl border border-border" style={{ aspectRatio: '1.72', minHeight: 400, transform: `scale(${zoom})`, transformOrigin: '50% 50%' }}>
+        <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} className="absolute inset-0">
+          <defs>
+            <radialGradient id="brain-bg" cx="50%" cy="40%" r="75%">
+              <stop offset="0%" stopColor="#1a2140" /><stop offset="100%" stopColor="#0a0e1a" />
+            </radialGradient>
+            <linearGradient id="edge-g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#a855f7" /><stop offset="100%" stopColor="#5865f2" />
+            </linearGradient>
+          </defs>
+          <rect width={W} height={H} fill="url(#brain-bg)" />
+          {edges.map((e, i) => <line key={i} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke="url(#edge-g)" strokeWidth="0.4" opacity="0.4" />)}
         </svg>
-        {items.map(it => {
-          const p = pos[it.id]
-          const deg = linkMap[it.id]?.length || 0
-          const r = 2.2 + Math.min(deg, 6) * 0.5
+
+        {items_.map(it => {
+          const n = nodes[it.id]
+          const col = NOTE_COLORS[it.type] || '#7c3aed'
+          const px = n.size * 9
           return (
-            <button key={it.id} onClick={() => onSelect(it.id)}
-              className="absolute origin-center transform -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-bg-elevated hover:bg-accent/20 transition-transform hover:scale-110"
-              style={{ left: `${p.x + 0 * 1}%`, top: `${(p.y / 1.6667)}%`, width: r * scale, height: r * scale, borderColor: it.type === 'memory' ? '#ef4444' : '#a855f7' }} title={it.title}>
-              <span className="sr-only">{it.title}</span>
+            <button key={it.id} onClick={() => onOpen(it)}
+              className="absolute origin-center -translate-x-1/2 -translate-y-1/2 rounded-full hover:scale-125 transition-transform"
+              style={{ left: `${n.x + 0.2}%`, top: `${n.y + 0.2}%`, width: px, height: px }}>
+              <span className="block rounded-full"
+                style={{ background: `radial-gradient(circle, ${col}ee 0%, ${col}55 55%, transparent 100%)`, boxShadow: `0 0 0 1.5px ${col}88`, width: px, height: px }} />
+              <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap"
+                style={{ color: col, fontSize: `${Math.max(8, n.size * 2.8)}px`, fontWeight: 700, textShadow: '0 0 3px rgba(0,0,0,0.45)' }}>
+                {it.title.length > 16 ? it.title.slice(0, 15) + '…' : it.title}
+              </span>
             </button>
           )
         })}
       </div>
-      <p className="text-xs text-text-muted mt-2 flex items-center gap-2">
-        <span className="inline-block w-2.5 h-2.5 rounded-full border-2 border-accent" /> Заметка
-        <span className="inline-block w-2.5 h-2.5 rounded-full border-2 border-danger inline-block ml-3" /> RAG-память
-        <span className="ml-auto">Размер узла = число связей · клик = открыть</span>
-      </p>
+
+      <div className="flex flex-wrap gap-2 mt-3 text-xs text-text-muted items-center">
+        {Object.keys(NOTE_COLORS).filter(t => items_.some(i => i.type === t)).map(t => (
+          <span key={t} className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border" style={{ borderColor: `${NOTE_COLORS[t]}55`, color: NOTE_COLORS[t] }}>
+            <Icon name={NOTE_ICONS[t] || 'FileText'} size={12} /> {t}
+          </span>
+        ))}
+        <span className="ml-auto text-[11px] opacity-80">Размер = число связей · клик = открыть</span>
+      </div>
     </div>
   )
 }
 
-function ReaderView({ item, linkMap, allNotes, onSelect, onClose, onUpdate }) {
-  const backlinks = (linkMap[item.id] || []).map(nid => allNotes.find(n => n.id === nid)).filter(Boolean)
-  const fromLinks = (item.content || '').split(/\s+/).filter(w => allNotes.some(n => n.title.toLowerCase() === w.replace(/[^A-Za-zА-Яа-я0-9_]+/g, '').toLowerCase() && n.id !== item.id))
-  const extractPreview = allNotes.slice(0, 8)
-
+// ---- Editor ----
+function EditorPanel({ draft, allItems, setDraft, onSave, onDelete, onCancel }) {
+  if (!draft) return <div />
+  const links = findWikilinkTargets(draft.content || '', allItems)
+  const col = NOTE_COLORS[draft.type] || '#7c3aed'
   return (
-    <div className="glass p-4 rounded-xl space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className={`text-[11px] uppercase px-2 py-1 rounded bg-bg-elevated ${item.type === 'memory' ? 'text-danger' : 'text-accent'}`}>{item.type}</span>
-          <Icon name="BookOpen" size={16} className="text-text-muted" />
-          <h3 className="font-semibold text-text truncate flex-1">{item.title}</h3>
+    <div className="glass p-5 rounded-2xl border border-border">
+      <div className="flex items-center justify-between gap-2 mb-4">
+        <h3 className="font-semibold text-text flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: `${col}22`, color: col }}><Icon name={NOTE_ICONS[draft.type] || 'FileText'} size={15} /></span>
+          {draft.title || 'Новая заметка'}
+        </h3>
+        <div className="flex items-center gap-2">
+          <button onClick={onCancel} className="px-3 py-1.5 rounded-lg border border-border text-text-muted hover:bg-bg-elevated">Закрыть</button>
+          <button onClick={onSave} className="px-4 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-hover flex items-center gap-1.5 transition-colors"><Icon name="Check" size={14} /> Сохранить</button>
         </div>
-        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-bg-elevated text-text-muted"><Icon name="X" size={16} /></button>
       </div>
-      <div className="whitespace-pre-wrap text-sm text-text leading-relaxed">{item.content}</div>
-      {backlinks.length > 0 && (
-        <div className="pt-3 border-t border-border">
-          <h5 className="text-xs font-semibold text-text-muted mb-2 flex items-center gap-1"><Icon name="Link" size={12} /> На эту заметку ссылаются:</h5>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+        <input type="text" value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} placeholder="Название" className="input rounded-lg font-semibold" disabled={draft.type === 'memory'} />
+        <select value={draft.type || 'fleeting'} onChange={e => setDraft({ ...draft, type: e.target.value })} className="input rounded-lg" disabled={draft.type === 'memory'}>
+          {Object.keys(NOTE_COLORS).filter(t => t !== 'memory').map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <div className="flex gap-2 items-center">
+          <input value={draft.tags?.join(', ') || ''} onChange={e => setDraft({ ...draft, tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} placeholder="теги, через ," className="flex-1 input rounded-lg" />
+          {draft.type !== 'memory' && <button onClick={onDelete} className="px-2.5 py-2 rounded-lg border border-danger/40 text-danger hover:bg-danger/10" title="Удалить"><Icon name="Trash2" size={14} /></button>}
+        </div>
+      </div>
+
+      <textarea value={draft.content || ''} onChange={e => setDraft({ ...draft, content: e.target.value })} rows={12}
+        className="input resize-y font-mono text-sm rounded-xl min-h-[220px]"
+        placeholder={'Контент заметки. Используй [[Связи]] для wikilinks на другие заметки...'} />
+
+      {links.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-border">
+          <div className="flex flex-wrap gap-2 items-center text-xs text-text-muted mb-1"><Icon name="Link" size={12} /> Вики-связи ({links.length}):</div>
           <div className="flex flex-wrap gap-2">
-            {backlinks.map(b => (
-              <button key={b.id} onClick={() => onSelect(b.id)} className="px-2 py-1 text-xs border border-border rounded-full text-accent hover:bg-accent/10">{b.title}</button>
+            {links.slice(0, 14).map(link => (
+              <button key={link.title} onClick={() => setDraft(JSON.parse(JSON.stringify(link.item)))}
+                className="px-2.5 py-1 rounded-full border border-accent/40 text-accent text-xs hover:bg-accent/10 flex items-center gap-1">
+                <Icon name="Link" size={11} /> {link.title}
+              </button>
             ))}
           </div>
         </div>
       )}
-      <p className="text-xs text-text-muted">{item.created ? new Date(item.created).toLocaleDateString('ru-RU') : ''} · {(item.content || '').split(/\s+/).length} слов</p>
     </div>
   )
+}
+
+// ---- helpers ----
+// Возвращает уникальные объекты-цели wikilinks (у которых есть запись в allItems)
+function findWikilinkTargets(content, allItems) {
+  const out = []
+  const re = /\[\[([^\]|#]+?)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g
+  const titles = new Set()
+  let m
+  while ((m = re.exec(content || ''))) { const t = m[1].trim(); if (t) titles.add(t) }
+  allItems.forEach(i => { if (i.title && titles.has(i.title)) out.push({ title: i.title, item: i }) })
+  return out
+}
+
+function triggerDownload(url, name) {
+  const a = document.createElement('a'); a.href = url; a.download = name; a.rel = 'noopener'; a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 15000)
+}
+
+// Minimal store-only ZIP writer (RFC 1951 + central directory + EOCD)
+const CRT = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >> 1)) : (c >> 1); t[n] = c & 0xffffffff } return t })()
+function crc32(bytes) { let c = 0xffffffff; for (const b of bytes) c = (c >> 8) ^ CRT[(c ^ b) & 0xff]; return (c ^ 0xffffffff) & 0xffffffff }
+function u16(n) { return [(n) & 0xff, (n >> 8) & 0xff] }
+function u32(n) { return [(n) & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff] }
+
+async function buildSonZip(docs) {
+  const enc = new TextEncoder()
+  const files = docs.filter(d => d.fileName?.trim()).map(d => ({
+    name: d.fileName.replace(/[\\/:*?"<>|]/g, '-').trim() || 'note.md',
+    data: enc.encode(d.content || ''),
+  }))
+  const FH = 30 + 20, CDH = 46 + 20
+  // 30 (local header) + name + data ; central dir ; EOCD (22)
+  let off = 0
+  const local = []
+  const central = []
+  for (const f of files) {
+    const crc = crc32(f.data), n = f.name.length, d = f.data.length
+    const lh = [0x50, 0x4b, 0x03, 0x04, ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0x0800), ...u16(0), ...u16(0), ...u32(crc), ...u32(d), ...u32(d), ...u16(n), ...u16(0)]
+    local.push(lh, [...enc.encode(f.name)], [...f.data])
+    const ch = [0x50, 0x4b, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0), ...u16(0), ...u16(0), ...u16(0x0800), ...u16(0), ...u16(0), ...u32(crc), ...u32(d), ...u32(d), ...u16(n), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)]
+    central.push(ch, [...enc.encode(f.name)])
+    off += lh.length + n + d
+  }
+  const cd = [].concat(...central)
+  const eocd = [0x50, 0x4b, 0x05, 0x06, ...u16(0), ...u16(0), ...u16(files.length), ...u16(files.length), ...u32(cd.length), ...u32(off), ...u16(0)]
+  const bytes = new Uint8Array([].concat(...local, cd, eocd))
+  return new Blob([bytes], { type: 'application/zip' })
 }
