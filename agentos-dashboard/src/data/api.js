@@ -57,6 +57,11 @@ export async function saveMemory(data) {
   return r.json()
 }
 
+export async function saveCalendar(data) {
+  const r = await fetch(`${API}/calendar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+  return r.json()
+}
+
 export async function askAgent(profile, message) {
   const r = await fetch(`${API}/agent`, {
     method: 'POST',
