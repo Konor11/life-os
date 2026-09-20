@@ -8,11 +8,11 @@ export function MemoryView({ memory, onUpdate }) {
   const [newDoc, setNewDoc] = useState({ content: '', source: 'manual', metadata: {} })
   const [query, setQuery] = useState('')
 
-  const totalDocs = memory.documents.length
-  const totalEmbeddings = memory.embeddings.length
-  const recentQueries = memory.queries.slice(0, 5)
+  const totalDocs = memory.documents?.length || 0
+  const totalEmbeddings = memory.embeddings?.length || 0
+  const recentQueries = (memory.queries || []).slice(0, 5)
 
-  const filteredDocs = memory.documents
+  const filteredDocs = (memory.documents || [])
     .filter(d => d.content.toLowerCase().includes(search.toLowerCase()) || d.source.toLowerCase().includes(search.toLowerCase()))
     .sort((a,b) => new Date(b.created) - new Date(a.created))
 
@@ -54,7 +54,7 @@ export function MemoryView({ memory, onUpdate }) {
         <DocumentList documents={filteredDocs} search={search} setSearch={setSearch} onUpdate={onUpdate} />
       )}
       {activeTab === 'search' && (
-        <SearchPanel query={query} setQuery={setQuery} memory={memory} onUpdate={onUpdate} />
+        <SearchPanel query={query} setQuery={setQuery} memory={memory} onUpdate={onUpdate} recentQueries={recentQueries} />
       )}
       {activeTab === 'ingest' && (
         <IngestPanel memory={memory} onUpdate={onUpdate} />
@@ -141,7 +141,7 @@ function DocumentCard({ doc, onUpdate, onDelete }) {
   )
 }
 
-function SearchPanel({ query, setQuery, memory, onUpdate }) {
+function SearchPanel({ query, setQuery, memory, onUpdate, recentQueries }) {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
 
