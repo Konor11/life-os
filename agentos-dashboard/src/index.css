@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-* {
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
@@ -12,9 +12,49 @@ html, body, #root {
   padding: 0;
 }
 
+/* ===== Design tokens (light default) ===== */
+:root,
+html[data-theme="light"] {
+  --cx-bg: 247 249 252;
+  --cx-bg-elevated: 255 255 255;
+  --cx-bg-card: 255 255 255;
+  --cx-border: 228 232 240;
+  --cx-border-hover: 209 216 228;
+  --cx-text: 17 24 39;
+  --cx-text-muted: 100 116 139;
+  --cx-accent: 88 101 242;
+  --cx-accent-hover: 81 93 236;
+  --cx-success: 22 163 74;
+  --cx-warning: 245 158 11;
+  --cx-danger: 220 38 38;
+  --cx-surface: 255 255 255;
+  --cx-app-bg: radial-gradient(ellipse at top, #f2f4f9 0%, #eef1f7 100%);
+  color-scheme: light;
+}
+
+html[data-theme="dark"] {
+  --cx-bg: 10 14 26;
+  --cx-bg-elevated: 17 24 39;
+  --cx-bg-card: 23 26 33;
+  --cx-border: 42 47 58;
+  --cx-border-hover: 58 63 74;
+  --cx-text: 231 233 238;
+  --cx-text-muted: 138 143 156;
+  --cx-accent: 88 101 242;
+  --cx-accent-hover: 102 114 247;
+  --cx-success: 16 185 129;
+  --cx-warning: 245 158 11;
+  --cx-danger: 239 68 68;
+  --cx-surface: 23 26 33;
+  --cx-app-bg: radial-gradient(ellipse at top, #131828 0%, #0a0e1a 100%);
+  color-scheme: dark;
+}
+
 body {
-  @apply bg-bg text-text font-sans antialiased;
-  background: radial-gradient(ellipse at top, #131828 0%, #0a0e1a 100%);
+  background: var(--cx-app-bg);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: rgb(var(--cx-text));
 }
 
 ::-webkit-scrollbar {
@@ -23,23 +63,34 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-bg;
+  background: rgb(var(--cx-bg));
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-border rounded-full;
+  background: rgb(var(--cx-border));
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-border-hover;
+  background: rgb(var(--cx-border-hover));
 }
 
 @layer utilities {
   .glass {
-    @apply bg-bg-card/80 backdrop-blur-sm border border-border;
+    background: rgb(var(--cx-bg-card) / 0.85);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgb(var(--cx-border));
   }
-  
+
   .glass-strong {
-    @apply bg-bg-card/95 backdrop-blur-md border border-border;
+    background: rgb(var(--cx-bg-card) / 0.97);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgb(var(--cx-border));
+  }
+
+  .card-surface {
+    background: rgb(var(--cx-surface));
+    border: 1px solid rgb(var(--cx-border));
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.06);
   }
 }

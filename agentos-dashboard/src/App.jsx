@@ -32,13 +32,13 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', padding:'24px', background:'#0a0e1a', color:'#e7e9ee', fontFamily:'system-ui, sans-serif' }}>
-          <div style={{ background:'#171a21', border:'1px solid #ef4444', borderRadius:'12px', padding:'32px', maxWidth:'600px', width:'90%', textAlign:'left' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', padding:'24px', background:'rgb(var(--cx-bg))', color:'rgb(var(--cx-text))', fontFamily:'system-ui, sans-serif' }}>
+          <div style={{ background:'rgb(var(--cx-bg-card))', border:'1px solid #ef4444', borderRadius:'12px', padding:'32px', maxWidth:'600px', width:'90%', textAlign:'left' }}>
             <h2 style={{ color:'#ef4444', margin:'0 0 16px' }}>Application Error</h2>
-            <p style={{ color:'#8a8f9c', margin:'0 0 16px' }}>Something went wrong. Error logged to console.</p>
-            <details style={{ marginTop:'16px', color:'#8a8f9c' }}>
+            <p style={{ color:'rgb(var(--cx-text-muted))', margin:'0 0 16px' }}>Something went wrong. Error logged to console.</p>
+            <details style={{ marginTop:'16px', color:'rgb(var(--cx-text-muted))' }}>
               <summary style={{ cursor:'pointer', marginBottom:'8px' }}>Error Details</summary>
-              <pre style={{ background:'#1a1a2e', padding:'16px', borderRadius:'8px', overflow:'auto', maxHeight:'300px', fontSize:'12px', color:'#e7e9ee' }}>
+              <pre style={{ background:'rgb(var(--cx-bg-elevated))', padding:'16px', borderRadius:'8px', overflow:'auto', maxHeight:'300px', fontSize:'12px', color:'rgb(var(--cx-text))' }}>
                 {this.state.error && this.state.error.toString()}
                 {this.state.errorInfo && this.state.errorInfo.componentStack}
               </pre>
@@ -56,6 +56,17 @@ function App() {
   const [activeView, setActiveViewRaw] = useState(() => {
     try { return localStorage.getItem('lifeos.activeView') || 'dashboard' } catch { return 'dashboard' }
   })
+  const [theme, setThemeState] = useState(() => {
+    try { return localStorage.getItem('lifeos.theme') || 'light' } catch { return 'light' }
+  })
+  const setTheme = (t) => {
+    setThemeState(t)
+    try { localStorage.setItem('lifeos.theme', t) } catch {}
+  }
+  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+  }, [theme])
   const [plan, setPlan] = useState(emptyPlan)
   const [tasks, setTasks] = useState(emptyTasks)
   const [notes, setNotes] = useState(emptyNotes)
@@ -124,7 +135,7 @@ function App() {
 
   if (loading) {
     return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'#0a0e1a', color:'#5865f2', fontFamily:'system-ui' }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'rgb(var(--cx-bg))', color:'#5865f2', fontFamily:'system-ui' }}>
         Loading Life OS...
       </div>
     )
@@ -143,21 +154,21 @@ function App() {
         sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} />)}
         mainRender={(
           <>
-            <Header activeView={activeView} onViewChange={setActiveView} />
+            <Header activeView={activeView} onViewChange={setActiveView} onToggleTheme={toggleTheme} theme={theme} />
             <MainContent>
               {apiError && (
-                <div style={{ background:'rgba(239,68,68,0.1)', border:'1px solid #ef4444', color:'#fca5a5', padding:'12px 16px', borderRadius:'8px', marginBottom:'16px', fontSize:'13px' }}>
+                <div style={{ background:'rgb(var(--cx-danger) / 0.1)', border:'1px solid #ef4444', color:'#f87171', padding:'12px 16px', borderRadius:'8px', marginBottom:'16px', fontSize:'13px' }}>
                   ⚠ Backend unavailable: {apiError} — showing in-memory data. Actions won't persist until backend is up.
                 </div>
               )}
               {activeView === 'dashboard' && (
                 <>
-                <SystemStrip status={sysStatus} />
                 <AgentCard
                   plan={plan}
                   tasks={tasks.filter(t => t.status !== 'done').slice(0, 5)}
                   habits={habits.slice(0, 4)}
                   notes={notes.slice(0, 3)}
+                  status={sysStatus}
                   onQuickAction={() => {}}
                 />
                 </>

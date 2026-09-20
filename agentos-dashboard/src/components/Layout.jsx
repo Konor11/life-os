@@ -6,7 +6,7 @@ export function AppShell({ sidebarRender, mainRender }) {
     <div className="h-screen flex flex-col overflow-hidden">
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-64 flex-shrink-0 h-full overflow-y-auto"
-          style={{ background: 'rgba(23, 26, 33, 0.95)', backdropFilter: 'blur(8px)', borderRight: '1px solid #2a2f3a' }}
+          style={{ background: 'rgb(var(--cx-bg-card) / 0.92)', backdropFilter: 'blur(8px)', borderRight: '1px solid rgb(var(--cx-border))' }}
         >
           {sidebarRender}
         </aside>
@@ -18,7 +18,7 @@ export function AppShell({ sidebarRender, mainRender }) {
   )
 }
 
-export function Header({ activeView, onViewChange }) {
+export function Header({ activeView, onViewChange, onToggleTheme, theme }) {
   const views = [
     { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
     { id: 'plan', label: 'Plan', icon: 'Calendar' },
@@ -66,9 +66,18 @@ export function Header({ activeView, onViewChange }) {
           </button>
         ))}
       </nav>
-      <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-bg-elevated/50 rounded-lg text-xs text-text-muted font-mono">
-        <span className="w-2 h-2 rounded-full bg-success" />
-        <span>Online</span>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onToggleTheme}
+          title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-elevated/60 border border-border text-xs font-medium text-text-muted hover:text-text hover:border-border-hover transition-all"
+        >
+          {theme === 'dark' ? '☀️ Светлая' : '🌙 Тёмная'}
+        </button>
+        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-bg-elevated/50 rounded-lg text-xs text-text-muted font-mono">
+          <span className="w-2 h-2 rounded-full bg-success" />
+          <span>Online</span>
+        </div>
       </div>
     </header>
   )
