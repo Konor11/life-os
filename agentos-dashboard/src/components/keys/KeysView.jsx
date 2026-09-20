@@ -44,6 +44,12 @@ export function KeysView() {
   const copyName = async (v) => {
     try { await navigator.clipboard.writeText(v); setCopied(v); setTimeout(() => setCopied(null), 1200) } catch {}
   }
+  const copyVal = async (v, label) => {
+    try {
+      await navigator.clipboard.writeText(v)
+      setCopied(`val:${label}`); setTimeout(() => setCopied(null), 1500)
+    } catch {}
+  }
 
   const agentTabs = ['all', ...agents.map(a => a.id)]
   const activeAgent = tab === 'all' ? null : agents.find(a => a.id === tab)
@@ -62,11 +68,17 @@ export function KeysView() {
         </span>
         {k.desc && <span className="text-[11px] text-text-muted/70 mt-0.5">{k.desc}</span>}
       </div>
-      <button onClick={() => sync(agentId, k.env, k.value)} disabled={busy}
-        className={`ml-3 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 ${busy === `${agentId}:${k.env}` ? 'opacity-60' : ''}`}
-        style={{ background: busy === `${agentId}:${k.env}` ? '#444' : 'linear-gradient(180deg,#6a7bff,#5865f2)', color: '#fff' }}>
-        {busy === `${agentId}:${k.env}` ? 'Синхронизирую...' : '🔄 Синхронизировать'}
-      </button>
+      <div className="flex items-center gap-2 shrink-0">
+        <button onClick={() => copyVal(k.value, k.env)} title="Копировать значение ключа"
+          className={`px-2.5 py-1.5 rounded-lg text-xs border shrink-0 ${copied === `val:${k.env}` ? 'text-success border-success/40' : 'text-text-muted border-border hover:text-accent hover:border-accent/50'}`}>
+          {copied === `val:${k.env}` ? '✓ Скопировано' : '⧉ Ключ'}
+        </button>
+        <button onClick={() => sync(agentId, k.env, k.value)} disabled={busy}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium shrink-0 ${busy === `${agentId}:${k.env}` ? 'opacity-60' : ''}`}
+          style={{ background: busy === `${agentId}:${k.env}` ? '#444' : 'linear-gradient(180deg,#6a7bff,#5865f2)', color: '#fff' }}>
+          {busy === `${agentId}:${k.env}` ? 'Синхронизирую...' : '🔄 Синхронизировать'}
+        </button>
+      </div>
     </div>
   )
 
@@ -110,6 +122,10 @@ export function KeysView() {
                   </button>
                   <span className="text-[11px] text-text-muted">{k.length} символов · {k.masked}</span>
                 </div>
+                <button onClick={() => copyVal(k.value, k.env)} title="Копировать значение ключа"
+                  className={`px-2.5 py-1.5 rounded-lg text-xs border shrink-0 ${copied === `val:${k.env}` ? 'text-success border-success/40' : 'text-text-muted border-border hover:text-accent hover:border-accent/50'}`}>
+                  {copied === `val:${k.env}` ? '✓ Скопировано' : '⧉ Ключ'}
+                </button>
               </div>
             ))}
             {allKeys.length === 0 && <p className="text-xs text-text-muted">Не найдено ключей.</p>}
