@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
-import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, SystemStrip, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
+import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, SystemStrip, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
@@ -53,7 +53,9 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
-  const [activeView, setActiveView] = useState('dashboard')
+  const [activeView, setActiveViewRaw] = useState(() => {
+    try { return localStorage.getItem('lifeos.activeView') || 'dashboard' } catch { return 'dashboard' }
+  })
   const [plan, setPlan] = useState(emptyPlan)
   const [tasks, setTasks] = useState(emptyTasks)
   const [notes, setNotes] = useState(emptyNotes)
@@ -89,6 +91,10 @@ function App() {
   const updateMemory = makeUpdate('memory', setMemory, saveMemory)
   const updateCalendar = makeUpdate('calendar', setCalendar, saveCalendar)
   const updateProjects = makeUpdate('projects', setProjects, saveProjects)
+  const setActiveView = (v) => {
+    try { localStorage.setItem('lifeos.activeView', v) } catch {}
+    setActiveViewRaw(v)
+  }
 
   useEffect(() => {
     fetch('/api/status').then(r => r.json()).then(d => setSysStatus(d)).catch(() => {})
@@ -175,7 +181,6 @@ function App() {
               {activeView === 'files' && <FilesTab />}
               {activeView === 'chat' && <ChatTab />}
               {activeView === 'settings' && <SettingsTab />}
-              {activeView === 'desktop' && <DesktopView />}
               {activeView === 'agents' && <AgentsView />}
               {activeView === 'keys' && <KeysView />}
               {activeView === 'harness' && <HarnessView />}

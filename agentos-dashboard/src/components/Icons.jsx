@@ -108,6 +108,18 @@ export function Icon({ name, size = 20, className = '', style }) {
         <path d="M8 12v8h5" />
       </svg>
     ),
+    Expand: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
+        <path d="M3 3h5v15h-5z" />
+        <path d="M16 3h5v15h-5z" />
+      </svg>
+    ),
+    ShrinkDown: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
+        <path d="M3 3h18v15h-18z" />
+        <path d="M12 18v3h0" />
+      </svg>
+    ),
     FileText: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
