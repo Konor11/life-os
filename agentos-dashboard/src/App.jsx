@@ -1,6 +1,14 @@
-import React, { useState, useEffect } from 'react'
-import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, AutomationsView, SystemStrip, KeysView, HarnessView, FinancesView, HealthView, LearningView, ContactsView, AutomationsView as AutomationsDashboardView, MemoryView } from './components'
+import React, { useState, useEffect, Suspense, lazy } from 'react'
+import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, AutomationsView, SystemStrip, KeysView, HarnessView } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory } from './data/api'
+
+// Lazy-load all new views to force chunk creation and prevent tree-shaking
+const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
+const HealthView = lazy(() => import('./components/HealthView').then(m => ({ default: m.HealthView })))
+const LearningView = lazy(() => import('./components/LearningView').then(m => ({ default: m.LearningView })))
+const ContactsView = lazy(() => import('./components/ContactsView').then(m => ({ default: m.ContactsView })))
+const AutomationsDashboardView = lazy(() => import('./components/AutomationsDashboardView').then(m => ({ default: m.AutomationsDashboardView })))
+const MemoryView = lazy(() => import('./components/MemoryView').then(m => ({ default: m.MemoryView })))
 
 const emptyPlan = { date: new Date().toISOString().slice(0,10), timeBlocks: [], priorities: [], metrics: { deepWorkHours: 0, meetingsHours: 0 } }
 const emptyTasks = []
@@ -12,6 +20,27 @@ const emptyLearning = { courses: [], topics: [], progress: [], resources: [] }
 const emptyContacts = { people: [], organizations: [], interactions: [], tags: [] }
 const emptyAutomations = { workflows: [], triggers: [], runs: [] }
 const emptyMemory = { documents: [], embeddings: [], queries: [] }
+
+// Force static reference to all views to prevent tree-shaking
+const VIEW_REGISTRY = {
+  plan: PlanView,
+  tasks: TasksView,
+  knowledge: KnowledgeView,
+  habits: HabitsView,
+  finances: FinancesView,
+  health: HealthView,
+  learning: LearningView,
+  contacts: ContactsView,
+  automations: AutomationsDashboardView,
+  memory: MemoryView,
+  desktop: DesktopView,
+  agents: AgentsView,
+  keys: KeysView,
+  harness: HarnessView,
+}
+// Force inclusion by actually using the registry in render
+const __USED_VIEWS__ = Object.values(VIEW_REGISTRY)
+if (typeof window !== 'undefined') { window.__VIEW_REGISTRY__ = VIEW_REGISTRY }
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null } }
@@ -125,12 +154,12 @@ function App() {
               {activeView === 'tasks' && <TasksView tasks={tasks} onUpdate={(t) => { setTasks(t); saveTasks(t).catch(e => console.error(e)) }} />}
               {activeView === 'knowledge' && <KnowledgeView notes={notes} onUpdate={(n) => { setNotes(n); saveNotes(n).catch(e => console.error(e)) }} />}
               {activeView === 'habits' && <HabitsView habits={habits} onUpdate={(h) => { setHabits(h); saveHabits(h).catch(e => console.error(e)) }} />}
-              {activeView === 'finances' && <FinancesView finances={finances} onUpdate={(f) => { setFinances(f); saveFinances(f).catch(e => console.error(e)) }} />}
-              {activeView === 'health' && <HealthView health={health} onUpdate={(h) => { setHealth(h); saveHealth(h).catch(e => console.error(e)) }} />}
-              {activeView === 'learning' && <LearningView learning={learning} onUpdate={(l) => { setLearning(l); saveLearning(l).catch(e => console.error(e)) }} />}
-              {activeView === 'contacts' && <ContactsView contacts={contacts} onUpdate={(c) => { setContacts(c); saveContacts(c).catch(e => console.error(e)) }} />}
-              {activeView === 'automations' && <AutomationsDashboardView automations={automations} onUpdate={(a) => { setAutomations(a); saveAutomations(a).catch(e => console.error(e)) }} />}
-              {activeView === 'memory' && <MemoryView memory={memory} onUpdate={(m) => { setMemory(m); saveMemory(m).catch(e => console.error(e)) }} />}
+              {activeView === 'finances' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Finances...</div>}><FinancesView finances={finances} onUpdate={(f) => { setFinances(f); saveFinances(f).catch(e => console.error(e)) }} /></Suspense>}
+              {activeView === 'health' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Health...</div>}><HealthView health={health} onUpdate={(h) => { setHealth(h); saveHealth(h).catch(e => console.error(e)) }} /></Suspense>}
+                            {activeView === 'learning' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Learning...</div>}><LearningView learning={learning} onUpdate={(l) => { setLearning(l); saveLearning(l).catch(e => console.error(e)) }} /></Suspense>}
+                            {activeView === 'contacts' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Contacts...</div>}><ContactsView contacts={contacts} onUpdate={(c) => { setContacts(c); saveContacts(c).catch(e => console.error(e)) }} /></Suspense>}
+                            {activeView === 'automations' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Automations...</div>}><AutomationsDashboardView automations={automations} onUpdate={(a) => { setAutomations(a); saveAutomations(a).catch(e => console.error(e)) }} /></Suspense>}
+                            {activeView === 'memory' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Memory...</div>}><MemoryView memory={memory} onUpdate={(m) => { setMemory(m); saveMemory(m).catch(e => console.error(e)) }} /></Suspense>}
               {activeView === 'desktop' && <DesktopView />}
               {activeView === 'agents' && <AgentsView />}
               {activeView === 'automations' && <AutomationsView />}
