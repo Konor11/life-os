@@ -1,6 +1,6 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, SystemStrip, KeysView, HarnessView } from './components'
-import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar } from './data/api'
+import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -10,6 +10,7 @@ const ContactsView = lazy(() => import('./components/ContactsView').then(m => ({
 const AutomationsDashboardView = lazy(() => import('./components/AutomationsDashboardView').then(m => ({ default: m.AutomationsDashboardView })))
 const MemoryView = lazy(() => import('./components/MemoryView').then(m => ({ default: m.MemoryView })))
 const CalendarView = lazy(() => import('./components/CalendarView').then(m => ({ default: m.CalendarView })))
+const ProjectsView = lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })))
 
 const emptyPlan = { date: new Date().toISOString().slice(0,10), timeBlocks: [], priorities: [], metrics: { deepWorkHours: 0, meetingsHours: 0 } }
 const emptyTasks = []
@@ -22,6 +23,7 @@ const emptyContacts = { people: [], organizations: [], interactions: [], tags: [
 const emptyAutomations = { workflows: [], triggers: [], runs: [] }
 const emptyMemory = { documents: [], embeddings: [], queries: [] }
 const emptyCalendar = { events: [], calendars: [] }
+const emptyProjects = { projects: [] }
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null } }
@@ -63,11 +65,12 @@ function App() {
   const [automations, setAutomations] = useState(emptyAutomations)
   const [memory, setMemory] = useState(emptyMemory)
   const [calendar, setCalendar] = useState(emptyCalendar)
+  const [projects, setProjects] = useState(emptyProjects)
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState(null)
   const [sysStatus, setSysStatus] = useState(null)
   // Live mirror of all domain data — lets onUpdate handlers accept both values and updater functions
-  const dataRef = React.useRef({ plan: emptyPlan, tasks: emptyTasks, notes: emptyNotes, habits: emptyHabits, finances: emptyFinances, health: emptyHealth, learning: emptyLearning, contacts: emptyContacts, automations: emptyAutomations, memory: emptyMemory, calendar: emptyCalendar })
+  const dataRef = React.useRef({ plan: emptyPlan, tasks: emptyTasks, notes: emptyNotes, habits: emptyHabits, finances: emptyFinances, health: emptyHealth, learning: emptyLearning, contacts: emptyContacts, automations: emptyAutomations, memory: emptyMemory, calendar: emptyCalendar, projects: emptyProjects })
   const makeUpdate = (key, setter, saver) => (v) => {
     const next = typeof v === 'function' ? v(dataRef.current[key]) : v
     dataRef.current[key] = next
@@ -85,6 +88,7 @@ function App() {
   const updateAutomations = makeUpdate('automations', setAutomations, saveAutomations)
   const updateMemory = makeUpdate('memory', setMemory, saveMemory)
   const updateCalendar = makeUpdate('calendar', setCalendar, saveCalendar)
+  const updateProjects = makeUpdate('projects', setProjects, saveProjects)
 
   useEffect(() => {
     fetch('/api/status').then(r => r.json()).then(d => setSysStatus(d)).catch(() => {})
@@ -105,6 +109,7 @@ function App() {
         if (d.contacts) { setContacts(d.contacts); dataRef.current.contacts = d.contacts }
         if (d.automations) { setAutomations(d.automations); dataRef.current.automations = d.automations }
         if (d.calendar) { setCalendar(d.calendar); dataRef.current.calendar = d.calendar }
+        if (d.projects) { setProjects(d.projects); dataRef.current.projects = d.projects }
       })
       .catch(e => { if (active) { console.error('API load failed:', e); setApiError(e.message) } })
       .finally(() => { if (active) setLoading(false) })
@@ -162,6 +167,7 @@ function App() {
               {activeView === 'automations' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Automations...</div>}><AutomationsDashboardView automations={automations} onUpdate={updateAutomations} /></Suspense>}
               {activeView === 'memory' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Memory...</div>}><MemoryView memory={memory} onUpdate={updateMemory} /></Suspense>}
               {activeView === 'calendar' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Calendar...</div>}><CalendarView calendar={calendar} onUpdate={updateCalendar} /></Suspense>}
+              {activeView === 'projects' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Projects...</div>}><ProjectsView projects={projects.projects} onUpdate={updateProjects} /></Suspense>}
               {activeView === 'desktop' && <DesktopView />}
               {activeView === 'agents' && <AgentsView />}
               {activeView === 'keys' && <KeysView />}

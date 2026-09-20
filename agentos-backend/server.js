@@ -30,6 +30,7 @@ const DEFAULT_FILES = {
   automations: { workflows: [], triggers: [], runs: [] },
   memory: { documents: [], embeddings: [], queries: [] },
   calendar: { events: [], calendars: [] },
+  projects: { projects: [] },
 }
 
 async function loadJson(name) {
@@ -96,6 +97,7 @@ const PROFILE_MODELS = {
   crm_agent: 'google/gemma-4-26b-a4b-it:free',
   automation_engineer: 'nvidia/nemotron-3-ultra-550b-a55b:free',
   calendar_manager: 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  project_manager: 'nvidia/nemotron-3-ultra-550b-a55b:free',
 }
 
 // --- FS safety: resolve & ensure path under an allowed root ---
@@ -123,6 +125,7 @@ app.get('/api/contacts', async (_, res) => res.json(await loadJson('contacts')))
 app.get('/api/automations', async (_, res) => res.json(await loadJson('automations')))
 app.get('/api/memory', async (_, res) => res.json(await loadJson('memory')))
 app.get('/api/calendar', async (_, res) => res.json(await loadJson('calendar')))
+app.get('/api/projects', async (_, res) => res.json(await loadJson('projects')))
 app.post('/api/plan', async (req, res) => { await saveJson('plan', req.body); res.json({ ok: true }) })
 app.post('/api/tasks', async (req, res) => { await saveJson('tasks', req.body); res.json({ ok: true }) })
 app.post('/api/notes', async (req, res) => { await saveJson('notes', req.body); res.json({ ok: true }) })
@@ -134,11 +137,12 @@ app.post('/api/contacts', async (req, res) => { await saveJson('contacts', req.b
 app.post('/api/automations', async (req, res) => { await saveJson('automations', req.body); res.json({ ok: true }) })
 app.post('/api/memory', async (req, res) => { await saveJson('memory', req.body); res.json({ ok: true }) })
 app.post('/api/calendar', async (req, res) => { await saveJson('calendar', req.body); res.json({ ok: true }) })
+app.post('/api/projects', async (req, res) => { await saveJson('projects', req.body); res.json({ ok: true }) })
 app.get('/api/all', async (_, res) => res.json({
   plan: await loadJson('plan'), tasks: await loadJson('tasks'), notes: await loadJson('notes'), habits: await loadJson('habits'),
   finances: await loadJson('finances'), health: await loadJson('health'), learning: await loadJson('learning'),
   contacts: await loadJson('contacts'), automations: await loadJson('automations'), memory: await loadJson('memory'),
-  calendar: await loadJson('calendar')
+  calendar: await loadJson('calendar'), projects: await loadJson('projects')
 }))
 
 // ---- Keys manager: list available API keys & sync into agent configs ----
@@ -538,6 +542,7 @@ const DOMAIN_AGENTS = {
   contacts: 'crm_agent',
   automations: 'automation_engineer',
   calendar: 'calendar_manager',
+  projects: 'project_manager',
 }
 
 for (const [domain, profile] of Object.entries(DOMAIN_AGENTS)) {
