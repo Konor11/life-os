@@ -1,0 +1,184 @@
+admin.dktunnel.xyz {
+    handle {
+        reverse_proxy web-frontend:80
+    }
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3004 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+    handle /ws/* {
+        reverse_proxy 127.0.0.1:3004
+    }
+}
+
+hermes.dktunnel.xyz {
+    reverse_proxy 127.0.0.1:9119
+}
+
+workspace.dktunnel.xyz {
+    reverse_proxy 127.0.0.1:3001
+}
+
+# n8n self-hosted workflow automation on its own subdomain (needs host-based webhook
+# routing: WEBHOOK_URL = https://n8n.dktunnel.xyz/). Not exposed publicly — Reachable
+# only from within Life OS (Referer os.dktunnel.xyz) or directly by the owner.
+n8n.dktunnel.xyz {
+    @fromLifeOS {
+        header Referer *os.dktunnel.xyz*
+    }
+    @self {
+        header Referer *n8n.dktunnel.xyz*
+    }
+    # n8n is embedded in an iframe; browsers send its SPA asset + REST requests with a
+    # BLANK Referer (standard for framed documents). The assets are immutable (hashed)
+    # and n8n's /rest API is independently protected by its own session/JWT auth, so
+    # opening these paths is safe. The entry point "/" (login) stays Referer-gated.
+    @framed {
+        path /assets/*
+        path /static/*
+    }
+    @framedApi {
+        path /rest/*
+    }
+    handle @fromLifeOS {
+        reverse_proxy 127.0.0.1:5678
+    }
+    handle @self {
+        reverse_proxy 127.0.0.1:5678
+    }
+    handle @framed {
+        reverse_proxy 127.0.0.1:5678
+    }
+    handle @framedApi {
+        reverse_proxy 127.0.0.1:5678
+    }
+    respond 403
+}
+
+# OpenCode on its OWN subdomain, served at the ROOT path (no /agent/opencode/ prefix).
+# The v2 web SPA routes strictly on window.location.pathname.split("/"): it requires a
+# clean "/<base64dir>/session/<id>" path, otherwise it always falls back to {type:"home"}
+# (the "only 2 buttons" empty screen). Behind a path prefix the app cannot open sessions.
+# PROTECTION: this subdomain is private — only reachable through Life OS. Caddy lets
+# through requests whose Referer is Life OS (os.dktunnel.xyz — the parent iframe navigate)
+# or itself (oc.dktunnel.xyz — same-origin API/assets from inside the SPA). Direct visits
+# (no Referer or a foreign one) get 403, so the UI is not exposed to the public internet.
+oc.dktunnel.xyz {
+    @fromLifeOS {
+        header Referer *os.dktunnel.xyz*
+    }
+    @self {
+        header Referer *oc.dktunnel.xyz*
+    }
+    handle @fromLifeOS {
+        reverse_proxy 127.0.0.1:4096
+    }
+    handle @self {
+        reverse_proxy 127.0.0.1:4096
+    }
+    respond 403
+}
+
+# DeepSeek (dsh) — SAME pattern as opencode: it is a v2-style SPA whose JS calls
+# ROOT-absolute paths (/plugins/*, /api/*, /open-in-app/*). Under a path prefix
+# those land on the orchestrator -> 403. So it gets its own private subdomain.
+# Only reachable WITHIN Life OS: requests must carry Referer from os.dktunnel.xyz
+# (parent iframe navigate) or itself (same-origin SPA/API). Direct visits -> 403.
+ds.dktunnel.xyz {
+    @fromLifeOS {
+        header Referer *os.dktunnel.xyz*
+    }
+    @self {
+        header Referer *ds.dktunnel.xyz*
+    }
+    @authed {
+        header Cookie *dsh-auth*
+    }
+    handle @fromLifeOS {
+        reverse_proxy 172.18.0.1:3090
+    }
+    handle @self {
+        reverse_proxy 172.18.0.1:3090
+    }
+    handle @authed {
+        reverse_proxy 172.18.0.1:3090
+    }
+    respond 403
+}
+
+# OpenClaw self-hosted agent gateway on its own subdomain.
+# Control UI served over gateway HTTP/WS on 127.0.0.1:18789. WS auth (challenge +
+# token from ~/.openclaw/openclaw.json gateway.auth) protects the real session; HTTP
+# only serves the SPA. Not exposed publicly — reachable only from Life OS.
+openclaw.dktunnel.xyz {
+    # Strip OpenClaw's clickjacking headers when proxying so the Control UI can be
+    # embedded as an iframe from Life OS (os.dktunnel.xyz). The gateway hardcodes
+    # `frame-ancestors 'none'` + `X-Frame-Options: DENY` with no embed option; the
+    # subdomain stays protected by the Referer gate below + WS token auth.
+    header {
+        -Content-Security-Policy
+        -X-Frame-Options
+    }
+    @fromLifeOS {
+        header Referer *os.dktunnel.xyz*
+    }
+    @self {
+        header Referer *openclaw.dktunnel.xyz*
+    }
+    @framed {
+        path /assets/*
+        path /favicon*
+        path /manifest.webmanifest
+        path /apple-touch-icon.png
+    }
+    # The Control UI connects its live session over a WebSocket at the root path "/".
+    # Browsers send the WS handshake with an Origin header (same-origin here), and often
+    # a BLANK Referer — so Referer-gating alone would 403 the socket. Match on Origin.
+    @ws {
+        header Origin *openclaw.dktunnel.xyz*
+    }
+    handle @fromLifeOS {
+        reverse_proxy 127.0.0.1:18789
+    }
+    handle @self {
+        reverse_proxy 127.0.0.1:18789
+    }
+    handle @framed {
+        reverse_proxy 127.0.0.1:18789
+    }
+    handle @ws {
+        reverse_proxy 127.0.0.1:18789
+    }
+    respond 403
+}
+
+# Agent web UI asset routing: SPA assets are requested with absolute paths (/assets/...)
+# from within the iframe; route them to the right backend based on the Referer.
+os.dktunnel.xyz {
+    handle /api/* {
+        reverse_proxy 127.0.0.1:3004
+    }
+    handle /ws/* {
+        reverse_proxy 127.0.0.1:3004
+    }
+    handle /ocapi/* {
+        uri replace /ocapi /api
+        reverse_proxy 127.0.0.1:4096
+    }
+    handle /agent/openclaw/* {
+        reverse_proxy 127.0.0.1:18789
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3002
+        # never cache index.html so browsers pick up freshly built assets
+        header Cache-Control "no-store, no-cache, max-age=0"
+    }
+    header {
+        Content-Security-Policy "default-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' wss://os.dktunnel.xyz https://os.dktunnel.xyz https://oc.dktunnel.xyz https://ds.dktunnel.xyz https://n8n.dktunnel.xyz https://openclaw.dktunnel.xyz wss://openclaw.dktunnel.xyz; frame-src 'self' https://workspace.dktunnel.xyz https://os.dktunnel.xyz https://oc.dktunnel.xyz https://ds.dktunnel.xyz https://n8n.dktunnel.xyz https://openclaw.dktunnel.xyz"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+}

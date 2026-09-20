@@ -318,18 +318,14 @@ export function ChatPanel({ fullscreen = false }) {
             ⏳ Запускаю {engine} web-интерфейс...
           </div>
         ) : engine === 'openclaw' ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-4 text-text-muted" style={{ minHeight: '420px' }}>
-            <div className="text-6xl mb-2" style={{ lineHeight: 1 }}>🧠</div>
-            <div className="text-base font-semibold text-text">OpenClaw Control</div>
-            <div className="text-sm max-w-md text-center">
-              OpenClaw защищён от встраивания во фрейм (frame-ancestors) — он открывается в отдельной вкладке.
-              Секрет входа — токен gateway (см. Harness → OpenClaw → Ключи).
-            </div>
-            <a href={openclawWebBase} target="_blank" rel="noopener"
-              className="px-4 py-2 rounded-lg bg-accent text-white text-sm font-medium">
-              Открыть OpenClaw в новой вкладке →
-            </a>
-          </div>
+          <iframe
+            src={openclawWebBase}
+            className="flex-1 w-full border-0"
+            style={{ minHeight: '420px', background: '#fff' }}
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
+            allow="clipboard-read; clipboard-write"
+            title="OpenClaw Control"
+          />
         ) : (
           <iframe
                       src={engine === 'opencode' && webSessionId
