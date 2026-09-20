@@ -3,25 +3,6 @@ import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
 
-// Force-include lazy views so Vite/ESBuild doesn't tree-shake them
-// (they're only rendered conditionally via activeView === 'xxx')
-import './components/FinancesView'
-import './components/HealthView'
-import './components/LearningView'
-import './components/ContactsView'
-import './components/AutomationsDashboardView'
-import './components/MemoryView'
-
-// Force reference to prevent tree-shaking
-export const __forceViews = [
-  './components/FinancesView',
-  './components/HealthView',
-  './components/LearningView',
-  './components/ContactsView',
-  './components/AutomationsDashboardView',
-  './components/MemoryView',
-]
-
 console.log('Life OS: main.jsx executing...')
 
 const rootEl = document.getElementById('root')

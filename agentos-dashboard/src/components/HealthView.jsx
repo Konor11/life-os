@@ -86,7 +86,8 @@ export function HealthView({ health, onUpdate }) {
 }
 
 function MetricList({ metrics, onUpdate }) {
-  const handleUpdate = (id, updates) => onUpdate(h => ({ ...h, metrics: h.metrics.map(m => m.id === id ? { ...m, ...updates } : m) }))
+  const handleUpdate = (id, updates) => onUpdate(h => ({ ...h, metrics: (h.metrics || []).map(m => m.id === id ? { ...m, ...updates } : m) }))
+  const handleDelete = (id) => onUpdate(h => ({ ...h, metrics: (h.metrics || []).filter(m => m.id !== id) }))
   return (
     <div className="glass p-4 rounded-xl">
       {metrics.length === 0 ? (
@@ -97,7 +98,7 @@ function MetricList({ metrics, onUpdate }) {
       ) : (
         <div className="space-y-2">
           {metrics.map(m => (
-            <MetricRow key={m.id} metric={m} onUpdate={handleUpdate} />
+            <MetricRow key={m.id} metric={m} onUpdate={handleUpdate} onDelete={handleDelete} />
           ))}
         </div>
       )}
@@ -121,7 +122,7 @@ function MetricCard({ label, value, icon, color }) {
   )
 }
 
-function MetricRow({ metric, onUpdate }) {
+function MetricRow({ metric, onUpdate, onDelete }) {
   return (
     <div className="glass p-4 rounded-lg hover:bg-bg-elevated/50 transition-colors group flex items-center justify-between">
       <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -139,7 +140,7 @@ function MetricRow({ metric, onUpdate }) {
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
         <button className="p-1.5 rounded hover:bg-bg-elevated text-text-muted"><Icon name="Edit" size={14} /></button>
-        <button className="p-1.5 rounded hover:bg-danger/10 text-danger"><Icon name="Trash2" size={14} /></button>
+        <button onClick={() => onDelete(metric.id)} className="p-1.5 rounded hover:bg-danger/10 text-danger"><Icon name="Trash2" size={14} /></button>
       </div>
     </div>
   )

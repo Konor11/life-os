@@ -76,15 +76,15 @@ export function AutomationsDashboardView({ automations, onUpdate }) {
 }
 
 function WorkflowList({ workflows, onUpdate, onEdit }) {
-  const handleUpdate = (id, updates) => onUpdate(a => ({ ...a, workflows: a.workflows.map(w => w.id === id ? { ...w, ...updates } : w) }))
+  const handleUpdate = (id, updates) => onUpdate(a => ({ ...a, workflows: a.workflows.map(w => w.id === id ? { ...w, ...(typeof updates === 'function' ? updates(w) : updates) } : w) }))
   const handleDelete = (id) => onUpdate(a => ({ ...a, workflows: a.workflows.filter(w => w.id !== id) }))
   const handleToggle = (id) => onUpdate(a => ({ ...a, workflows: a.workflows.map(w => w.id === id ? { ...w, enabled: !w.enabled } : w) }))
-  const handleRun = async (id) => {
+  const handleRun = (id) => {
     handleUpdate(id, { status: 'running', lastRun: new Date().toISOString() })
     // Simulate run
     setTimeout(() => {
       const success = Math.random() > 0.2
-      handleUpdate(id, { status: success ? 'success' : 'failed', runs: (automations.workflows.find(w => w.id === id)?.runs || 0) + 1 })
+      handleUpdate(id, (w) => ({ status: success ? 'success' : 'failed', runs: (w.runs || 0) + 1 }))
     }, 1000)
   }
 

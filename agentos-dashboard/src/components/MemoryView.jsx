@@ -145,18 +145,24 @@ function SearchPanel({ query, setQuery, memory, onUpdate, recentQueries }) {
   const [results, setResults] = useState([])
   const [loading, setLoading] = useState(false)
 
-  const handleSearch = async () => {
-    if (!query.trim()) return
+  const handleSearch = async (q) => {
+    const term = (q !== undefined ? q : query).trim()
+    if (!term) return
     setLoading(true)
-    const res = await fetch('/api/memory/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, limit: 10 })
-    })
-    const data = await res.json()
-    setResults(data.results || [])
-    setLoading(false)
-    onUpdate(m => ({ ...m, queries: [{ q: query, results: data.results?.length || 0, at: new Date().toISOString() }, ...m.queries].slice(0, 50) }))
+    try {
+      const res = await fetch('/api/memory/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: term, limit: 10 })
+      })
+      const data = await res.json()
+      setResults(data.results || [])
+      onUpdate(m => ({ ...m, queries: [{ q: term, results: data.results?.length || 0, at: new Date().toISOString() }, ...(m.queries || [])].slice(0, 50) }))
+    } catch (e) {
+      console.error('Memory search failed:', e)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -207,7 +213,7 @@ function SearchPanel({ query, setQuery, memory, onUpdate, recentQueries }) {
           <h4 className="font-semibold text-text mb-3">Recent Queries</h4>
           <div className="flex flex-wrap gap-2">
             {recentQueries.map(q => (
-              <button key={q.q} onClick={() => { setQuery(q.q); handleSearch(); }} className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded-lg hover:border-accent/50 hover:text-accent transition-colors truncate max-w-xs">
+              <button key={q.q} onClick={() => { setQuery(q.q); handleSearch(q.q); }} className="px-3 py-1.5 text-sm bg-bg-elevated border border-border rounded-lg hover:border-accent/50 hover:text-accent transition-colors truncate max-w-xs">
                 {q.q}
               </button>
             ))}
@@ -234,7 +240,7 @@ function IngestPanel({ memory, onUpdate }) {
       metadata: { bulk: true, chunkSize: c.length },
       created: new Date().toISOString()
     }))
-    onUpdate(m => ({ ...m, documents: [...newDocs, ...m.documents] }))
+    onUpdate(m => ({ ...m, documents: [...newDocs, ...(m.documents || [])] }))
     setBulkText('')
     setIngesting(false)
   }
@@ -270,16 +276,6 @@ function IngestPanel({ memory, onUpdate }) {
           </button>
           <span className="text-xs text-text-muted">{bulkText.length} chars • {bulkText.split('\n\n').filter(c => c.trim().length > 50).length} chunks ready</span>
         </div>
-      </div>
-
-      <div className="pt-6 border-t border-border">
-        <h4 className="font-medium text-text mb-3">Single Document</h4>
-        <DocumentForm
-          doc={{ content: '', source: 'manual', metadata: {} }}
-          onChange={d => {}}
-          onSubmit={() => {}}
-          onCancel={() => {}}
-        />
       </div>
     </div>
   )

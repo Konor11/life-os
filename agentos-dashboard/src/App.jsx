@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
-import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, AutomationsView, SystemStrip, KeysView, HarnessView } from './components'
+import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, SystemStrip, KeysView, HarnessView } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory } from './data/api'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
@@ -20,27 +20,6 @@ const emptyLearning = { courses: [], topics: [], progress: [], resources: [] }
 const emptyContacts = { people: [], organizations: [], interactions: [], tags: [] }
 const emptyAutomations = { workflows: [], triggers: [], runs: [] }
 const emptyMemory = { documents: [], embeddings: [], queries: [] }
-
-// Force static reference to all views to prevent tree-shaking
-const VIEW_REGISTRY = {
-  plan: PlanView,
-  tasks: TasksView,
-  knowledge: KnowledgeView,
-  habits: HabitsView,
-  finances: FinancesView,
-  health: HealthView,
-  learning: LearningView,
-  contacts: ContactsView,
-  automations: AutomationsDashboardView,
-  memory: MemoryView,
-  desktop: DesktopView,
-  agents: AgentsView,
-  keys: KeysView,
-  harness: HarnessView,
-}
-// Force inclusion by actually using the registry in render
-const __USED_VIEWS__ = Object.values(VIEW_REGISTRY)
-if (typeof window !== 'undefined') { window.__VIEW_REGISTRY__ = VIEW_REGISTRY }
 
 class ErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null } }
@@ -84,6 +63,24 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState(null)
   const [sysStatus, setSysStatus] = useState(null)
+  // Live mirror of all domain data — lets onUpdate handlers accept both values and updater functions
+  const dataRef = React.useRef({ plan: emptyPlan, tasks: emptyTasks, notes: emptyNotes, habits: emptyHabits, finances: emptyFinances, health: emptyHealth, learning: emptyLearning, contacts: emptyContacts, automations: emptyAutomations, memory: emptyMemory })
+  const makeUpdate = (key, setter, saver) => (v) => {
+    const next = typeof v === 'function' ? v(dataRef.current[key]) : v
+    dataRef.current[key] = next
+    setter(next)
+    if (saver) saver(next).catch(e => console.error(`Save ${key} failed:`, e))
+  }
+  const updatePlan = makeUpdate('plan', setPlan, savePlan)
+  const updateTasks = makeUpdate('tasks', setTasks, saveTasks)
+  const updateNotes = makeUpdate('notes', setNotes, saveNotes)
+  const updateHabits = makeUpdate('habits', setHabits, saveHabits)
+  const updateFinances = makeUpdate('finances', setFinances, saveFinances)
+  const updateHealth = makeUpdate('health', setHealth, saveHealth)
+  const updateLearning = makeUpdate('learning', setLearning, saveLearning)
+  const updateContacts = makeUpdate('contacts', setContacts, saveContacts)
+  const updateAutomations = makeUpdate('automations', setAutomations, saveAutomations)
+  const updateMemory = makeUpdate('memory', setMemory, saveMemory)
 
   useEffect(() => {
     fetch('/api/status').then(r => r.json()).then(d => setSysStatus(d)).catch(() => {})
@@ -94,16 +91,16 @@ function App() {
     fetchAll()
       .then(d => {
         if (!active) return
-        if (d.plan) setPlan(d.plan)
-        if (d.tasks) setTasks(d.tasks)
-        if (d.notes) setNotes(d.notes)
-        if (d.habits) setHabits(d.habits)
-        if (d.finances) setFinances(d.finances)
-        if (d.health) setHealth(d.health)
-        if (d.learning) setLearning(d.learning)
-        if (d.contacts) setContacts(d.contacts)
-        if (d.automations) setAutomations(d.automations)
-        if (d.memory) setMemory(d.memory)
+        if (d.plan) { setPlan(d.plan); dataRef.current.plan = d.plan }
+        if (d.tasks) { setTasks(d.tasks); dataRef.current.tasks = d.tasks }
+        if (d.notes) { setNotes(d.notes); dataRef.current.notes = d.notes }
+        if (d.habits) { setHabits(d.habits); dataRef.current.habits = d.habits }
+        if (d.finances) { setFinances(d.finances); dataRef.current.finances = d.finances }
+        if (d.health) { setHealth(d.health); dataRef.current.health = d.health }
+        if (d.learning) { setLearning(d.learning); dataRef.current.learning = d.learning }
+        if (d.contacts) { setContacts(d.contacts); dataRef.current.contacts = d.contacts }
+        if (d.automations) { setAutomations(d.automations); dataRef.current.automations = d.automations }
+        if (d.memory) { setMemory(d.memory); dataRef.current.memory = d.memory }
       })
       .catch(e => { if (active) { console.error('API load failed:', e); setApiError(e.message) } })
       .finally(() => { if (active) setLoading(false) })
@@ -150,19 +147,18 @@ function App() {
                 />
                 </>
               )}
-              {activeView === 'plan' && <PlanView plan={plan} onUpdate={(p) => { setPlan(p); savePlan(p).catch(e => console.error(e)) }} />}
-              {activeView === 'tasks' && <TasksView tasks={tasks} onUpdate={(t) => { setTasks(t); saveTasks(t).catch(e => console.error(e)) }} />}
-              {activeView === 'knowledge' && <KnowledgeView notes={notes} onUpdate={(n) => { setNotes(n); saveNotes(n).catch(e => console.error(e)) }} />}
-              {activeView === 'habits' && <HabitsView habits={habits} onUpdate={(h) => { setHabits(h); saveHabits(h).catch(e => console.error(e)) }} />}
-              {activeView === 'finances' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Finances...</div>}><FinancesView finances={finances} onUpdate={(f) => { setFinances(f); saveFinances(f).catch(e => console.error(e)) }} /></Suspense>}
-              {activeView === 'health' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Health...</div>}><HealthView health={health} onUpdate={(h) => { setHealth(h); saveHealth(h).catch(e => console.error(e)) }} /></Suspense>}
-                            {activeView === 'learning' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Learning...</div>}><LearningView learning={learning} onUpdate={(l) => { setLearning(l); saveLearning(l).catch(e => console.error(e)) }} /></Suspense>}
-                            {activeView === 'contacts' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Contacts...</div>}><ContactsView contacts={contacts} onUpdate={(c) => { setContacts(c); saveContacts(c).catch(e => console.error(e)) }} /></Suspense>}
-                            {activeView === 'automations' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Automations...</div>}><AutomationsDashboardView automations={automations} onUpdate={(a) => { setAutomations(a); saveAutomations(a).catch(e => console.error(e)) }} /></Suspense>}
-                            {activeView === 'memory' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Memory...</div>}><MemoryView memory={memory} onUpdate={(m) => { setMemory(m); saveMemory(m).catch(e => console.error(e)) }} /></Suspense>}
+              {activeView === 'plan' && <PlanView plan={plan} onUpdate={updatePlan} />}
+              {activeView === 'tasks' && <TasksView tasks={tasks} onUpdate={updateTasks} />}
+              {activeView === 'knowledge' && <KnowledgeView notes={notes} onUpdate={updateNotes} />}
+              {activeView === 'habits' && <HabitsView habits={habits} onUpdate={updateHabits} />}
+              {activeView === 'finances' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Finances...</div>}><FinancesView finances={finances} onUpdate={updateFinances} /></Suspense>}
+              {activeView === 'health' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Health...</div>}><HealthView health={health} onUpdate={updateHealth} /></Suspense>}
+              {activeView === 'learning' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Learning...</div>}><LearningView learning={learning} onUpdate={updateLearning} /></Suspense>}
+              {activeView === 'contacts' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Contacts...</div>}><ContactsView contacts={contacts} onUpdate={updateContacts} /></Suspense>}
+              {activeView === 'automations' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Automations...</div>}><AutomationsDashboardView automations={automations} onUpdate={updateAutomations} /></Suspense>}
+              {activeView === 'memory' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Memory...</div>}><MemoryView memory={memory} onUpdate={updateMemory} /></Suspense>}
               {activeView === 'desktop' && <DesktopView />}
               {activeView === 'agents' && <AgentsView />}
-              {activeView === 'automations' && <AutomationsView />}
               {activeView === 'keys' && <KeysView />}
               {activeView === 'harness' && <HarnessView />}
             </MainContent>
