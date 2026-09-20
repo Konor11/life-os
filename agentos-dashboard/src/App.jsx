@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
-import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, SystemStrip, KeysView, HarnessView, AssistantView } from './components'
+import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, DesktopView, AgentsView, SystemStrip, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
@@ -169,6 +169,8 @@ function App() {
               {activeView === 'calendar' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Calendar...</div>}><CalendarView calendar={calendar} onUpdate={updateCalendar} /></Suspense>}
               {activeView === 'projects' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Projects...</div>}><ProjectsView projects={projects.projects} onUpdate={updateProjects} /></Suspense>}
               {activeView === 'assistant' && <AssistantView />}
+              {activeView === 'brain' && <SecondBrainView notes={notes} memory={memory} onUpdateNotes={updateNotes} onUpdateMemory={updateMemory} />}
+              {activeView === 'n8n' && <N8nView />}
               {activeView === 'desktop' && <DesktopView />}
               {activeView === 'agents' && <AgentsView />}
               {activeView === 'keys' && <KeysView />}
