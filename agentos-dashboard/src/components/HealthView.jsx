@@ -10,10 +10,16 @@ export function HealthView({ health, onUpdate }) {
   const [newMetric, setNewMetric] = useState({ type: 'weight', value: '', unit: '', date: new Date().toISOString().slice(0,10), notes: '' })
   const [newWorkout, setNewWorkout] = useState({ type: 'strength', duration: 0, intensity: 'moderate', calories: 0, date: new Date().toISOString().slice(0,10), notes: '' })
 
-  const latestWeight = health.metrics.find(m => m.type === 'weight')?.value
-  const latestSleep = health.metrics.find(m => m.type === 'sleep_hours')?.value
-  const totalWorkouts = health.workouts.length
-  const totalDuration = health.workouts.reduce((sum, w) => sum + (w.duration || 0), 0)
+  const metrics = health.metrics || []
+  const workouts = health.workouts || []
+  const sleep = health.sleep || []
+  const nutrition = health.nutrition || []
+  const appointments = health.appointments || []
+
+  const latestWeight = metrics.find(m => m.type === 'weight')?.value
+  const latestSleep = metrics.find(m => m.type === 'sleep_hours')?.value
+  const totalWorkouts = workouts.length
+  const totalDuration = workouts.reduce((sum, w) => sum + (w.duration || 0), 0)
 
   return (
     <div className="space-y-6">
@@ -47,11 +53,11 @@ export function HealthView({ health, onUpdate }) {
         ))}
       </div>
 
-      {activeTab === 'metrics' && <MetricList metrics={health.metrics} onUpdate={onUpdate} />}
-      {activeTab === 'workouts' && <WorkoutList workouts={health.workouts} onUpdate={onUpdate} />}
-      {activeTab === 'sleep' && <SleepList sleep={health.sleep} onUpdate={onUpdate} />}
-      {activeTab === 'nutrition' && <NutritionList nutrition={health.nutrition} onUpdate={onUpdate} />}
-      {activeTab === 'appointments' && <AppointmentList appointments={health.appointments} onUpdate={onUpdate} />}
+      {activeTab === 'metrics' && <MetricList metrics={metrics} onUpdate={onUpdate} />}
+      {activeTab === 'workouts' && <WorkoutList workouts={workouts} onUpdate={onUpdate} />}
+      {activeTab === 'sleep' && <SleepList sleep={sleep} onUpdate={onUpdate} />}
+      {activeTab === 'nutrition' && <NutritionList nutrition={nutrition} onUpdate={onUpdate} />}
+      {activeTab === 'appointments' && <AppointmentList appointments={appointments} onUpdate={onUpdate} />}
 
       {showForm && (
         <HealthForm
@@ -63,11 +69,11 @@ export function HealthView({ health, onUpdate }) {
           onSubmit={() => {
             if (activeTab === 'metrics' && newMetric.type && newMetric.value) {
               const m = { ...newMetric, id: `hm-${Date.now()}`, value: parseFloat(newMetric.value), date: newMetric.date }
-              onUpdate({ ...health, metrics: [m, ...health.metrics] })
+              onUpdate(h => ({ ...h, metrics: [m, ...(h.metrics || [])] }))
               setNewMetric({ type: 'weight', value: '', unit: '', date: new Date().toISOString().slice(0,10), notes: '' })
             } else if (activeTab === 'workouts' && newWorkout.type && newWorkout.duration) {
               const w = { ...newWorkout, id: `wo-${Date.now()}`, duration: parseInt(newWorkout.duration) }
-              onUpdate({ ...health, workouts: [w, ...health.workouts] })
+              onUpdate(h => ({ ...h, workouts: [w, ...(h.workouts || [])] }))
               setNewWorkout({ type: 'strength', duration: 0, intensity: 'moderate', calories: 0, date: new Date().toISOString().slice(0,10), notes: '' })
             }
             setShowForm(false)
