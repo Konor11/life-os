@@ -62,6 +62,9 @@ export function ChatPanel({ fullscreen = false }) {
     fetch('/api/harnesses').then(r => r.json()).then(d => {
       const m = {}
       for (const h of (d.harnesses || [])) if (h?.web?.port) m[h.id] = h.web.port
+      // Hermes Agent web dashboard is not a harness — treat it as a web UI so the
+      // engine selector shows the 🌐 Web / 💻 TUI toggle and opens the dashboard.
+      m.hermes = 9119
       setWebPorts(m)
     }).catch(() => {})
   }, [])
@@ -71,6 +74,12 @@ export function ChatPanel({ fullscreen = false }) {
     setEngine(id)
     setWebToken(null)
     setWebSessionId(null)
+    // Hermes Agent dashboard: virtual web UI, no harness to start — just show the iframe.
+    if (id === 'hermes') {
+      setUseWeb(true)
+      setWebState('running')
+      return
+    }
     // opencode web UI: force dark theme + pre-seed its localStorage (same origin as the iframe)
     // so the v2 SPA opens /root directly instead of showing the native "Select Workspace
     // Directory" dialog (which `opencode serve` cannot serve -> client error 403).
@@ -166,6 +175,10 @@ export function ChatPanel({ fullscreen = false }) {
   // browser-origin allowlist (gateway.controlUi.allowedOrigins) and serves SPA + WS
   // over the gateway port, so it cannot be prefixed under os.dktunnel.xyz.
   const openclawWebBase = 'https://openclaw.dktunnel.xyz'
+  // Hermes Agent web dashboard — its OAuth + Basic auth live in the app (on its own
+  // subdomain), so it loads straight from the subdomain like openclaw. External access
+  // stays OAuth+Basic protected for Remote Gateway/Desktop; the iframe uses the same origin.
+  const hermesWebBase = 'https://hermes.dktunnel.xyz'
 
   // Build iframe src. Keep trailing slash so Caddy's /agent/<engine>/* matcher fires,
   // then query string. opencode has no token -> ?session first; deepseek uses cookie.
@@ -359,6 +372,15 @@ export function ChatPanel({ fullscreen = false }) {
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
             allow="clipboard-read; clipboard-write"
             title="OpenClaw Control"
+          />
+        ) : engine === 'hermes' ? (
+          <iframe
+            src={hermesWebBase}
+            className="flex-1 w-full border-0"
+            style={{ minHeight: '420px', background: '#fff' }}
+            allow="clipboard-read; clipboard-write; microphone; camera"
+            referrerPolicy="origin-when-cross-origin"
+            title="Hermes Dashboard"
           />
         ) : (
           <iframe
