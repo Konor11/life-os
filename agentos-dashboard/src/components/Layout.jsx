@@ -83,7 +83,7 @@ export function Header({ activeView, onViewChange, onToggleTheme, theme }) {
   )
 }
 
-export function Sidebar({ activeView, onViewChange, stats }) {
+export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme }) {
   const views = [
     { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
     { id: 'plan', label: 'Plan', icon: 'Calendar' },
@@ -112,12 +112,18 @@ export function Sidebar({ activeView, onViewChange, stats }) {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="p-4 border-b border-border">
+      <div className="p-4 border-b border-border flex items-center justify-between">
         <h2 className="font-semibold text-lg flex items-center gap-2">
           <Icon name="Brain" size={20} className="text-accent" />
           Life OS
         </h2>
-        <p className="text-xs text-text-muted mt-1">Mission Control</p>
+        <button
+          onClick={onToggleTheme}
+          title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-bg-elevated/60 border border-border text-xs font-medium text-text-muted hover:text-text hover:border-border-hover transition-all"
+        >
+          {theme === 'dark' ? '☀️' : '🌙'}
+        </button>
       </div>
       <nav className="flex-1 px-3 py-4 space-y-1">
         {views.map(v => (

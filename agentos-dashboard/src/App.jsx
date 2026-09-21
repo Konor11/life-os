@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
-import { AppShell, Header, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, SystemStrip, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
+import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
@@ -94,6 +94,45 @@ function App() {
   const updateTasks = makeUpdate('tasks', setTasks, saveTasks)
   const updateNotes = makeUpdate('notes', setNotes, saveNotes)
   const updateHabits = makeUpdate('habits', setHabits, saveHabits)
+  const handleQuickAction = (id) => {
+    switch (id) {
+      case 'new-task':
+      case 'tasks':
+        setActiveView('tasks')
+        updateTasks([...tasks, { id: `t-${Date.now()}`, title: 'Новая задача', status: 'todo', priority: 'medium', tags: [] }])
+        break
+      case 'know':
+        setActiveView('knowledge')
+        break
+      case 'plans':
+      case 'plan-tomorrow':
+        setActiveView('plan')
+        break
+      case 'timer':
+        setActiveView('habits')
+        break
+      case 'review':
+      case 'weekly-review':
+        setActiveView('plan')
+        break
+      case 'settings':
+        setActiveView('settings')
+        break
+      case 'keys':
+        setActiveView('keys')
+        break
+      case 'terminal':
+        setActiveView('terminal')
+        break
+      case 'capture':
+      case 'new-note':
+        updateNotes([...notes, { id: `n-${Date.now()}`, title: 'Новая заметка', excerpt: '', tags: [], updatedAt: new Date().toISOString() }])
+        setActiveView('knowledge')
+        break
+      default:
+        setActiveView('dashboard')
+    }
+  }
   const updateFinances = makeUpdate('finances', setFinances, saveFinances)
   const updateHealth = makeUpdate('health', setHealth, saveHealth)
   const updateLearning = makeUpdate('learning', setLearning, saveLearning)
@@ -151,10 +190,9 @@ function App() {
   return (
     <ErrorBoundary>
       <AppShell
-        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} />)}
+        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} />)}
         mainRender={(
           <>
-            <Header activeView={activeView} onViewChange={setActiveView} onToggleTheme={toggleTheme} theme={theme} />
             <MainContent>
               {apiError && (
                 <div style={{ background:'rgb(var(--cx-danger) / 0.1)', border:'1px solid #ef4444', color:'#f87171', padding:'12px 16px', borderRadius:'8px', marginBottom:'16px', fontSize:'13px' }}>
@@ -169,7 +207,7 @@ function App() {
                   habits={habits.slice(0, 4)}
                   notes={notes.slice(0, 3)}
                   status={sysStatus}
-                  onQuickAction={() => {}}
+                  onQuickAction={(id) => handleQuickAction(id)}
                 />
                 </>
               )}
