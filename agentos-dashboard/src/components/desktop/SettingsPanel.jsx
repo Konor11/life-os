@@ -1,11 +1,18 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '../Icons'
+import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanel'
 
 const API = '/api'
 
 export function SettingsPanel() {
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
+  // per-engine default view (re-read whenever the panel mounts)
+  const [engineViews, setEngineViews] = useState(() => {
+    const m = {}
+    for (const e of ENGINES) m[e.id] = getEngineView(e.id, 'web')
+    return m
+  })
 
   useEffect(() => {
     fetch(`${API}/status`).then(r => r.json()).then(d => { setStatus(d); setLoading(false) })
@@ -43,6 +50,32 @@ export function SettingsPanel() {
             <div className="flex flex-wrap gap-2 py-2">
               {status.profiles?.map(p => (
                 <span key={p} className="px-2 py-1 bg-bg-elevated rounded text-xs text-text-muted">{p}</span>
+              ))}
+            </div>
+
+            <h3 className="text-text font-semibold mt-4 mb-2 flex items-center gap-2"><Icon name="Terminal" size={16} className="text-accent" /> Движки · открывать по умолчанию</h3>
+            <div className="flex flex-col gap-2 py-1">
+              {ENGINES.map(e => (
+                <div key={e.id} className="flex items-center justify-between py-1.5 px-2 bg-bg-elevated rounded-md">
+                  <span className="flex items-center gap-2 text-sm text-text">
+                    {e.name}
+                    {!WEB_ENGINES.has(e.id) && <span className="text-[10px] text-text-muted">только TUI</span>}
+                  </span>
+                  {WEB_ENGINES.has(e.id) ? (
+                    <span className="flex items-center gap-2">
+                      <button onClick={() => { setEngineView(e.id, 'tui'); setEngineViews({ ...engineViews, [e.id]: 'tui' }) }}
+                        className={`px-2 py-0.5 rounded text-xs transition-colors ${engineViews[e.id] === 'tui' ? 'bg-accent text-white' : 'bg-black/40 text-text-muted hover:text-text'}`}>
+                        💻 TUI
+                      </button>
+                      <button onClick={() => { setEngineView(e.id, 'web'); setEngineViews({ ...engineViews, [e.id]: 'web' }) }}
+                        className={`px-2 py-0.5 rounded text-xs transition-colors ${engineViews[e.id] === 'web' ? 'bg-accent text-white' : 'bg-black/40 text-text-muted hover:text-text'}`}>
+                        🌐 Web
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-text-muted">—</span>
+                  )}
+                </div>
               ))}
             </div>
 

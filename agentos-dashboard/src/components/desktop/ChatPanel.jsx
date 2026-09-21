@@ -34,7 +34,8 @@ const AGENTS = [
 ]
 
 // External engines (their CLI spawned directly when installed). engine differs from profile.
-const ENGINES = [
+// Exported so SettingsPanel can offer a default-view (Web/TUI) choice per engine.
+export const ENGINES = [
   { id: 'hermes', name: 'Hermes' },
   { id: 'opencode', name: 'OpenCode' },
   { id: 'codex', name: 'Codex' },
@@ -43,6 +44,27 @@ const ENGINES = [
   { id: 'deepseek', name: 'DeepSeek' },
   { id: 'openclaw', name: 'OpenClaw' },
 ]
+
+// Engines that expose a built-in web UI (the rest are TUI-only).
+export const WEB_ENGINES = new Set(['hermes', 'opencode', 'deepseek', 'openclaw'])
+
+const ENGINE_VIEW_KEY = 'lifeos.engine.view'  // { [engineId]: 'web'|'tui' }
+
+export function getEngineView(engineId, fallback = 'web') {
+  try {
+    const m = JSON.parse(localStorage.getItem(ENGINE_VIEW_KEY) || '{}')
+    if (m[engineId]) return m[engineId]
+  } catch {}
+  return fallback
+}
+
+export function setEngineView(engineId, view) {
+  try {
+    const m = JSON.parse(localStorage.getItem(ENGINE_VIEW_KEY) || '{}')
+    m[engineId] = view
+    localStorage.setItem(ENGINE_VIEW_KEY, JSON.stringify(m))
+  } catch {}
+}
 
 export function ChatPanel({ fullscreen = false }) {
   const containerRef = useRef(null)
@@ -72,11 +94,12 @@ export function ChatPanel({ fullscreen = false }) {
   // When an engine with a built-in web UI is picked: start it and switch to iframe.
   const pickEngine = async (id) => {
     setEngine(id)
+    // Default view per user preference (Settings → Движки).
+    setUseWeb(getEngineView(id, 'web') === 'web')
     setWebToken(null)
     setWebSessionId(null)
     // Hermes Agent dashboard: virtual web UI, no harness to start — just show the iframe.
     if (id === 'hermes') {
-      setUseWeb(true)
       setWebState('running')
       return
     }
