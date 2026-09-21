@@ -5,7 +5,7 @@ const API = '/api'
 
 export function TerminalPanel({ cwd, onCwdChange }) {
   const [lines, setLines] = useState([
-    { text: '┌─ Hermes Desktop Linux Shell ────────────────────────┐', type: 'muted' },
+    { text: '┌─ Terminal Linux Shell ────────────────────────────┐', type: 'muted' },
     { text: '│ sandbox: /root • /tmp • /home                       │', type: 'muted' },
     { text: '│ команды: ls, cd, cat, pwd, echo, mkdir...           │', type: 'muted' },
     { text: '└──────────────────────────────────────────────────────┘', type: 'muted' },
@@ -89,12 +89,14 @@ export function TerminalPanel({ cwd, onCwdChange }) {
           <span className="w-2.5 h-2.5 rounded-full" style={{ background:'#27c93f' }} />
           <span className="ml-2 text-xs" style={{ color:'rgb(var(--term-muted))' }}>bash — {dir}</span>
         </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => changeFont(-1)} className="px-2 py-0.5 rounded text-sm" style={{ color:'rgb(var(--term-muted))' }} title="Меньше">−</button>
-          <span className="text-xs px-1" style={{ color:'rgb(var(--term-muted))' }}>{fontSize}</span>
-          <button onClick={() => changeFont(1)} className="px-2 py-0.5 rounded text-sm" style={{ color:'rgb(var(--term-muted))' }} title="Больше">+</button>
-          <button onClick={() => setKeypadOn(!keypadOn)} className={`ml-1 px-2 py-0.5 rounded text-xs border ${keypadOn ? 'text-white' : ''}`}
-            style={keypadOn ? { background:'rgb(var(--term-accent))', borderColor:'rgb(var(--term-accent))' } : { color:'rgb(var(--term-muted))', borderColor:'rgb(var(--term-border))' }} title="Клавиатура">⌨</button>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => changeFont(-1)} className="px-2 py-0.5 rounded border text-sm font-semibold"
+            style={{ color:'rgb(var(--term-text))', borderColor:'rgb(var(--term-border))', background:'rgb(var(--term-bg))' }} title="Меньше">−</button>
+          <span className="text-xs px-1 font-semibold" style={{ color:'rgb(var(--term-text))' }}>{fontSize}</span>
+          <button onClick={() => changeFont(1)} className="px-2 py-0.5 rounded border text-sm font-semibold"
+            style={{ color:'rgb(var(--term-text))', borderColor:'rgb(var(--term-border))', background:'rgb(var(--term-bg))' }} title="Больше">+</button>
+          <button onClick={() => setKeypadOn(!keypadOn)} className={`ml-1 px-2 py-0.5 rounded text-xs border font-semibold ${keypadOn ? 'text-white' : ''}`}
+            style={keypadOn ? { background:'rgb(var(--term-accent))', borderColor:'rgb(var(--term-accent))' } : { color:'rgb(var(--term-text))', borderColor:'rgb(var(--term-border))', background:'rgb(var(--term-bg))' }} title="Клавиатура">⌨</button>
         </div>
       </div>
 

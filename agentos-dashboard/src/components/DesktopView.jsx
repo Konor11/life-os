@@ -30,7 +30,7 @@ export function DesktopView() {
       >
         <div className="flex items-center gap-2">
           <Icon name="Desktop" size={16} className="text-accent" />
-          <span className="text-sm font-semibold text-text">Hermes Desktop</span>
+          <span className="text-sm font-semibold text-text">Desktop</span>
           {cwd && <span className="text-xs text-text-muted font-mono hidden sm:inline">({cwd})</span>}
           {fullscreen && <span className="text-xs text-success ml-1">● fullscreen</span>}
         </div>

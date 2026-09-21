@@ -35,7 +35,7 @@ const AGENTS = [
 
 // External engines (their CLI spawned directly when installed). engine differs from profile.
 const ENGINES = [
-  { id: 'hermes', name: 'Hermes agent' },
+  { id: 'hermes', name: 'Agent' },
   { id: 'opencode', name: 'OpenCode' },
   { id: 'codex', name: 'Codex' },
   { id: 'claude', name: 'Claude' },

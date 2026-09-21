@@ -35,7 +35,7 @@ function FullscreenShell({ label, icon, height, children }) {
 export function TerminalTab() {
   const [cwd, setCwd] = useState('/root')
   return (
-    <FullscreenShell label="Hermes Terminal" icon="Terminal" height="calc(100vh - 9rem)">
+    <FullscreenShell label="Terminal" icon="Terminal" height="calc(100vh - 9rem)">
       <TerminalPanel cwd={cwd} onCwdChange={setCwd} />
     </FullscreenShell>
   )
@@ -52,7 +52,7 @@ export function FilesTab() {
 
 export function ChatTab() {
   return (
-    <FullscreenShell label="Hermes Chat" icon="MessageSquare" height="calc(100vh - 9rem)">
+    <FullscreenShell label="Chat" icon="MessageSquare" height="calc(100vh - 9rem)">
       <ChatPanel fullscreen={false} />
     </FullscreenShell>
   )

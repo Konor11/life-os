@@ -63,7 +63,7 @@ const INSTRUMENTS = [
     agent: 'coordinator',
     defaultMode: 'agent',
     fields: [
-      { name: 'keyword', label: 'Ключевое слово', placeholder: 'например: Hermes Agent' },
+      { name: 'keyword', label: 'Ключевое слово', placeholder: 'например: Agent' },
       { name: 'caseStudy', label: 'Case study / уникальная информация', type: 'textarea', rows: 3, placeholder: 'что уникального именно у тебя по этой теме...' },
       { name: 'count', label: 'Сколько статей', placeholder: '5' },
     ],

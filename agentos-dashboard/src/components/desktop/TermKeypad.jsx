@@ -67,26 +67,26 @@ export function TermKeypad({ onSend }) {
             key={k.label}
             onMouseDown={e => e.preventDefault()}
             onClick={() => press(k)}
-            className={`px-2 py-1 rounded text-xs border transition-colors ${modActive===k.label ? 'bg-accent text-white border-accent' : 'bg-black/60 border-border text-text-muted hover:text-text hover:border-border-hover'}`}
+            className={`px-2.5 py-1.5 rounded text-xs font-medium border transition-colors ${modActive===k.label ? 'bg-accent text-white border-accent' : 'bg-bg-card text-text border-border hover:text-accent hover:border-accent'}`}
           >
             {k.label}
           </button>
         ))}
         {/* row 2: letters+digits quick row (a-z common) */}
         {['q','w','e','r','t','y','u','i','o','p'].map(c => (
-          <button key={c} onClick={() => pressPlain(c)} className="px-2 py-1 rounded text-xs border border-border text-text hover:bg-bg-card">{c}</button>
+          <button key={c} onClick={() => pressPlain(c)} className="px-2.5 py-1.5 rounded text-xs border border-border text-text hover:bg-bg-card hover:border-accent">{c}</button>
         ))}
         {['a','s','d','f','g','h','j','k','l'].map(c => (
-          <button key={c} onClick={() => pressPlain(c)} className="px-2 py-1 rounded text-xs border border-border text-text hover:bg-bg-card">{c}</button>
+          <button key={c} onClick={() => pressPlain(c)} className="px-2.5 py-1.5 rounded text-xs border border-border text-text hover:bg-bg-card hover:border-accent">{c}</button>
         ))}
         {['z','x','c','v','b','n','m'].map(c => (
-          <button key={c} onClick={() => pressPlain(c)} className="px-2 py-1 rounded text-xs border border-border text-text hover:bg-bg-card">{c}</button>
+          <button key={c} onClick={() => pressPlain(c)} className="px-2.5 py-1.5 rounded text-xs border border-border text-text hover:bg-bg-card hover:border-accent">{c}</button>
         ))}
         {['0','1','2','3','4','5','6','7','8','9'].map(c => (
-          <button key={c} onClick={() => pressPlain(c)} className="px-2 py-1 rounded text-xs border border-border text-text-muted hover:bg-bg-card">{c}</button>
+          <button key={c} onClick={() => pressPlain(c)} className="px-2.5 py-1.5 rounded text-xs border border-border text-text hover:bg-bg-card hover:border-accent">{c}</button>
         ))}
         {['.','-','_','/', '\\', ':',';',',','!','?','@','#'].map(c => (
-          <button key={c} onClick={() => pressPlain(c)} className="px-2 py-1 rounded text-xs border border-border text-text-muted hover:bg-bg-card">{c}</button>
+          <button key={c} onClick={() => pressPlain(c)} className="px-2.5 py-1.5 rounded text-xs border border-border text-text hover:bg-bg-card hover:border-accent">{c}</button>
         ))}
         {modActive && (
           <button
