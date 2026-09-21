@@ -179,6 +179,7 @@ const HARNESS_KEY_CONSUMERS = {
   openclaw: ['OPENROUTER_API_KEY'],
   pi: ['OPENROUTER_API_KEY'],
   deepseek: ['DEEPSEEK_API_KEY', 'OPENROUTER_API_KEY'],
+  coder: [],  // credentials (email + password) come from agentExtraTokens
 }
 
 // Extra per-harness secrets that live outside the shared .env files and are read
@@ -194,6 +195,28 @@ function agentExtraTokens(id) {
       const masked = t.length > 10 ? t.slice(0, 6) + '…' + t.slice(-4) : '•••'
       return [{ env: 'OPENCLAW_GATEWAY_TOKEN', agentToken: true, value: t, masked, length: t.length,
                  source: p, desc: 'Токен Control UI OpenClaw (вход в openclaw.dktunnel.xyz)' }]
+    } catch { return [] }
+  }
+  if (id === 'coder') {
+    try {
+      // Coder admin credentials (owner). Email is fixed; password/user live in the
+      // admin env file written at deploy. These are the login for coder.dktunnel.xyz.
+      const p = '/root/.coder-admin.env'
+      if (!existsSync(p)) return []
+      const envTxt = readFileSync(p, 'utf8')
+      const get = (k) => { const m = envTxt.match(new RegExp(`^${k}=(.*)$`, 'm')); return m ? m[1].replace(/\r?$/,'') : null }
+      const pw = get('ADMIN_PW') || '', user = get('ADMIN_USER') || 'coderadmin'
+      const out = [
+        { env: 'CODER_EMAIL', agentToken: true, value: 'coder@dktunnel.xyz', masked: 'coder@dktunnel.xyz', length: 19,
+                 source: 'deploy', desc: 'Email входа в Coder (coder@dktunnel.xyz)' },
+      ]
+      if (user) out.push({ env: 'CODER_USERNAME', agentToken: true, value: user, masked: user, length: user.length,
+                 source: p, desc: 'Логин Coder (coder.dktunnel.xyz)' })
+      if (pw) { const m = pw.length > 10 ? pw.slice(0, 4) + '…' + pw.slice(-3) : '•••'
+        out.push({ env: 'CODER_PASSWORD', agentToken: true, value: pw, masked: m, length: pw.length,
+                 source: p, desc: 'Пароль администратора Coder (owner)' })
+      }
+      return out
     } catch { return [] }
   }
   return []
@@ -285,6 +308,14 @@ const HARNESSES_DEF = [
     provider: 'DeepSeek', key: 'DEEPSEEK_API_KEY',
     web: { port: 3080, publicPort: 3090, cmd: 'dsh web --no-open --port 3080' },
     uninstall: "rm -rf /root/.dsh /root/.deepseek-harness /root/.deepseek /root/.config/deepseek-harness /root/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/local/lib/node_modules -maxdepth 1 -iname '*deepseek*' -exec rm -rf {} + 2>/dev/null; true",
+  },
+  {
+    id: 'coder', name: 'Coder', bin: ['coder'],
+    install: null,
+    desc: 'Coder — self-hosted cloud dev (VS Code в браузере, терминал, воркспейсы). Сервер на :7080; вход: coder@dktunnel.xyz/пароль из Ключи.',
+    provider: '—', key: null,
+    web: { port: 7080, cmd: 'systemctl start coder' },
+    uninstall: 'systemctl stop coder 2>/dev/null; systemctl disable coder 2>/dev/null; rm -f /usr/bin/coder /usr/local/bin/coder /etc/systemd/system/coder.service; docker rm -f coder-db 2>/dev/null; rm -rf /root/coder-tpl /root/coder-dev /root/coder.env /root/.coder-admin.env; true',
   },
 ]
 
