@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
-import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
+import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, HermesView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
@@ -227,6 +227,7 @@ function App() {
               {activeView === 'brain' && <SecondBrainView notes={notes} memory={memory} onUpdateNotes={updateNotes} onUpdateMemory={updateMemory} />}
               {activeView === 'n8n' && <N8nView />}
               {activeView === 'coder' && <CoderView />}
+              {activeView === 'hermes' && <HermesView />}
               {activeView === 'terminal' && <TerminalTab />}
               {activeView === 'files' && <FilesTab />}
               {activeView === 'chat' && <ChatTab />}
