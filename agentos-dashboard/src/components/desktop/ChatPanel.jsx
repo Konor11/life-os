@@ -179,7 +179,10 @@ export function ChatPanel({ fullscreen = false }) {
   }
 
   const [keypadOn, setKeypadOn] = useState(true)
-  const [useWeb, setUseWeb] = useState(true)  // Web/TUI toggle for engines that support both
+  // Web/TUI toggle for engines that support both. Initial value honors the user's
+  // per-engine default from Settings («Движки · открывать по умолчанию»), so the
+  // first Chat mount opens the preferred view, not a hardcoded Web.
+  const [useWeb, setUseWeb] = useState(() => getEngineView('hermes', 'web') === 'web')
   const hasWeb = webPorts[engine] !== undefined
   const showWeb = hasWeb && useWeb
 
