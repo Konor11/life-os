@@ -82,6 +82,17 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [apiError, setApiError] = useState(null)
   const [sysStatus, setSysStatus] = useState(null)
+  // Installed state of optional components (n8n, Coder) — drives sidebar tabs and
+  // view availability («Установка компонентов» installs them).
+  const [components, setComponents] = useState(null)  // null = не загружено ещё
+  const loadComponents = () => {
+    fetch('/api/components').then(r => r.json()).then(d => {
+      const m = {}
+      for (const c of (d.components || [])) m[c.id] = !!c.installed
+      setComponents(m)
+    }).catch(() => setComponents({}))
+  }
+  useEffect(() => { loadComponents() }, [])
   // Live mirror of all domain data — lets onUpdate handlers accept both values and updater functions
   const dataRef = React.useRef({ plan: emptyPlan, tasks: emptyTasks, notes: emptyNotes, habits: emptyHabits, finances: emptyFinances, health: emptyHealth, learning: emptyLearning, contacts: emptyContacts, automations: emptyAutomations, memory: emptyMemory, calendar: emptyCalendar, projects: emptyProjects })
   const makeUpdate = (key, setter, saver) => (v) => {
@@ -190,7 +201,7 @@ function App() {
   return (
     <ErrorBoundary>
       <AppShell
-        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} />)}
+        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} installedComponents={components} />)}
         mainRender={(
           <>
             <MainContent>
@@ -225,8 +236,8 @@ function App() {
               {activeView === 'projects' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Projects...</div>}><ProjectsView projects={projects.projects} onUpdate={updateProjects} /></Suspense>}
               {activeView === 'assistant' && <AssistantView />}
               {activeView === 'brain' && <SecondBrainView notes={notes} memory={memory} onUpdateNotes={updateNotes} onUpdateMemory={updateMemory} />}
-              {activeView === 'n8n' && <N8nView />}
-              {activeView === 'coder' && <CoderView />}
+              {activeView === 'n8n' && (components?.n8n ? <N8nView /> : <HarnessView />)}
+              {activeView === 'coder' && (components?.coder ? <CoderView /> : <HarnessView />)}
               {activeView === 'terminal' && <TerminalTab />}
               {activeView === 'files' && <FilesTab />}
               {activeView === 'chat' && <ChatTab />}

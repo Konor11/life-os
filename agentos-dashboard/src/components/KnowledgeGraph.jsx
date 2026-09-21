@@ -34,7 +34,7 @@ export function KnowledgeGraph({ notes, onOpenNote }) {
   }
 
   return (
-    <div className="relative overflow-auto rounded-lg" style={{ height: '460px', background: '#0b0e14', border: '1px solid #2a2f3a' }}>
+    <div className="relative overflow-auto rounded-lg" style={{ height: '460px', background: 'rgb(var(--term-bg))', border: '1px solid rgb(var(--term-border))' }}>
       <svg width="100%" height="100%" style={{ minWidth: '560px', minHeight: '420px' }} viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
         {/* edges */}
         {edges.map(([a, b], ei) => (

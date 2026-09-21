@@ -27,7 +27,7 @@ export function SettingsPanel() {
   )
 
   return (
-    <div className="flex flex-col h-full bg-black/80 rounded-xl overflow-hidden border border-border text-sm" style={{ minHeight: '320px' }}>
+    <div className="flex flex-col h-full bg-bg-card rounded-xl overflow-hidden border border-border text-sm" style={{ minHeight: '320px' }}>
       <div className="px-3 py-2 bg-bg-elevated border-b border-border">
         <span className="text-xs text-text-muted">Настройки системы</span>
       </div>
@@ -64,11 +64,11 @@ export function SettingsPanel() {
                   {WEB_ENGINES.has(e.id) ? (
                     <span className="flex items-center gap-2">
                       <button onClick={() => { setEngineView(e.id, 'tui'); setEngineViews({ ...engineViews, [e.id]: 'tui' }) }}
-                        className={`px-2 py-0.5 rounded text-xs transition-colors ${engineViews[e.id] === 'tui' ? 'bg-accent text-white' : 'bg-black/40 text-text-muted hover:text-text'}`}>
+                        className={`px-2 py-0.5 rounded text-xs transition-colors ${engineViews[e.id] === 'tui' ? 'bg-accent text-white' : 'bg-bg-card text-text-muted hover:text-text'}`}>
                         💻 TUI
                       </button>
                       <button onClick={() => { setEngineView(e.id, 'web'); setEngineViews({ ...engineViews, [e.id]: 'web' }) }}
-                        className={`px-2 py-0.5 rounded text-xs transition-colors ${engineViews[e.id] === 'web' ? 'bg-accent text-white' : 'bg-black/40 text-text-muted hover:text-text'}`}>
+                        className={`px-2 py-0.5 rounded text-xs transition-colors ${engineViews[e.id] === 'web' ? 'bg-accent text-white' : 'bg-bg-card text-text-muted hover:text-text'}`}>
                         🌐 Web
                       </button>
                     </span>

@@ -309,14 +309,8 @@ const HARNESSES_DEF = [
     web: { port: 3080, publicPort: 3090, cmd: 'dsh web --no-open --port 3080' },
     uninstall: "rm -rf /root/.dsh /root/.deepseek-harness /root/.deepseek /root/.config/deepseek-harness /root/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/local/lib/node_modules -maxdepth 1 -iname '*deepseek*' -exec rm -rf {} + 2>/dev/null; true",
   },
-  {
-    id: 'coder', name: 'Coder', bin: ['coder'],
-    install: null,
-    desc: 'Coder — self-hosted cloud dev (VS Code в браузере, терминал, воркспейсы). Сервер на :7080; вход: coder@dktunnel.xyz/пароль из Ключи.',
-    provider: '—', key: null,
-    web: { port: 7080, cmd: 'systemctl start coder' },
-    uninstall: 'systemctl stop coder 2>/dev/null; systemctl disable coder 2>/dev/null; rm -f /usr/bin/coder /usr/local/bin/coder /etc/systemd/system/coder.service; docker rm -f coder-db 2>/dev/null; rm -rf /root/coder-tpl /root/coder-dev /root/coder.env /root/.coder-admin.env; true',
-  },
+  // NOTE: Coder is NOT here — it is a full service (systemd + Postgres docker) and
+  // lives in COMPONENTS_DEF below («Установка компонентов»), not an engine harness.
 ]
 
 async function binExists(names) {
@@ -410,6 +404,177 @@ app.get('/api/harness/install/status', (req, res) => {
 
 // GET /api/harness/uninstall/status?id=
 app.get('/api/harness/uninstall/status', (req, res) => {
+  const id = req.query.id || ''
+  const st = uninstalls[id]
+  res.json({ id, state: st ? st.state : 'none', log: st ? st.log : '' })
+})
+
+// ---- Installable components (n8n, Coder) — «Установка компонентов» tab ----
+// Unlike harnesses these are full services (systemd + deps). Detection is service
+// state first, binary second. Install scripts are idempotent (skip existing parts).
+const N8N_SERVICE = `[Unit]
+Description=n8n Workflow Automation
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment=N8N_RUNNERS_ENABLED=false
+Environment=N8N_HOST=127.0.0.1
+Environment=N8N_PORT=5678
+Environment=N8N_PROTOCOL=http
+EnvironmentFile=/root/.n8n.env
+Environment=N8N_SECURE_COOKIE=false
+Environment=WEBHOOK_URL=https://n8n.dktunnel.xyz/
+WorkingDirectory=/root
+ExecStart=/usr/local/bin/n8n start
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target`
+
+const CODER_SERVICE = `[Unit]
+Description=Coder self-hosted cloud development platform
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile=/root/coder.env
+ExecStart=/usr/bin/coder server
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target`
+
+const COMPONENTS_DEF = [
+  {
+    id: 'n8n', name: 'n8n',
+    detect: `systemctl is-active n8n 2>/dev/null | grep -q active || command -v n8n >/dev/null 2>&1`,
+    desc: 'n8n Workflow Automation — визуальный конструктор воркфлоу (n8n.dktunnel.xyz, порт 5678).',
+    install: `
+set -e
+command -v n8n >/dev/null 2>&1 || npm install -g n8n
+if [ ! -f /root/.n8n.env ]; then
+  echo "N8N_ENCRYPTION_KEY=$(openssl rand -hex 24)" > /root/.n8n.env
+  echo "N8N_ENCRYPTION_KEY exists: /root/.n8n.env"
+fi
+cat > /etc/systemd/system/n8n.service <<'UNIT'
+${N8N_SERVICE}
+UNIT
+systemctl daemon-reload
+systemctl enable --now n8n
+echo '[n8n установлен и запущен]'`,
+    uninstall: `systemctl stop n8n 2>/dev/null; systemctl disable n8n 2>/dev/null; rm -f /etc/systemd/system/n8n.service; systemctl daemon-reload; npm uninstall -g n8n 2>/dev/null; echo '[n8n удалён] (данные ~/.n8n сохранены)'`,
+    timeout: 900000,
+  },
+  {
+    id: 'coder', name: 'Coder',
+    detect: `systemctl is-active coder 2>/dev/null | grep -q active || command -v coder >/dev/null 2>&1`,
+    desc: 'Coder — self-hosted cloud dev (VS Code в браузере, воркспейсы; coder.dktunnel.xyz, порт 7080).',
+    install: `
+set -e
+command -v coder >/dev/null 2>&1 || curl -fsSL https://coder.com/install.sh | sh
+if [ ! -f /root/.coder-db.env ]; then
+  echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" > /root/.coder-db.env
+fi
+PGPW=$(grep -oP 'POSTGRES_PASSWORD=\\K.*' /root/.coder-db.env)
+docker ps -a --format '{{.Names}}' | grep -qx coder-db || \\
+  docker run -d --name coder-db --restart always \\
+    -e POSTGRES_USER=coder -e POSTGRES_PASSWORD="$PGPW" -e POSTGRES_DB=coder \\
+    -p 127.0.0.1:5433:5432 -v coder-db-data:/var/lib/postgresql/data postgres:16-alpine
+if [ ! -f /root/coder.env ]; then
+  cat > /root/coder.env <<ENVEOF
+CODER_PG_CONNECTION_URL=postgres://coder:\${PGPW}@127.0.0.1:5433/coder?sslmode=disable
+CODER_ACCESS_URL=https://coder.dktunnel.xyz
+CODER_ADDRESS=0.0.0.0:7080
+CODER_TELEMETRY_ENABLE=false
+ENVEOF
+fi
+cat > /etc/systemd/system/coder.service <<'UNIT'
+${CODER_SERVICE}
+UNIT
+systemctl daemon-reload
+systemctl enable --now coder
+sleep 6
+if [ ! -f /root/.coder-admin.env ]; then
+  PW="Code-$(openssl rand -hex 8)-Aa1"
+  curl -sf -X POST http://127.0.0.1:7080/api/v2/users/first \\
+    -H 'Content-Type: application/json' \\
+    -d "{\\"username\\":\\"coderadmin\\",\\"email\\":\\"coder@dktunnel.xyz\\",\\"password\\":\\"$PW\\"}" \\
+    || echo '[warn] first user not created (maybe exists)'
+  printf 'ADMIN_USER=coderadmin\\nADMIN_EMAIL=coder@dktunnel.xyz\\nADMIN_PW=%s\\n' "$PW" > /root/.coder-admin.env
+fi
+echo '[Coder установлен и запущен] Логин: coder@dktunnel.xyz, пароль в /root/.coder-admin.env (вкладка Ключи → Coder)'`,
+    uninstall: `systemctl stop coder 2>/dev/null; systemctl disable coder 2>/dev/null; rm -f /etc/systemd/system/coder.service /usr/bin/coder /usr/local/bin/coder; systemctl daemon-reload; docker rm -f coder-db 2>/dev/null; rm -rf /root/coder-tpl /root/coder-dev; rm -f /root/coder.env /root/.coder-admin.env /root/.coder-db.env /root/.coder.token /root/.coder-cli.env; echo '[Coder удалён]'`,
+    timeout: 900000,
+  },
+]
+
+async function discoverComponents() {
+  const out = []
+  for (const c of COMPONENTS_DEF) {
+    // promisify(exec) resolves ONLY on exit code 0 and throws otherwise —
+    // a successful detect therefore means "installed".
+    let installed = false
+    try { await execS(c.detect, { shell: '/bin/bash' }); installed = true } catch { installed = false }
+    out.push({ id: c.id, name: c.name, installed, desc: c.desc, kind: 'component' })
+  }
+  return out
+}
+
+app.get('/api/components', async (_, res) => res.json({ components: await discoverComponents() }))
+
+app.post('/api/components/install', (req, res) => {
+  const { id } = req.body || {}
+  const def = COMPONENTS_DEF.find(c => c.id === id)
+  if (!def) return res.status(404).json({ error: 'компонент не найден' })
+  if (installs[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
+  installs[id] = { state: 'running', log: '' }
+  execS(def.install, { timeout: def.timeout || 900000, shell: '/bin/bash' })
+    .then(r => {
+      installs[id].state = 'done'
+      installs[id].log += (r?.stdout || '') + (r?.stderr || '') + '\n[установка завершена]'
+    })
+    .catch(e => {
+      installs[id].state = 'error'
+      installs[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[ошибка] ${e?.message || ''}`
+    })
+  res.json({ ok: true, state: 'running' })
+})
+
+app.post('/api/components/uninstall', (req, res) => {
+  const { id } = req.body || {}
+  const def = COMPONENTS_DEF.find(c => c.id === id)
+  if (!def) return res.status(404).json({ error: 'компонент не найден' })
+  if (uninstalls[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
+  uninstalls[id] = { state: 'running', log: '' }
+  execS(def.uninstall, { timeout: 120000, shell: '/bin/bash' })
+    .then(r => {
+      uninstalls[id].state = 'done'
+      uninstalls[id].log += (r?.stdout || '') + (r?.stderr || '') + '\n[удаление завершено]'
+    })
+    .catch(e => {
+      uninstalls[id].state = 'done'
+      uninstalls[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[удаление завершено] ${e?.message || ''}`
+    })
+  res.json({ ok: true, state: 'running' })
+})
+
+// GET /api/components/install/status?id= and uninstall — reuse harness status shape
+app.get('/api/components/install/status', (req, res) => {
+  const id = req.query.id || ''
+  const st = installs[id]
+  res.json({ id, state: st ? st.state : 'none', log: st ? st.log : '' })
+})
+app.get('/api/components/uninstall/status', (req, res) => {
   const id = req.query.id || ''
   const st = uninstalls[id]
   res.json({ id, state: st ? st.state : 'none', log: st ? st.log : '' })
@@ -555,14 +720,16 @@ app.get('/api/harness/web/status', async (req, res) => {
 app.get('/api/keys', (_, res) => res.json({ keys: readEnvKeys() }))
 app.get('/api/keys/agents', async (_, res) => {
   const harnesses = await discoverHarnesses()
+  const components = await discoverComponents()
   const groups = groupKeysByAgent()
   // build per-agent payload ordered by HARNESSES_DEF, each with name/installed/keys
   const agents = (await Promise.all(Object.entries(groups).map(async ([id, keys]) => {
     const def = HARNESSES_DEF.find(h => h.id === id)
     const hinst = harnesses.find(h => h.id === id)
+    const comp = components.find(c => c.id === id)
     return {
-      id, name: def?.name || id,
-      installed: hinst?.installed ?? false,
+      id, name: def?.name || comp?.name || id,
+      installed: hinst ? hinst.installed : !!comp?.installed,
       provider: def?.provider,
       keys,
     }

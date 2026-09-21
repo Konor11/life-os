@@ -79,16 +79,22 @@ export function ChatPanel({ fullscreen = false }) {
   const [webState, setWebState] = useState('stopped')  // stopped|starting|running
   const [webToken, setWebToken] = useState(null)
   const [webSessionId, setWebSessionId] = useState(null)
+  const [installedEngines, setInstalledEngines] = useState(null)  // null = пока не знаем
 
   useEffect(() => {
     fetch('/api/harnesses').then(r => r.json()).then(d => {
       const m = {}
-      for (const h of (d.harnesses || [])) if (h?.web?.port) m[h.id] = h.web.port
+      const inst = {}
+      for (const h of (d.harnesses || [])) {
+        if (h?.web?.port) m[h.id] = h.web.port
+        inst[h.id] = !!h.installed
+      }
       // Hermes Agent web dashboard is not a harness — treat it as a web UI so the
       // engine selector shows the 🌐 Web / 💻 TUI toggle and opens the dashboard.
       m.hermes = 9119
       setWebPorts(m)
-    }).catch(() => {})
+      setInstalledEngines(inst)
+    }).catch(() => { setInstalledEngines({}) })
   }, [])
 
   // When an engine with a built-in web UI is picked: start it and switch to iframe.
@@ -324,31 +330,39 @@ export function ChatPanel({ fullscreen = false }) {
       try { wsRef.current?.close() } catch {}
       try { term.dispose() } catch {}
     }
-  }, [agent, engine, webPorts, fullscreen])  // reconnect when profile or engine changes
+  }, [agent, engine, webPorts, fullscreen, showWeb])  // reconnect when profile, engine or view (web/tui) changes
 
   return (
     <div className="flex flex-col h-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background:'rgb(var(--term-bg))', borderColor:'rgb(var(--term-border))' }}>
       {/* Engine selector */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated border-b border-border overflow-x-auto">
         <span className="text-xs text-text-muted whitespace-nowrap">Движок:</span>
-        {ENGINES.map(e => (
+        {ENGINES.filter(e => !installedEngines || installedEngines[e.id]).map(e => (
           <button
             key={e.id}
             onClick={() => pickEngine(e.id)}
-            className={`px-2 py-0.5 rounded text-xs whitespace-nowrap transition-colors ${engine===e.id ? 'text-white bg-accent' : 'text-text-muted hover:text-text'}`}
+            className={`px-2 py-0.5 rounded text-xs whitespace-nowrap transition-colors ${engine===e.id ? 'text-white bg-accent' : 'text-text-muted hover:text-text hover:bg-bg-card'}`}
             title={webPorts[e.id] ? `Открыть web-интерфейс ${e.name}` : `Терминал ${e.name}`}
           >
             {e.name}
           </button>
         ))}
-        {/* Web/TUI toggle for engines that support both */}
-        {hasWeb && (
+        {/* Web/TUI toggle for engines that support both; disabled (hint) for TUI-only */}
+        {hasWeb ? (
           <button
             onClick={() => setUseWeb(!useWeb)}
-            className={`ml-2 px-2 py-0.5 rounded text-xs whitespace-nowrap transition-colors border ${useWeb ? 'bg-accent text-white border-accent' : 'bg-black/60 border-border text-text-muted hover:text-text'}`}
+            className={`ml-2 px-2 py-0.5 rounded text-xs whitespace-nowrap transition-colors border ${useWeb ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
             title={useWeb ? 'Переключить на TUI' : 'Переключить на Web'}
           >
             {useWeb ? '🌐 Web' : '💻 TUI'}
+          </button>
+        ) : (
+          <button
+            disabled
+            className="ml-2 px-2 py-0.5 rounded text-xs whitespace-nowrap border border-border bg-bg-card text-text-muted opacity-60 cursor-not-allowed"
+            title="У этого движка нет web-интерфейса — доступен только TUI. Установи через «Установка компонентов», если он должен появиться."
+          >
+            💻 TUI
           </button>
         )}
         {/* Font size controls */}
@@ -359,7 +373,7 @@ export function ChatPanel({ fullscreen = false }) {
         </div>
         {/* Keypad toggle */}
         <button onClick={() => setKeypadOn(!keypadOn)}
-          className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-black/60 border-border text-text-muted hover:text-text'}`}
+          className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
         <span className={`ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap ${conn==='connected' ? 'text-success' : conn==='connecting' ? 'text-warning' : 'text-danger'}`}>
           <span className={`w-2 h-2 rounded-full ${conn==='connected'?'bg-success':conn==='connecting'?'bg-warning':'bg-danger'}`} />
@@ -367,8 +381,8 @@ export function ChatPanel({ fullscreen = false }) {
         </span>
       </div>
       {/* Profile row (only for the hermes engine) */}
-      {engine === 'hermes' && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-black border-b border-border overflow-x-auto">
+      {engine === 'hermes' && !showWeb && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated/70 border-b border-border overflow-x-auto">
           <span className="text-xs text-text-muted whitespace-nowrap">профиль:</span>
           {AGENTS.map(a => (
             <button

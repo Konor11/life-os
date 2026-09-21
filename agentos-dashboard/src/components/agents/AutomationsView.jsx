@@ -116,7 +116,7 @@ export function AutomationsView() {
           <h3 className="font-semibold text-text">Статус cron</h3>
           <button onClick={list} className="px-3 py-1 rounded text-xs border border-border text-text-muted hover:text-text">⟳ refresh</button>
         </div>
-        <pre className="bg-black/70 rounded-lg p-3 overflow-auto max-h-[220px] text-xs text-text-muted whitespace-pre-wrap break-words">{status}</pre>
+        <pre className="bg-bg-elevated rounded-lg p-3 overflow-auto max-h-[220px] text-xs text-text-muted whitespace-pre-wrap break-words">{status}</pre>
       </div>
     </div>
   )

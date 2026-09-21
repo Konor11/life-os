@@ -56,7 +56,7 @@ export function KeysView() {
   const installedNames = harnesses.filter(h => h.installed).map(h => h.name).join(', ') || '—'
 
   const renderKey = (k, agentId) => (
-    <div key={k.env} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-black/40 border border-border">
+    <div key={k.env} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-bg-card border border-border">
       <div className="flex flex-col min-w-0 flex-1">
         <button onClick={() => copyName(k.env)} title="Скопировать название"
           className={`text-sm font-mono text-left truncate ${copied === k.env ? 'text-success' : 'text-text'}`}>
@@ -114,7 +114,7 @@ export function KeysView() {
           <p className="text-[11px] text-text-muted mb-3">Общий список из .env. Ниже — по агентам.</p>
           <div className="space-y-2">
             {allKeys.map(k => (
-              <div key={k.env} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-black/40 border border-border">
+              <div key={k.env} className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-bg-card border border-border">
                 <div className="flex flex-col">
                   <button onClick={() => copyName(k.env)} title="Скопировать название"
                     className={`text-sm font-mono text-left ${copied === k.env ? 'text-success' : 'text-text'}`}>

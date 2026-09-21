@@ -213,7 +213,7 @@ export function AgentInstrument({
               onChange={e => set(f.name, e.target.value)}
               placeholder={f.placeholder || ''}
               rows={f.rows || 3}
-              className="w-full bg-black/50 border border-border rounded-lg p-2 text-sm text-text placeholder-text-muted focus:outline-none focus:border-accent resize-y"
+              className="w-full bg-bg-card border border-border rounded-lg p-2 text-sm text-text placeholder-text-muted focus:outline-none focus:border-accent resize-y"
               style={{ minHeight: '60px' }}
             />
           ) : (
@@ -221,7 +221,7 @@ export function AgentInstrument({
               value={values[f.name]}
               onChange={e => set(f.name, e.target.value)}
               placeholder={f.placeholder || ''}
-              className="w-full bg-black/50 border border-border rounded-lg px-3 py-2 text-sm text-text placeholder-text-muted focus:outline-none focus:border-accent"
+              className="w-full bg-bg-card border border-border rounded-lg px-3 py-2 text-sm text-text placeholder-text-muted focus:outline-none focus:border-accent"
             />
           )}
         </div>
@@ -230,7 +230,7 @@ export function AgentInstrument({
       <div className="px-4 pt-1 pb-3">
         {/* Mode switch + summary */}
         <div className="flex items-center gap-2 mb-3">
-          <div className="flex-1 flex items-center gap-0.5 bg-black/40 border border-border rounded-lg p-0.5">
+          <div className="flex-1 flex items-center gap-0.5 bg-bg-card border border-border rounded-lg p-0.5">
             <button
               onClick={() => setMode('fast')}
               className={`flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${mode === 'fast' ? 'text-white' : 'text-text-muted hover:text-text'}`}
@@ -272,7 +272,7 @@ export function AgentInstrument({
       )}
 
       {result !== null && (
-        <div ref={resultRef} className="mx-3 mt-1 mb-3 bg-black/70 rounded-lg overflow-hidden"
+        <div ref={resultRef} className="mx-3 mt-1 mb-3 bg-bg-elevated rounded-lg overflow-hidden"
           style={{ border: '1px solid #2a2f3a' }}>
           <div className="flex items-center justify-between px-3 py-1.5 bg-bg-elevated border-b border-border">
             <span className="text-xs font-semibold text-success">✓ {outputTitle}</span>

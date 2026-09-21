@@ -18,7 +18,9 @@ export function AppShell({ sidebarRender, mainRender }) {
   )
 }
 
-export function Header({ activeView, onViewChange, onToggleTheme, theme }) {
+export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme, installedComponents }) {
+  // n8n / Coder appear in the menu only after they are installed («Установка компонентов»).
+  const compInstalled = (id) => !installedComponents || installedComponents[id] !== false
   const views = [
     { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
     { id: 'plan', label: 'Plan', icon: 'Calendar' },
@@ -34,8 +36,8 @@ export function Header({ activeView, onViewChange, onToggleTheme, theme }) {
     { id: 'projects', label: 'Projects', icon: 'Folder' },
     { id: 'assistant', label: 'Assistant', icon: 'Brain' },
     { id: 'brain', label: 'Второй мозг', icon: 'Sparkles' },
-    { id: 'n8n', label: 'n8n', icon: 'Zap' },
-    { id: 'coder', label: 'Coder', icon: 'Terminal' },
+    { id: 'n8n', label: 'n8n', icon: 'Zap', component: true },
+    { id: 'coder', label: 'Coder', icon: 'Terminal', component: true },
     { id: 'terminal', label: 'Terminal', icon: 'Terminal' },
     { id: 'files', label: 'Files', icon: 'Folder' },
     { id: 'chat', label: 'Chat', icon: 'MessageSquare' },
@@ -43,74 +45,8 @@ export function Header({ activeView, onViewChange, onToggleTheme, theme }) {
     { id: 'agents', label: 'Agents', icon: 'Wrench' },
     { id: 'automations', label: 'Automations', icon: 'Clock' },
     { id: 'keys', label: 'Ключи', icon: 'Key' },
-    { id: 'harness', label: 'Harness', icon: 'Boxes' },
-  ]
-
-  return (
-    <header className="h-14 glass border-b border-border flex items-center justify-between px-4">
-      <div className="flex items-center gap-2">
-        <Icon name="Brain" size={20} className="text-accent" />
-        <h1 className="font-semibold text-lg">Life OS</h1>
-      </div>
-      <nav className="flex items-center gap-1 bg-bg-elevated/50 rounded-lg p-1 overflow-x-auto">
-        {views.map(v => (
-          <button
-            key={v.id}
-            onClick={() => onViewChange(v.id)}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all whitespace-nowrap ${
-              activeView === v.id
-                ? 'bg-accent text-white shadow-sm'
-                : 'text-text-muted hover:text-text hover:bg-bg-card'
-            }`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </nav>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onToggleTheme}
-          title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-bg-elevated/60 border border-border text-xs font-medium text-text-muted hover:text-text hover:border-border-hover transition-all"
-        >
-          {theme === 'dark' ? '☀️ Светлая' : '🌙 Тёмная'}
-        </button>
-        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-bg-elevated/50 rounded-lg text-xs text-text-muted font-mono">
-          <span className="w-2 h-2 rounded-full bg-success" />
-          <span>Online</span>
-        </div>
-      </div>
-    </header>
-  )
-}
-
-export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme }) {
-  const views = [
-    { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
-    { id: 'plan', label: 'Plan', icon: 'Calendar' },
-    { id: 'tasks', label: 'Tasks', icon: 'CheckSquare' },
-    { id: 'knowledge', label: 'Knowledge', icon: 'BookOpen' },
-    { id: 'habits', label: 'Habits', icon: 'Target' },
-    { id: 'finances', label: 'Finances', icon: 'Wallet' },
-    { id: 'health', label: 'Health', icon: 'Heart' },
-    { id: 'learning', label: 'Learning', icon: 'GraduationCap' },
-    { id: 'contacts', label: 'Contacts', icon: 'Users' },
-    { id: 'memory', label: 'Memory', icon: 'Database' },
-    { id: 'calendar', label: 'Calendar', icon: 'Calendar' },
-    { id: 'projects', label: 'Projects', icon: 'Folder' },
-    { id: 'assistant', label: 'Assistant', icon: 'Brain' },
-    { id: 'brain', label: 'Второй мозг', icon: 'Sparkles' },
-    { id: 'n8n', label: 'n8n', icon: 'Zap' },
-    { id: 'coder', label: 'Coder', icon: 'Terminal' },
-    { id: 'terminal', label: 'Terminal', icon: 'Terminal' },
-    { id: 'files', label: 'Files', icon: 'Folder' },
-    { id: 'chat', label: 'Chat', icon: 'MessageSquare' },
-    { id: 'settings', label: 'Settings', icon: 'Settings' },
-    { id: 'agents', label: 'Agents', icon: 'Wrench' },
-    { id: 'automations', label: 'Automations', icon: 'Clock' },
-    { id: 'keys', label: 'Ключи', icon: 'Key' },
-    { id: 'harness', label: 'Harness', icon: 'Boxes' },
-  ]
+    { id: 'harness', label: 'Установка компонентов', icon: 'Boxes' },
+  ].filter(v => !v.component || compInstalled(v.id))
 
   return (
     <div className="h-full flex flex-col">

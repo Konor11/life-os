@@ -1,4 +1,4 @@
-export { AppShell, Header, Sidebar, MainContent, StatusBar, Icon } from './Layout'
+export { AppShell, Sidebar, MainContent, StatusBar, Icon } from './Layout'
 export { AgentCard } from './AgentCard'
 export { PlanView } from './PlanView'
 export { TasksView } from './TasksView'

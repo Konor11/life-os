@@ -46,7 +46,7 @@ export function FileManagerPanel({ cwd, onCwdChange }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-black/80 rounded-xl overflow-hidden border border-border text-sm" style={{ minHeight: '320px' }}>
+    <div className="flex flex-col h-full bg-bg-card rounded-xl overflow-hidden border border-border text-sm" style={{ minHeight: '320px' }}>
       <div className="flex items-center gap-2 px-3 py-2 bg-bg-elevated border-b border-border">
         <button onClick={() => load('/root')} className="px-2 py-0.5 rounded hover:bg-border text-text-muted" title="Home">🖥</button>
         <button onClick={goUp} className="px-2 py-0.5 rounded hover:bg-border text-text-muted" title="Up">↑</button>
