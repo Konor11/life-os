@@ -78,23 +78,23 @@ export function TerminalPanel({ cwd, onCwdChange }) {
   const changeFont = (delta) => setFontSize(prev => Math.min(28, Math.max(9, prev + delta)))
 
   return (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden border border-border font-mono"
-      style={{ background: '#0b0e14', minHeight: '300px' }}>
+    <div className="flex flex-col h-full rounded-xl overflow-hidden border font-mono"
+      style={{ background: 'rgb(var(--term-bg))', minHeight: '300px', borderColor:'rgb(var(--term-border))' }}>
       {/* header */}
       <div className="flex items-center justify-between px-3 py-2"
-        style={{ background: 'linear-gradient(180deg,#161b26,#10141d)', borderBottom: '1px solid #232a3a' }}>
+        style={{ background: 'var(--term-header)', borderBottom: '1px solid rgb(var(--term-border))' }}>
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 rounded-full" style={{ background:'#ff5f56' }} />
           <span className="w-2.5 h-2.5 rounded-full" style={{ background:'#ffbd2e' }} />
           <span className="w-2.5 h-2.5 rounded-full" style={{ background:'#27c93f' }} />
-          <span className="ml-2 text-xs" style={{ color:'#7d8590' }}>bash — {dir}</span>
+          <span className="ml-2 text-xs" style={{ color:'rgb(var(--term-muted))' }}>bash — {dir}</span>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => changeFont(-1)} className="px-2 py-0.5 rounded text-sm" style={{ color:'#7d8590' }} title="Меньше">−</button>
-          <span className="text-xs px-1" style={{ color:'#7d8590' }}>{fontSize}</span>
-          <button onClick={() => changeFont(1)} className="px-2 py-0.5 rounded text-sm" style={{ color:'#7d8590' }} title="Больше">+</button>
+          <button onClick={() => changeFont(-1)} className="px-2 py-0.5 rounded text-sm" style={{ color:'rgb(var(--term-muted))' }} title="Меньше">−</button>
+          <span className="text-xs px-1" style={{ color:'rgb(var(--term-muted))' }}>{fontSize}</span>
+          <button onClick={() => changeFont(1)} className="px-2 py-0.5 rounded text-sm" style={{ color:'rgb(var(--term-muted))' }} title="Больше">+</button>
           <button onClick={() => setKeypadOn(!keypadOn)} className={`ml-1 px-2 py-0.5 rounded text-xs border ${keypadOn ? 'text-white' : ''}`}
-            style={keypadOn ? { background:'#2f81f7', borderColor:'#2f81f7' } : { color:'#7d8590', borderColor:'#232a3a' }} title="Клавиатура">⌨</button>
+            style={keypadOn ? { background:'rgb(var(--term-accent))', borderColor:'rgb(var(--term-accent))' } : { color:'rgb(var(--term-muted))', borderColor:'rgb(var(--term-border))' }} title="Клавиатура">⌨</button>
         </div>
       </div>
 
@@ -104,29 +104,29 @@ export function TerminalPanel({ cwd, onCwdChange }) {
           <div key={i} className="whitespace-pre-wrap break-words" style={{
             fontSize,
             lineHeight: 1.35,
-            color: l.type==='cmd' ? '#58a6ff' : l.type==='err' ? '#f85149' : l.type==='muted' ? '#8b949e' : '#c9d1d9'
+            color: l.type==='cmd' ? 'rgb(var(--term-cmd))' : l.type==='err' ? 'rgb(var(--term-err))' : l.type==='muted' ? 'rgb(var(--term-muted))' : 'rgb(var(--term-text))'
           }}>{l.text || '\u00A0'}</div>
         ))}
         <div ref={bottomRef} />
       </div>
 
       {/* input row */}
-      <div className="flex items-center gap-2 px-3 py-2" style={{ borderTop:'1px solid #232a3a', background:'#10141d' }}>
-        <span style={{ color:'#3fb950' }} className="select-none">{dir}$</span>
+      <div className="flex items-center gap-2 px-3 py-2" style={{ borderTop:'1px solid rgb(var(--term-border))', background:'rgb(var(--term-bg))' }}>
+        <span style={{ color:'rgb(var(--term-prompt))' }} className="select-none">{dir}$</span>
         <input
           ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={onKeyDown}
           className="flex-1 bg-transparent outline-none"
-          style={{ color:'#e6edf3', fontSize }}
+          style={{ color:'rgb(var(--term-text))', fontSize }}
           placeholder="введите команду..."
           disabled={busy}
           autoFocus
         />
         <button onClick={() => runCmd(input)} disabled={busy}
           className="px-3 py-1 rounded text-xs text-white disabled:opacity-50"
-          style={{ background:'#2f81f7' }}>{busy ? '…' : 'Run'}</button>
+          style={{ background:'rgb(var(--term-accent))' }}>{busy ? '…' : 'Run'}</button>
       </div>
 
       {/* keypad */}

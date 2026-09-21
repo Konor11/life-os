@@ -4,6 +4,27 @@ import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { TermKeypad } from './TermKeypad'
 
+// Read the active theme from the CSS custom-property palette so the xterm TUI
+// follows the chosen light/dark theme (background + foreground + ANSI palette).
+function getXtermTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') !== 'light'
+  const ANSI = dark
+    ? ['#0b0e14','#f85149','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#c9d1d9','#7d8590','#ff5f56','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#f0f6fc']
+    : ['#ffffff','#dc2626','#24a148','#eab308','#3b82f6','#a855f7','#0fbfbf','#9ca3af','#6b7280','#ef4444','#24a148','#eab308','#3b82f6','#a855f7','#0fbfbf','#111827']
+  return {
+    background: dark ? '#0b0e14' : '#ffffff',
+    foreground: dark ? '#e6edf3' : '#181c28',
+    cursor: '#2f81f7',
+    cursorAccent: dark ? '#0b0e14' : '#ffffff',
+    selectionBackground: 'rgba(88,101,242,0.35)',
+    black: ANSI[0], red: ANSI[1], brightBlack: ANSI[8],
+    green: ANSI[2], brightRed: ANSI[9], yellow: ANSI[3], brightGreen: ANSI[10],
+    blue: ANSI[4], brightYellow: ANSI[11], magenta: ANSI[5], brightBlue: ANSI[12],
+    cyan: ANSI[6], brightMagenta: ANSI[13], white: ANSI[7], brightCyan: ANSI[14],
+    brightWhite: ANSI[15],
+  }
+}
+
 const AGENTS = [
   { id: 'coordinator', name: 'Coordinator', color: '#5865f2' },
   { id: 'planner', name: 'Planner', color: '#10b981' },
@@ -180,12 +201,13 @@ export function ChatPanel({ fullscreen = false }) {
     if (!el) return
 
     // init terminal
+    const activeTheme = getXtermTheme()
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 11,
       lineHeight: 1.25,
       fontFamily: 'monospace',
-      theme: { background: '#000', foreground: '#e7e9ee' },
+      theme: activeTheme,
       scrollback: 2000,
       cols: 120,
       rows: 40,
@@ -193,6 +215,17 @@ export function ChatPanel({ fullscreen = false }) {
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
+    // live theme switch (light/dark) -> re-theme the xterm without reconnecting
+    const applyTheme = () => {
+      try {
+        term.options.theme = getXtermTheme()
+        term.refresh()
+      } catch (e) { /* ignore */ }
+    }
+    const themeObserver = new MutationObserver((muts) => {
+      if (muts.some(m => m.attributeName === 'data-theme')) applyTheme()
+    })
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     // IMPORTANT: do NOT shrink cols to the narrow mobile viewport — that breaks the TUI.
     // Keep 120 cols fixed so Ink renders box-drawing cleanly; the container scrolls sideways.
     const doResize = () => {
@@ -249,6 +282,7 @@ export function ChatPanel({ fullscreen = false }) {
     window.addEventListener('resize', onResize)
 
     return () => {
+      try { themeObserver.disconnect() } catch {}
       onData.dispose()
       window.removeEventListener('resize', onResize)
       try { wsRef.current?.close() } catch {}
@@ -257,7 +291,7 @@ export function ChatPanel({ fullscreen = false }) {
   }, [agent, engine, webPorts, fullscreen])  // reconnect when profile or engine changes
 
   return (
-    <div className="flex flex-col h-full bg-black rounded-xl overflow-hidden border border-border" style={{ minHeight: '320px' }}>
+    <div className="flex flex-col h-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background:'rgb(var(--term-bg))', borderColor:'rgb(var(--term-border))' }}>
       {/* Engine selector */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated border-b border-border overflow-x-auto">
         <span className="text-xs text-text-muted whitespace-nowrap">Движок:</span>

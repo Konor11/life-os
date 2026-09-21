@@ -30,6 +30,17 @@ html[data-theme="light"] {
   --cx-surface: 255 255 255;
   --cx-app-bg: radial-gradient(ellipse at top, #f2f4f9 0%, #eef1f7 100%);
   color-scheme: light;
+
+  /* terminal palette (light) */
+  --term-bg: 255 255 255;
+  --term-header: linear-gradient(180deg,#f4f6fa,#eef1f6);
+  --term-border: 226 232 240;
+  --term-text: 24 28 40;
+  --term-prompt: 16 122 87;
+  --term-cmd: 88 101 242;
+  --term-err: 220 38 38;
+  --term-muted: 100 116 139;
+  --term-accent: 47 129 247;
 }
 
 html[data-theme="dark"] {
@@ -48,6 +59,17 @@ html[data-theme="dark"] {
   --cx-surface: 23 26 33;
   --cx-app-bg: radial-gradient(ellipse at top, #131828 0%, #0a0e1a 100%);
   color-scheme: dark;
+
+  /* terminal palette (dark) */
+  --term-bg: 11 14 20;
+  --term-header: linear-gradient(180deg,#161b26,#10141d);
+  --term-border: 35 42 58;
+  --term-text: 230 237 243;
+  --term-prompt: 63 185 80;
+  --term-cmd: 88 166 255;
+  --term-err: 248 81 73;
+  --term-muted: 139 148 158;
+  --term-accent: 47 129 247;
 }
 
 body {
