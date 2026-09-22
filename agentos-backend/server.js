@@ -266,13 +266,32 @@ const HARNESSES_DEF = [
   },
   {
       id: 'opencode', name: 'OpenCode', bin: ['opencode'],
-      install: "curl -fsSL https://opencode.ai/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh",
+      install: "curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh",
       // v2 installer updates the binary in place; restart the web service if present
-      update: "curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh; systemctl restart opencode-web 2>/dev/null; true",
+      update: "echo '[1/2] Обновление бинарника (официальный v2-инсталлер)...'; curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh; echo '[2/2] Перезапуск opencode-web...'; systemctl restart opencode-web 2>/dev/null && echo 'сервис перезапущен' || echo 'web-сервис не установлен (пропускаю)'; /root/.opencode/bin/opencode --version 2>/dev/null | head -1",
       desc: 'OpenCode — open-source AI coding agent. Режимы: TUI (терминал), Web UI (opencode serve на :4096 + свой домен), или оба.',
       provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
       web: { port: 4096, cmd: 'opencode serve --port 4096 --hostname 0.0.0.0' },
-      uninstall: "systemctl stop opencode-web 2>/dev/null; systemctl disable opencode-web 2>/dev/null; rm -f /etc/systemd/system/opencode-web.service; systemctl daemon-reload 2>/dev/null; python3 -c \"import re;p='/root/remnawave-admin/Caddyfile';s=open(p).read();s2=re.sub(r'(?m)^[ \\t]*[a-z0-9.-]*opencode[a-z0-9.-]*[ \\t]*\\{[^}]*\\}[ \\t]*\\n?','',s);open(p,'w').write(s2)\" 2>/dev/null; docker restart caddy >/dev/null 2>&1; rm -rf /root/.opencode /root/.config/opencode /root/.local/share/opencode /root/.cache/opencode /root/.opencode.json; npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode 2>/dev/null; true",
+      uninstall: [
+        "echo '[1/6] Остановка запущенных процессов opencode...'",
+        "pkill -f '[o]pencode serve' 2>/dev/null && echo '  процессы serve остановлены' || echo '  запущенных процессов нет'",
+        "pkill -9 -f '/root/\\\\.opencode/bin/[o]pencode' 2>/dev/null",
+        "echo '[2/6] Остановка сервиса opencode-web...'",
+        "systemctl disable --now opencode-web 2>/dev/null && echo '  сервис остановлен и убран из автозагрузки' || echo '  сервис не установлен'",
+        "rm -f /etc/systemd/system/opencode-web.service; systemctl daemon-reload 2>/dev/null; echo '  unit-файл удалён'",
+        "echo '[3/6] Удаление домена из Caddy...'",
+        "DOM=$(cat /root/.opencode-domain 2>/dev/null || echo oc.dktunnel.xyz)",
+        "python3 -c \"import re;p='/root/remnawave-admin/Caddyfile';s=open(p).read();dom='$DOM';n=len(re.findall(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?',s));s=re.sub(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?','',s);open(p,'w').write(s);print(f'  блок {dom} удалён' if n else '  блок не найден (уже чисто)')\"",
+        "rm -f /root/.opencode-domain",
+        "echo '[4/6] Перезапуск caddy...'",
+        "docker restart caddy >/dev/null 2>&1 && echo '  caddy перезапущен'",
+        "echo '[5/6] Удаление файлов opencode...'",
+        "rm -rf /root/.opencode /root/.config/opencode /root/.local/share/opencode /root/.cache/opencode /root/.opencode.json /tmp/start-web-opencode.sh; echo '  /root/.opencode, конфиги, кэш — удалены'",
+        "npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode /root/.local/bin/opencode 2>/dev/null",
+        "echo '[6/6] Проверка...'",
+        "command -v opencode >/dev/null 2>&1 && echo '  ВНИМАНИЕ: бинарник opencode всё ещё в PATH: '$(command -v opencode) || echo '  бинарник удалён — чисто'",
+        "pgrep -f '[o]pencode serve' >/dev/null 2>&1 && echo '  ВНИМАНИЕ: остались процессы serve' || echo '  процессы opencode отсутствуют'",
+      ].join('; '),
     },
   {
     id: 'codex', name: 'Codex', bin: ['codex'],
@@ -438,6 +457,7 @@ app.post('/api/harness/install', async (req, res) => {
       'else:',
       "    print('caddy site already present')",
       'PY',
+      `echo '${dom}' > /root/.opencode-domain`,
       'docker restart caddy >/dev/null 2>&1',
     ].join('\n')
     cmd = script
