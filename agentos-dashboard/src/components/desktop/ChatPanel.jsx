@@ -282,6 +282,16 @@ export function ChatPanel({ fullscreen = false }) {
         term.unicode.activeVersion = '11'
       }).catch(() => {})
     } catch {}
+    // WebGL renderer: single texture, no subpixel seams between rows (the mobile
+    // DPR "stripes"), and much faster than canvas. Falls back to canvas renderer
+    // automatically when WebGL is unavailable (addon load throws / context loss).
+    import('@xterm/addon-webgl').then(({ WebglAddon }) => {
+      try {
+        const wgl = new WebglAddon()
+        wgl.onContextLoss(() => { try { wgl.dispose() } catch {} })
+        term.loadAddon(wgl)
+      } catch {}
+    }).catch(() => {})
     term.open(el)
     // Hairline stripes fix: with lineHeight > 1 the canvas paints gaps between rows
     // (visible on mobile DPR) — paint the container with the SAME theme background
