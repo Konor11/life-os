@@ -4,18 +4,18 @@ import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { TermKeypad } from './TermKeypad'
 
-// Read the active theme from the CSS custom-property palette so the xterm TUI
-// follows the chosen light/dark theme (background + foreground + ANSI palette).
+// The xterm TUI keeps ONE dark theme in both shell themes: TUI apps (opencode /
+// hermes Ink UIs) paint their own dark backgrounds cell by cell and never follow
+// the shell theme — a light terminal background shows through the cell gaps as
+// stripes and clashes with their dark panels. A dark terminal in a light app is
+// the convention (VS Code / JetBrains do the same).
 function getXtermTheme() {
-  const dark = document.documentElement.getAttribute('data-theme') !== 'light'
-  const ANSI = dark
-    ? ['#0b0e14','#f85149','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#c9d1d9','#7d8590','#ff5f56','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#f0f6fc']
-    : ['#ffffff','#dc2626','#24a148','#eab308','#3b82f6','#a855f7','#0fbfbf','#9ca3af','#6b7280','#ef4444','#24a148','#eab308','#3b82f6','#a855f7','#0fbfbf','#111827']
+  const ANSI = ['#0b0e14','#f85149','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#c9d1d9','#7d8590','#ff5f56','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#f0f6fc']
   return {
-    background: dark ? '#0b0e14' : '#ffffff',
-    foreground: dark ? '#e6edf3' : '#181c28',
+    background: '#0b0e14',
+    foreground: '#e6edf3',
     cursor: '#2f81f7',
-    cursorAccent: dark ? '#0b0e14' : '#ffffff',
+    cursorAccent: '#0b0e14',
     selectionBackground: 'rgba(88,101,242,0.35)',
     black: ANSI[0], red: ANSI[1], brightBlack: ANSI[8],
     green: ANSI[2], brightRed: ANSI[9], yellow: ANSI[3], brightGreen: ANSI[10],
