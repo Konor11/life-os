@@ -822,6 +822,15 @@ app.get('/api/keys/agents', async (_, res) => {
   const harnesses = await discoverHarnesses()
   const components = await discoverComponents()
   const groups = groupKeysByAgent()
+  // ensure expected keys (HARNESS_KEY_CONSUMERS) show up even when not set yet
+  for (const [id, want] of Object.entries(HARNESS_KEY_CONSUMERS)) {
+    groups[id] = groups[id] || []
+    for (const env of want) {
+      if (!groups[id].some(k => k.env === env)) {
+        groups[id].push({ env, value: null, masked: null, length: 0, source: null, agents: null, missing: true })
+      }
+    }
+  }
   // build per-agent payload ordered by HARNESSES_DEF, each with name/installed/keys
   const agents = (await Promise.all(Object.entries(groups).map(async ([id, keys]) => {
     const def = HARNESSES_DEF.find(h => h.id === id)

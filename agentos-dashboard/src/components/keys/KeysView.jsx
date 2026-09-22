@@ -63,8 +63,9 @@ export function KeysView() {
           {k.env} {copied === k.env ? '✓' : ''}
         </button>
         <span className="text-[11px] text-text-muted truncate">
-          {k.length} символов · {k.masked}
-          {k.agentToken ? ' · из конфига агента' : ` · ${k.source || ''}`}
+          {k.missing
+            ? <span className="text-warning">ключ не задан — добавь в .env или вставь значением</span>
+            : <>{k.length} символов · {k.masked}{k.agentToken ? ' · из конфига агента' : ` · ${k.source || ''}`}</>}
         </span>
         {k.desc && <span className="text-[11px] text-text-muted/70 mt-0.5">{k.desc}</span>}
       </div>
