@@ -285,13 +285,26 @@ export function ChatPanel({ fullscreen = false }) {
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
     // IMPORTANT: do NOT shrink cols to the narrow mobile viewport — that breaks the TUI.
     // Keep 120 cols fixed so Ink renders box-drawing cleanly; the container scrolls sideways.
+    // Fill the container VERTICALLY: cols stay fixed at 120 (Ink box-drawing breaks
+    // otherwise) but rows follow the real container height, so the TUI stretches
+    // to the full screen instead of floating in a 40-row strip.
+    const rowsFor = () => {
+      try {
+        const d = fit.proposeDimensions()
+        if (d?.rows && Number.isFinite(d.rows)) return Math.max(20, Math.round(d.rows))
+      } catch {}
+      return 40
+    }
     const doResize = () => {
       const cols = 120
-      const rows = term.rows || 40
+      const rows = rowsFor()
+      try { term.resize(cols, rows) } catch {}
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
     }
+    // apply the taller rows immediately after layout, before first paint of data
+    try { term.resize(120, rowsFor()) } catch {}
     setTimeout(doResize, 50)
     fitRef.current = fit
     termRef.current = term
@@ -352,7 +365,7 @@ export function ChatPanel({ fullscreen = false }) {
   }, [agent, engine, webPorts, fullscreen, showWeb])  // reconnect when profile, engine or view (web/tui) changes
 
   return (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background:'rgb(var(--term-bg))', borderColor:'rgb(var(--term-border))' }}>
+    <div className="flex flex-col h-full rounded-xl overflow-hidden border" style={{ height: 'calc(100dvh - 14rem)', minHeight: '320px', background:'rgb(var(--term-bg))', borderColor:'rgb(var(--term-border))' }}>
       {/* Engine selector */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated border-b border-border overflow-x-auto">
         <span className="text-xs text-text-muted whitespace-nowrap">Движок:</span>
@@ -446,7 +459,12 @@ export function ChatPanel({ fullscreen = false }) {
       {!showWeb && (
         <>
           <div ref={containerRef} className="flex-1 overflow-auto p-0" style={{ minHeight: '280px', overflowX: 'auto', overflowY: 'auto', minWidth: '900px' }} />
-          {keypadOn && <TermKeypad onSend={sendExternal} />}
+          {/* on-screen keypad only for touch/narrow screens — laptops have a real keyboard */}
+          {keypadOn && (
+            <div className="lg:hidden">
+              <TermKeypad onSend={sendExternal} />
+            </div>
+          )}
         </>
       )}
     </div>
