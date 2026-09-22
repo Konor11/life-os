@@ -368,7 +368,7 @@ export function ChatPanel({ fullscreen = false }) {
   }, [agent, engine, webPorts, fullscreen, showWeb])  // reconnect when profile, engine or view (web/tui) changes
 
   return (
-    <div className="flex flex-col h-full rounded-xl overflow-hidden border" style={{ height: showWeb ? 'calc(100dvh - 10.5rem)' : 'calc(100dvh - 14rem)', minHeight: '320px', background:'#0b0e14', borderColor:'#0b0e14' }}>
+    <div className="flex flex-col h-full rounded-xl overflow-hidden border" style={{ height: showWeb ? 'calc(100dvh - 8.5rem)' : 'calc(100dvh - 14rem)', minHeight: '320px', background:'#0b0e14', borderColor:'#0b0e14' }}>
       {/* Engine selector */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated border-b border-border overflow-x-auto">
         <span className="text-xs text-text-muted whitespace-nowrap">Движок:</span>
