@@ -70,7 +70,7 @@ export function attachTuiServer(app, server) {
       const p = '/root/.config/opencode/cli.json'
       let cfg = {}
       try { cfg = JSON.parse(readFileSync(p, 'utf8')) } catch {}
-      cfg.theme = { ...(cfg.theme || {}), mode: theme }
+      cfg.theme = { name: 'system', mode: theme }
       writeFileSync(p, JSON.stringify(cfg, null, 2))
     } catch {}
   }
