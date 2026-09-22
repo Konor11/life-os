@@ -42,12 +42,10 @@ const ENGINES = {
 }
 
 // ---- TUI session keep-alive (performance) ----
-// Spawning a TUI (node/ink boot) takes seconds; killing the PTY the moment the
-// websocket closes made every engine switch a cold start. Instead, a detached
-// session stays alive for TUI_KEEPALIVE_SEC (default 600s) and the next connect
-// for the same engine+profile re-attaches instantly and replays the scrollback.
-// A ring buffer (TUI_REPLAY_BYTES, default 256KB) covers the detached window.
-const KEEPALIVE_MS = (parseInt(process.env.TUI_KEEPALIVE_SEC, 10) || 600) * 1000
+// No session caching by default (TUI_KEEPALIVE_SEC=0): the PTY is killed the
+// moment the websocket closes and every open is a fresh TUI boot at the exact
+// terminal size. Set TUI_KEEPALIVE_SEC to re-enable detached keep-alive.
+const KEEPALIVE_MS = (parseInt(process.env.TUI_KEEPALIVE_SEC, 10) || 30) * 1000
 const REPLAY_BYTES = parseInt(process.env.TUI_REPLAY_BYTES, 10) || 262144
 const sessions = new Map()  // "engine:profile" -> { pty, engine, profile, buffer, timer, ws }
 const active = new Map()    // ws -> session
