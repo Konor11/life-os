@@ -261,8 +261,15 @@ const HARNESSES_DEF = [
   {
     id: 'hermes', name: 'Hermes', alwaysInstalled: true,
     bin: ['/usr/local/bin/hermes'], install: null,
-    desc: 'Главный harness Life OS. Профили: coordinator, planner, tasks, knowledge, habits.',
+    desc: 'Hermes Agent (Nous Research) — один из доступных движков. Пользователь сам выбирает, какой агент использовать.',
     provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
+    update: [
+      "echo '[1/3] Обновление пакета hermes-agent...'",
+      "/usr/local/lib/hermes-agent/venv/bin/pip install --upgrade hermes-agent 2>&1 | tail -2",
+      "echo '[2/3] Проверка версии...'",
+      "/usr/local/lib/hermes-agent/venv/bin/pip show hermes-agent 2>/dev/null | grep -i '^Version' || true",
+      "echo '[3/3] Готово — перезапусти открытые TUI-сессии Hermes, чтобы применить новую версию.'",
+    ].join('; '),
   },
   {
       id: 'opencode', name: 'OpenCode', bin: ['opencode'],

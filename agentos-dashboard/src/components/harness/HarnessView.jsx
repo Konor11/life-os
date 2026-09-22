@@ -41,6 +41,13 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
                 {busy && busyOp === 'uninstall' ? '⏳ Удаление...' : '🗑 Удалить'}
               </button>
             )}
+            {!item.uninstallCmd && item.id !== 'hermes' && null}
+            {!item.uninstallCmd && item.id === 'hermes' && (
+              <button disabled title="Удаление Hermes появится позже — функционал будет протестирован на чистом сервере"
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-bg-elevated text-text-muted opacity-60 cursor-not-allowed">
+                🗑 Удалить (скоро)
+              </button>
+            )}
           </>
         ) : (
           <>
