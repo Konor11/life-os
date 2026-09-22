@@ -1,7 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import { createServer } from 'http'
-import { execFile, exec } from 'child_process'
+import { execFile, exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import { readFile, writeFile, mkdir, readdir, stat } from 'fs/promises'
 import { existsSync, realpathSync, readFileSync, writeFileSync } from 'fs'
@@ -358,6 +358,39 @@ async function discoverHarnesses() {
 // POST /api/harness/install — install one agent (runs installCmd in background)
 const installs = {}  // id -> {state, log}
 const uninstalls = {}  // id -> {state, log}
+const updates = {}  // id -> {state, log}
+
+// Run `cmd` in the background with LIVE streaming logs (exec buffers everything
+// until exit — the user would stare at "running..." with no feedback).
+// Output is appended to store[id].log as it arrives (tail-capped at ~64KB).
+const LOG_CAP = 64 * 1024
+function runLogged(store, id, cmd, doneLabel, timeoutMs = 600000) {
+  store[id] = { state: 'running', log: '' }
+  const push = (chunk) => {
+    const s = store[id]
+    if (!s) return
+    s.log += chunk
+    if (s.log.length > LOG_CAP) s.log = s.log.slice(-LOG_CAP)
+  }
+  const child = spawn('/bin/bash', ['-lc', cmd], { env: { ...process.env, TERM: 'xterm-256color' } })
+  child.stdout?.on('data', push)
+  child.stderr?.on('data', push)
+  const timer = setTimeout(() => { try { child.kill('SIGKILL') } catch {} }, timeoutMs)
+  child.on('close', (code) => {
+    clearTimeout(timer)
+    const s = store[id]
+    if (!s) return
+    s.state = code === 0 ? 'done' : 'error'
+    s.log += `\n[${doneLabel}${code === 0 ? '' : ` с ошибкой, код ${code}`}]`
+  })
+  child.on('error', (e) => {
+    clearTimeout(timer)
+    const s = store[id]
+    if (!s) return
+    s.state = 'error'
+    s.log += `\n[ошибка] ${e?.message || e}`
+  })
+}
 
 app.post('/api/harness/install', async (req, res) => {
   const { id, mode, domain } = req.body || {}
@@ -410,38 +443,18 @@ app.post('/api/harness/install', async (req, res) => {
     cmd = script
   }
 
-  installs[id] = { state: 'running', log: '' }
-  execS(cmd, { timeout: 600000, shell: '/bin/bash' })
-    .then(r => {
-      installs[id].state = 'done'
-      installs[id].log += (r?.stdout || '') + (r?.stderr || '')
-      installs[id].log += '\n[установка завершена]'
-    })
-    .catch(e => {
-      installs[id].state = 'error'
-      installs[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[ошибка] ${e?.message || ''}`
-    })
+  runLogged(installs, id, cmd, 'установка завершена')
   res.json({ ok: true, state: 'running' })
 })
 
 // POST /api/harness/update — update one agent in place (def.update command)
-const updates = {}  // id -> {state, log}
 app.post('/api/harness/update', async (req, res) => {
   const { id } = req.body || {}
   const def = HARNESSES_DEF.find(h => h.id === id)
   if (!def) return res.status(404).json({ error: 'агент не найден' })
   if (!def.update) return res.status(400).json({ error: 'для этого агента нет команды обновления' })
   if (updates[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
-  updates[id] = { state: 'running', log: '' }
-  execS(def.update, { timeout: 600000, shell: '/bin/bash' })
-    .then(r => {
-      updates[id].state = 'done'
-      updates[id].log += (r?.stdout || '') + (r?.stderr || '') + '\n[обновление завершено]'
-    })
-    .catch(e => {
-      updates[id].state = 'error'
-      updates[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[ошибка] ${e?.message || ''}`
-    })
+  runLogged(updates, id, def.update, 'обновление завершено')
   res.json({ ok: true, state: 'running' })
 })
 // GET /api/harness/update/status?id=
@@ -458,16 +471,7 @@ app.post('/api/harness/uninstall', async (req, res) => {
   if (!def) return res.status(404).json({ error: 'агент не найден' })
   if (!def.uninstall) return res.status(400).json({ error: 'для этого агента нет команды удаления' })
   if (uninstalls[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
-  uninstalls[id] = { state: 'running', log: '' }
-  execS(def.uninstall, { timeout: 60000, shell: '/bin/bash' })
-    .then(r => {
-      uninstalls[id].state = 'done'
-      uninstalls[id].log += (r?.stdout || '') + (r?.stderr || '') + '\n[удаление завершено]'
-    })
-    .catch(e => {
-      uninstalls[id].state = 'done'
-      uninstalls[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[удаление завершено] ${e?.message || ''}`
-    })
+  runLogged(uninstalls, id, def.uninstall, 'удаление завершено', 120000)
   res.json({ ok: true, state: 'running' })
 })
 
