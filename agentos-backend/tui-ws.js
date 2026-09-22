@@ -4,6 +4,7 @@ import { exec } from 'child_process'
 import http from 'http'
 import url from 'url'
 import { promisify } from 'util'
+import { readFileSync, writeFileSync } from 'fs'
 
 const execS = promisify(exec)
 const HOME_BINS = ['/root/.opencode/bin', '/root/.codex/bin', '/root/.claude/local/bin',
@@ -61,6 +62,19 @@ export function attachTuiServer(app, server) {
   // Upgrade /ws/tui?engine=E&profile=P to a PTY running the chosen engine.
   const wss = new WebSocketServer({ noServer: true, clientTracking: true })
 
+  // Sync opencode v2 CLI theme mode (~/.config/opencode/cli.json). The running
+  // TUI hot-reloads this file, so theme switches apply live. Other engines: no-op.
+  function syncOpencodeTheme(theme) {
+    if (theme !== 'light' && theme !== 'dark') return
+    try {
+      const p = '/root/.config/opencode/cli.json'
+      let cfg = {}
+      try { cfg = JSON.parse(readFileSync(p, 'utf8')) } catch {}
+      cfg.theme = { ...(cfg.theme || {}), mode: theme }
+      writeFileSync(p, JSON.stringify(cfg, null, 2))
+    } catch {}
+  }
+
   wss.on('connection', async (ws, req) => {
     const u = url.parse(req.url, true)
     const engine = (u.query.engine || 'hermes').trim()
@@ -89,6 +103,7 @@ export function attachTuiServer(app, server) {
 
     if (s && s.pty) {
       // Fast path: re-attach to a live session (no cold spawn).
+      syncOpencodeTheme(u.query.theme)
       if (s.timer) { clearTimeout(s.timer); s.timer = null }
       s.ws = ws
       active.set(ws, s)
@@ -104,6 +119,8 @@ export function attachTuiServer(app, server) {
       delete ptyEnv.HERMES_TUI_SIDECAR_URL
 
       const { cmd, args, cwd } = eng.build(profile)
+      // apply the client's theme to opencode's config BEFORE the TUI boots
+      syncOpencodeTheme(u.query.theme)
       let pty
       // cols/rows may come from the client URL so the PTY boots at the exact size
       // the xterm already is (post-spawn resize makes Ink TUIs redraw skewed).
@@ -151,6 +168,7 @@ export function attachTuiServer(app, server) {
       try {
         const msg = JSON.parse(raw)
         if (msg.type === 'input' && msg.data) pty.write(msg.data)
+        else if (msg.type === 'theme' && msg.theme) { syncOpencodeTheme(msg.theme); }
         else if (msg.type === 'resize' && msg.cols && msg.rows) {
           try { pty.resize(msg.cols, msg.rows) } catch {}
         }

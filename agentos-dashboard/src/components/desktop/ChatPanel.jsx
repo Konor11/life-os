@@ -4,18 +4,18 @@ import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import { TermKeypad } from './TermKeypad'
 
-// The xterm TUI keeps ONE dark theme in both shell themes: TUI apps (opencode /
-// hermes Ink UIs) paint their own dark backgrounds cell by cell and never follow
-// the shell theme — a light terminal background shows through the cell gaps as
-// stripes and clashes with their dark panels. A dark terminal in a light app is
-// the convention (VS Code / JetBrains do the same).
+// The xterm theme follows the Life OS theme (light/dark). TUI apps like opencode
+// v2 hot-reload their cli.json theme mode (see tui-ws), so both stay in sync.
 function getXtermTheme() {
-  const ANSI = ['#0b0e14','#f85149','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#c9d1d9','#7d8590','#ff5f56','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#f0f6fc']
+  const dark = document.documentElement.getAttribute('data-theme') !== 'light'
+  const ANSI = dark
+    ? ['#0b0e14','#f85149','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#c9d1d9','#7d8590','#ff5f56','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#f0f6fc']
+    : ['#ffffff','#dc2626','#24a148','#eab308','#3b82f6','#a855f7','#0fbfbf','#9ca3af','#6b7280','#ef4444','#24a148','#eab308','#3b82f6','#a855f7','#0fbfbf','#111827']
   return {
-    background: '#0b0e14',
-    foreground: '#e6edf3',
+    background: dark ? '#0b0e14' : '#ffffff',
+    foreground: dark ? '#e6edf3' : '#181c28',
     cursor: '#2f81f7',
-    cursorAccent: '#0b0e14',
+    cursorAccent: dark ? '#0b0e14' : '#ffffff',
     selectionBackground: 'rgba(88,101,242,0.35)',
     black: ANSI[0], red: ANSI[1], brightBlack: ANSI[8],
     green: ANSI[2], brightRed: ANSI[9], yellow: ANSI[3], brightGreen: ANSI[10],
@@ -192,6 +192,14 @@ export function ChatPanel({ fullscreen = false }) {
   // Track the Life OS theme so embedded web UIs (opencode/deepseek SPAs follow
   // prefers-color-scheme) can be forced to match via the iframe's color-scheme.
   const [themeDark, setThemeDark] = useState(() => document.documentElement.getAttribute('data-theme') !== 'light')
+  const themeDarkRef = useRef(themeDark)
+  // On theme switch: xterm re-themes via applyTheme (mutation observer) and the
+  // running TUI is told over WS so the backend syncs opencode's cli.json
+  // (theme.mode hot-reloads inside the running TUI).
+  useEffect(() => {
+    themeDarkRef.current = themeDark
+    try { wsRef.current?.send(JSON.stringify({ type: 'theme', theme: themeDark ? 'dark' : 'light' })) } catch {}
+  }, [themeDark])
   useEffect(() => {
     const obs = new MutationObserver(() => {
       setThemeDark(document.documentElement.getAttribute('data-theme') !== 'light')
@@ -325,7 +333,7 @@ export function ChatPanel({ fullscreen = false }) {
       setConn('connecting')
       // WSS via same origin (Caddy proxies /ws/* to backend)
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const ws = new WebSocket(`${proto}//${location.host}/ws/tui?engine=${engine}&profile=${agent}&cols=120&rows=${term.rows}`)
+      const ws = new WebSocket(`${proto}//${location.host}/ws/tui?engine=${engine}&profile=${agent}&cols=120&rows=${term.rows}&theme=${themeDarkRef.current ? 'dark' : 'light'}`)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -377,7 +385,7 @@ export function ChatPanel({ fullscreen = false }) {
   }, [agent, engine, webPorts, fullscreen, showWeb])  // reconnect when profile, engine or view (web/tui) changes
 
   return (
-    <div className="flex flex-col h-full w-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background:'#0b0e14', borderColor:'#0b0e14' }}>
+    <div className="flex flex-col h-full w-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background: themeDark ? '#0b0e14' : '#ffffff', borderColor: themeDark ? '#0b0e14' : 'rgb(var(--term-border))' }}>
       {/* Engine selector */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated border-b border-border overflow-x-auto">
         <span className="text-xs text-text-muted whitespace-nowrap">Движок:</span>
