@@ -176,7 +176,9 @@ export function ChatPanel({ fullscreen = false }) {
         }
         // Cache the iframe src for this engine so future switches are instant.
         const src = id === 'opencode'
-          ? `${opencodeWebBase}/${opencodeB64Dir}/session/${ocSessionId || ''}`
+          ? (ocSessionId
+              ? `${opencodeWebBase}/server/${opencodeServerKey}/session/${ocSessionId}`
+              : `${opencodeWebBase}/server/${opencodeServerKey}`)
           : id === 'deepseek'
             ? `${deepseekWebBase}/${d?.token ? `?token=${d.token}` : ''}`
             : id === 'openclaw'
@@ -214,20 +216,15 @@ export function ChatPanel({ fullscreen = false }) {
   const hasWeb = webPorts[engine] !== undefined
   const showWeb = hasWeb && useWeb
 
-  // opencode v2 SPA routes sessions as /<base64url(directory)>/session/<id> — the same
-  // cn() encoding the bundle uses (UTF-8 -> base64 -> url-safe, no padding). Directory=/root.
-  const opencodeB64Dir = (() => {
-    try {
-      const utf8 = new TextEncoder().encode('/root')
-      const bin = String.fromCharCode(...utf8)
-      return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-    } catch { return 'L3Jvb3Q' }
-  })()
-
-  // OpenCode v2 SPA REQUIRES the session on the HOST ROOT path (it routes on
-  // pathname.split("/"); any path prefix makes it fall to {type:"home"} = empty screen).
-  // Serve it on its own subdomain oc.dktunnel.xyz at "/<base64dir>/session/<id>".
+  // OpenCode v2 web (>=2.0.14) routes: /server/:serverKey/session/:id, where
+  // serverKey is base64 of the server URL ("https://oc.dktunnel.xyz/").
   const opencodeWebBase = 'https://oc.dktunnel.xyz'
+  const opencodeServerKey = (() => {
+    try {
+      const bin = new TextEncoder().encode(opencodeWebBase + '/')
+      return btoa(String.fromCharCode(...bin)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    } catch { return '' }
+  })()
   // dsh (DeepSeek) is the same style v2 SPA: its JS calls ROOT-absolute paths that
   // must reach its own backend, so it needs its own private subdomain root too.
   const deepseekWebBase = 'https://ds.dktunnel.xyz'
