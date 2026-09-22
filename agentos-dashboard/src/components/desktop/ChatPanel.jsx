@@ -410,8 +410,8 @@ export function ChatPanel({ fullscreen = false }) {
         <button onClick={() => setKeypadOn(!keypadOn)}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
-        <span className={`ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap ${conn==='connected' ? 'text-success' : conn==='connecting' ? 'text-warning' : 'text-danger'}`}>
-          <span className={`w-2 h-2 rounded-full ${conn==='connected'?'bg-success':conn==='connecting'?'bg-warning':'bg-danger'}`} />
+        <span className={`ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap ${conn==='connected' ? 'text-success' : conn==='connecting' ? 'text-warning' : conn==='web' ? 'text-accent' : 'text-danger'}`}>
+          <span className={`w-2 h-2 rounded-full ${conn==='connected'?'bg-success':conn==='connecting'?'bg-warning':conn==='web'?'bg-accent':'bg-danger'}`} />
           {conn}
         </span>
       </div>
