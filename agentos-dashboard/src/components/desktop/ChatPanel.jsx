@@ -260,10 +260,16 @@ export function ChatPanel({ fullscreen = false }) {
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(el)
+    // Hairline stripes fix: with lineHeight > 1 the canvas paints gaps between rows
+    // (visible on mobile DPR) — paint the container with the SAME theme background
+    // so gaps blend into the terminal instead of showing the page background.
+    el.style.background = activeTheme.background
     // live theme switch (light/dark) -> re-theme the xterm without reconnecting
     const applyTheme = () => {
       try {
-        term.options.theme = getXtermTheme()
+        const th = getXtermTheme()
+        term.options.theme = th
+        el.style.background = th.background
         term.refresh()
       } catch (e) { /* ignore */ }
     }
