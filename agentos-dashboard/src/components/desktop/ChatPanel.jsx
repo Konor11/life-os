@@ -115,25 +115,14 @@ export function ChatPanel({ fullscreen = false }) {
       setWebState('running')
       return
     }
-    // opencode web UI: force dark theme + pre-seed its localStorage (same origin as the iframe)
-    // so the v2 SPA opens /root directly instead of showing the native "Select Workspace
-    // Directory" dialog (which `opencode serve` cannot serve -> client error 403).
+    // opencode web UI: its SPA follows prefers-color-scheme (system), NOT the
+    // Life OS theme. localStorage on THIS origin can't reach the iframe's origin
+    // (oc.dktunnel.xyz) — instead we set the CSS `color-scheme` property on the
+    // iframe element itself, which propagates the preferred scheme into the
+    // embedded document (see render below).
     if (id === 'opencode') {
       try {
-        localStorage.setItem('opencode-color-scheme', 'dark')
-        // opencode scoped storage keys: "<storage>:<scoped-key>". "layout.page" holds
-        // lastProjectSession + activeProject; passing a valid session id makes the SPA
-        // restore /root instead of the first-run directory picker.
-        localStorage.setItem('opencode.global.dat:layout.page', JSON.stringify({
-          lastProjectSession: { '/root': { directory: '/root', id: null, at: Date.now() } },
-          activeProject: '/root',
-          activeWorkspace: undefined,
-          workspaceOrder: {},
-          workspaceName: {},
-          workspaceBranchName: {},
-          workspaceExpanded: {},
-          gettingStartedDismissed: true
-        }))
+        localStorage.removeItem('opencode-color-scheme')
       } catch {}
     }
     const port = webPorts[id]
@@ -200,6 +189,16 @@ export function ChatPanel({ fullscreen = false }) {
   // per-engine default from Settings («Движки · открывать по умолчанию»), so the
   // first Chat mount opens the preferred view, not a hardcoded Web.
   const [useWeb, setUseWeb] = useState(() => getEngineView('hermes', 'web') === 'web')
+  // Track the Life OS theme so embedded web UIs (opencode/deepseek SPAs follow
+  // prefers-color-scheme) can be forced to match via the iframe's color-scheme.
+  const [themeDark, setThemeDark] = useState(() => document.documentElement.getAttribute('data-theme') !== 'light')
+  useEffect(() => {
+    const obs = new MutationObserver(() => {
+      setThemeDark(document.documentElement.getAttribute('data-theme') !== 'light')
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => obs.disconnect()
+  }, [])
   const hasWeb = webPorts[engine] !== undefined
   const showWeb = hasWeb && useWeb
 
@@ -432,6 +431,8 @@ export function ChatPanel({ fullscreen = false }) {
             minHeight: '420px', width: '100%', height: '100%',
             display: (engine === id && showWeb && webState === 'running') ? 'block' : 'none',
             background: '#fff',
+            // propagate the Life OS theme into the embedded SPA's prefers-color-scheme
+            colorScheme: themeDark ? 'dark' : 'light',
           }}
           sandbox={id === 'openclaw' ? 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals' : undefined}
           allow="clipboard-read; clipboard-write; microphone; camera"
