@@ -265,6 +265,15 @@ export function ChatPanel({ fullscreen = false }) {
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
+    // Unicode 11 width tables: opencode/hermes v2 TUIs draw emoji/box glyphs and
+    // compute cell widths with string-width (emoji = 2 cols). Without this addon
+    // xterm computes narrower widths -> menu rows shift and lose letters.
+    try {
+      import('@xterm/addon-unicode11').then(({ Unicode11Addon }) => {
+        term.loadAddon(new Unicode11Addon())
+        term.unicode.activeVersion = '11'
+      }).catch(() => {})
+    } catch {}
     term.open(el)
     // Hairline stripes fix: with lineHeight > 1 the canvas paints gaps between rows
     // (visible on mobile DPR) — paint the container with the SAME theme background
