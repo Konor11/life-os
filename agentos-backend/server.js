@@ -267,10 +267,12 @@ const HARNESSES_DEF = [
   {
       id: 'opencode', name: 'OpenCode', bin: ['opencode'],
       install: "curl -fsSL https://opencode.ai/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh",
-      desc: 'Open-source терминальный AI-агент для кода. Официальный установщик ставит собранный бинарь (быстрее, чем npm).',
-      provider: 'OpenRouter', key: null,
+      // v2 installer updates the binary in place; restart the web service if present
+      update: "curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh; systemctl restart opencode-web 2>/dev/null; true",
+      desc: 'OpenCode — open-source AI coding agent. Режимы: TUI (терминал), Web UI (opencode serve на :4096 + свой домен), или оба.',
+      provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
       web: { port: 4096, cmd: 'opencode serve --port 4096 --hostname 0.0.0.0' },
-      uninstall: "rm -rf /root/.opencode /root/.config/opencode /root/.local/share/opencode /root/.cache/opencode /root/.opencode.json; npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode 2>/dev/null; true",
+      uninstall: "systemctl stop opencode-web 2>/dev/null; systemctl disable opencode-web 2>/dev/null; rm -f /etc/systemd/system/opencode-web.service; systemctl daemon-reload 2>/dev/null; python3 -c \"import re;p='/root/remnawave-admin/Caddyfile';s=open(p).read();s2=re.sub(r'(?m)^[ \\t]*[a-z0-9.-]*opencode[a-z0-9.-]*[ \\t]*\\{[^}]*\\}[ \\t]*\\n?','',s);open(p,'w').write(s2)\" 2>/dev/null; docker restart caddy >/dev/null 2>&1; rm -rf /root/.opencode /root/.config/opencode /root/.local/share/opencode /root/.cache/opencode /root/.opencode.json; npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode 2>/dev/null; true",
     },
   {
     id: 'codex', name: 'Codex', bin: ['codex'],
@@ -344,6 +346,8 @@ async function discoverHarnesses() {
       desc: h.desc, provider: h.provider, key: h.key,
       installCmd: installed ? null : h.install,
       uninstallCmd: h.uninstall || null,
+      updateCmd: h.update || null,
+      needsInstallOptions: h.id === 'opencode',  // TUI / Web / both + domain
       web: h.web || null,
       bin: installed ? null : h.bin.join(' / '),
     })
@@ -356,13 +360,58 @@ const installs = {}  // id -> {state, log}
 const uninstalls = {}  // id -> {state, log}
 
 app.post('/api/harness/install', async (req, res) => {
-  const { id } = req.body || {}
+  const { id, mode, domain } = req.body || {}
   const def = HARNESSES_DEF.find(h => h.id === id)
   if (!def) return res.status(404).json({ error: 'агент не найден' })
   if (installs[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
+
+  let cmd = def.install
+  // OpenCode install options: tui / web / both + custom domain for the web UI
+  if (id === 'opencode' && (mode === 'web' || mode === 'both')) {
+    const dom = String(domain || 'oc.dktunnel.xyz').trim().toLowerCase()
+    if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])\.[a-z]{2,}$/i.test(dom)) {
+      return res.status(400).json({ error: 'некорректный домен: ' + dom })
+    }
+    const script = [
+      '# install binary (v2 installer)',
+      'curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh',
+      '# systemd web service',
+      "cat > /etc/systemd/system/opencode-web.service <<'UNIT'",
+      '[Unit]',
+      'Description=OpenCode Web UI (opencode serve)',
+      'After=network.target',
+      '',
+      '[Service]',
+      'ExecStart=/root/.opencode/bin/opencode serve --port 4096 --hostname 127.0.0.1',
+      'Restart=always',
+      'RestartSec=3',
+      'User=root',
+      'Environment=HOME=/root',
+      '',
+      '[Install]',
+      'WantedBy=multi-user.target',
+      'UNIT',
+      'systemctl daemon-reload && systemctl enable --now opencode-web',
+      '# caddy site block for the chosen domain',
+      "python3 - <<'PY'",
+      "p='/root/remnawave-admin/Caddyfile'",
+      's=open(p).read()',
+      `dom='${dom}'`,
+      'if dom not in s:',
+      "    if s and not s.endswith('\\n'): s += '\\n'",
+      "    s += dom + ' {\\n    reverse_proxy 127.0.0.1:4096\\n}\\n'",
+      "    open(p,'w').write(s)",
+      "    print('caddy site added')",
+      'else:',
+      "    print('caddy site already present')",
+      'PY',
+      'docker restart caddy >/dev/null 2>&1',
+    ].join('\n')
+    cmd = script
+  }
+
   installs[id] = { state: 'running', log: '' }
-  const cmd = def.install
-  execS(cmd, { timeout: 240000, shell: '/bin/bash' })
+  execS(cmd, { timeout: 600000, shell: '/bin/bash' })
     .then(r => {
       installs[id].state = 'done'
       installs[id].log += (r?.stdout || '') + (r?.stderr || '')
@@ -373,6 +422,33 @@ app.post('/api/harness/install', async (req, res) => {
       installs[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[ошибка] ${e?.message || ''}`
     })
   res.json({ ok: true, state: 'running' })
+})
+
+// POST /api/harness/update — update one agent in place (def.update command)
+const updates = {}  // id -> {state, log}
+app.post('/api/harness/update', async (req, res) => {
+  const { id } = req.body || {}
+  const def = HARNESSES_DEF.find(h => h.id === id)
+  if (!def) return res.status(404).json({ error: 'агент не найден' })
+  if (!def.update) return res.status(400).json({ error: 'для этого агента нет команды обновления' })
+  if (updates[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
+  updates[id] = { state: 'running', log: '' }
+  execS(def.update, { timeout: 600000, shell: '/bin/bash' })
+    .then(r => {
+      updates[id].state = 'done'
+      updates[id].log += (r?.stdout || '') + (r?.stderr || '') + '\n[обновление завершено]'
+    })
+    .catch(e => {
+      updates[id].state = 'error'
+      updates[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[ошибка] ${e?.message || ''}`
+    })
+  res.json({ ok: true, state: 'running' })
+})
+// GET /api/harness/update/status?id=
+app.get('/api/harness/update/status', (req, res) => {
+  const id = req.query.id || ''
+  const st = updates[id]
+  res.json({ id, state: st ? st.state : 'none', log: st ? st.log : '' })
 })
 
 // POST /api/harness/uninstall — full removal (npm uninstall + binary + config dirs)

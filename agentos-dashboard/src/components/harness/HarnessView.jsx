@@ -8,7 +8,7 @@ const PROVIDER_COLOR = {
 }
 
 // One installable row: engines (binaries) and components (systemd services) share it.
-function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall }) {
+function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate }) {
   const missingKey = item.installed && item.key && !keys.some(k => k.env === item.key)
   const busy = busyId === item.id
   return (
@@ -39,9 +39,15 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall }) 
                 ⚠ нет ключа {item.key} — добавь в разделе «Ключи»
               </span>
             )}
+            {item.updateCmd && (
+              <button onClick={() => onUpdate(item.id)} disabled={!!busyId}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'update' ? 'opacity-60' : ''}`}>
+                {busy && busyOp === 'update' ? '⏳ Обновление...' : '⬆ Обновить'}
+              </button>
+            )}
             {item.uninstallCmd && (
               <button onClick={() => onUninstall(item.id)} disabled={!!busyId}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 ${busy ? 'opacity-60' : ''}`}>
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 ${busy && busyOp === 'uninstall' ? 'opacity-60' : ''}`}>
                 {busy && busyOp === 'uninstall' ? '⏳ Удаление...' : '🗑 Удалить'}
               </button>
             )}
@@ -72,8 +78,11 @@ export function HarnessView() {
   const [error, setError] = useState(null)
   const [installing, setInstalling] = useState(null)
   const [uninstalling, setUninstalling] = useState(null)
+  const [updating, setUpdating] = useState(null)
   const [logs, setLogs] = useState({})
   const [keys, setKeys] = useState([])
+  // OpenCode install options: mode (tui/web/both) + domain for the web UI
+  const [installOpts, setInstallOpts] = useState(null) // { id, name, mode, domain }
 
   const load = async () => {
     try {
@@ -89,9 +98,11 @@ export function HarnessView() {
   }
   useEffect(() => { load() }, [])
 
-  // poll active op (install or uninstall) while running
-  const busyId = installing || uninstalling
-  const busyOp = uninstalling ? 'uninstall' : 'install'
+  const allItems = [...components, ...harnesses]
+
+  // poll the active op (install / uninstall / update) while running
+  const busyId = installing || uninstalling || updating
+  const busyOp = updating ? 'update' : uninstalling ? 'uninstall' : 'install'
   useEffect(() => {
     if (!busyId) return
     const kind = busyOp
@@ -104,7 +115,9 @@ export function HarnessView() {
         }
         if (d?.log) setLogs(prev => ({ ...prev, [busyId]: d.log }))
         if (d?.state === 'done' || d?.state === 'error') {
-          if (kind === 'install') setInstalling(null); else setUninstalling(null)
+          if (kind === 'install') setInstalling(null)
+          else if (kind === 'uninstall') setUninstalling(null)
+          else setUpdating(null)
           load()  // re-detect installation state
         }
       } catch {}
@@ -112,14 +125,30 @@ export function HarnessView() {
     return () => clearInterval(timer)
   }, [busyId, busyOp])
 
-  const install = async (id) => {
+  const runInstall = async (id, opts) => {
     try {
       const isComponent = components.some(c => c.id === id)
       const ep = isComponent ? 'components' : 'harness'
       await fetch(`${API}/${ep}/install`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...opts }) })
       setInstalling(id); setLogs(prev => ({ ...prev, [id]: '⏳ установка запущена...' }))
     } catch (e) { setError(e.message) }
+  }
+
+  const install = async (id) => {
+    const item = allItems.find(x => x.id === id)
+    if (item?.needsInstallOptions) {
+      setInstallOpts({ id, name: item.name, mode: 'both', domain: 'oc.dktunnel.xyz' })
+      return
+    }
+    runInstall(id)
+  }
+
+  const confirmInstallOpts = async () => {
+    if (!installOpts) return
+    const { id, mode, domain } = installOpts
+    setInstallOpts(null)
+    await runInstall(id, { mode, domain })
   }
 
   const uninstall = async (id) => {
@@ -129,6 +158,14 @@ export function HarnessView() {
       await fetch(`${API}/${ep}/uninstall`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
       setUninstalling(id); setLogs(prev => ({ ...prev, [id]: '⏳ удаление запущено...' }))
+    } catch (e) { setError(e.message) }
+  }
+
+  const update = async (id) => {
+    try {
+      await fetch(`${API}/harness/update`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+      setUpdating(id); setLogs(prev => ({ ...prev, [id]: '⏳ обновление запущено...' }))
     } catch (e) { setError(e.message) }
   }
 
@@ -146,7 +183,7 @@ export function HarnessView() {
           </h2>
           {components.map(c => (
             <ItemCard key={c.id} item={c} keys={keys} busyId={busyId} busyOp={busyOp}
-              logs={logs} onInstall={install} onUninstall={uninstall} />
+              logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} />
           ))}
         </>
       )}
@@ -156,10 +193,52 @@ export function HarnessView() {
       </h2>
       {harnesses.map(h => (
         <ItemCard key={h.id} item={h} keys={keys} busyId={busyId} busyOp={busyOp}
-          logs={logs} onInstall={install} onUninstall={uninstall} />
+          logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} />
       ))}
 
       {error && <p className="text-sm text-danger">Ошибка: {error}</p>}
+
+      {/* Install options modal (OpenCode: TUI / Web / both + domain) */}
+      {installOpts && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setInstallOpts(null)}>
+          <div className="glass rounded-xl border border-border p-5 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-text">Установка {installOpts.name}</h3>
+            <div className="space-y-2">
+              <p className="text-sm text-text-muted">Что установить:</p>
+              {[
+                { v: 'tui', label: '💻 Только TUI', hint: 'терминальный интерфейс' },
+                { v: 'web', label: '🌐 Только Web UI', hint: 'веб-интерфейс на своём домене' },
+                { v: 'both', label: '💻🌐 Всё вместе', hint: 'TUI + Web UI' },
+              ].map(o => (
+                <button key={o.v} onClick={() => setInstallOpts(p => ({ ...p, mode: o.v }))}
+                  className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${installOpts.mode === o.v ? 'border-accent bg-accent/10' : 'border-border hover:bg-bg-elevated'}`}>
+                  <div className="text-sm font-medium text-text">{o.label}</div>
+                  <div className="text-xs text-text-muted">{o.hint}</div>
+                </button>
+              ))}
+            </div>
+            {installOpts.mode !== 'tui' && (
+              <div>
+                <label className="text-sm text-text-muted block mb-1">Домен для Web UI:</label>
+                <input value={installOpts.domain}
+                  onChange={e => setInstallOpts(p => ({ ...p, domain: e.target.value }))}
+                  placeholder="oc.dktunnel.xyz"
+                  className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
+                <p className="text-xs text-text-muted mt-1">Добавится в Caddy → reverse_proxy на opencode (:4096).</p>
+              </div>
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setInstallOpts(null)}
+                className="px-4 py-2 rounded-lg text-sm border border-border text-text-muted hover:text-text">Отмена</button>
+              <button onClick={confirmInstallOpts}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-accent hover:opacity-90"
+                disabled={installOpts.mode !== 'tui' && !installOpts.domain.trim()}>
+                Установить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
