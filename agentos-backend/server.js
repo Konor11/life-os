@@ -173,8 +173,8 @@ function readEnvKeys() {
 // agent(s) in the "Ключи" tab and to know which AGENT consumes a key for sync.
 const HARNESS_KEY_CONSUMERS = {
   hermes: ['OPENROUTER_API_KEY'],
-  opencode: ['OPENROUTER_API_KEY'],
-  codex: ['OPENROUTER_API_KEY', 'OPENAI_API_KEY'],
+  opencode: [],
+  codex: ['OPENAI_API_KEY'],
   claude: ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY'],
   openclaw: ['OPENROUTER_API_KEY'],
   pi: ['OPENROUTER_API_KEY'],
