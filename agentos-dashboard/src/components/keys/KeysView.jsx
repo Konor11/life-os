@@ -142,7 +142,7 @@ export function KeysView() {
             </span>
           </div>
           <p className="text-[11px] text-text-muted mb-3">
-            Провайдер: {activeAgent?.provider || '—'}. Синхронизация применяет ключ именно этому агенту.
+            Ключи применяются при запуске агента «{activeAgent?.name}» — можно использовать любого провайдера, которого поддерживает сам агент.
           </p>
           <div className="space-y-2">
             {(activeAgent?.keys || []).map(k => renderKey(k, activeAgent.id))}

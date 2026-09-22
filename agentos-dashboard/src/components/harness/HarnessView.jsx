@@ -3,10 +3,6 @@ import { Icon } from '../Icons'
 
 const API = '/api'
 
-const PROVIDER_COLOR = {
-  'OpenRouter': '#5865f2', 'OpenAI': '#10a37f', 'Anthropic': '#d97757', 'DeepSeek': '#6f5bf2', 'Google': '#ea4335'
-}
-
 // One installable row: engines (binaries) and components (systemd services) share it.
 function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate }) {
   const missingKey = item.installed && item.key && !keys.some(k => k.env === item.key)
@@ -18,12 +14,6 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
         <div className="flex items-center gap-2 min-w-0">
           <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${item.installed ? 'bg-success' : 'bg-warning'}`} />
           <h3 className="text-lg font-semibold text-text truncate">{item.name}</h3>
-          {item.provider && item.provider !== '—' && (
-            <span className="px-2 py-0.5 rounded-full text-[11px] shrink-0"
-              style={{ background: `${PROVIDER_COLOR[item.provider] || '#5865f2'}22` }}>
-              <span className="text-text">{item.provider}</span>
-            </span>
-          )}
         </div>
         <span className={`px-3 py-1 rounded-full text-xs font-medium shrink-0 ${item.installed ? 'text-success bg-success/15' : 'text-warning bg-warning/15'}`}>
           {item.installed ? '✓ установлен' : 'не установлен'}
