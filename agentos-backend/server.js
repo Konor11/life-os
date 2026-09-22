@@ -270,7 +270,7 @@ const HARNESSES_DEF = [
       // v2 installer updates the binary in place; restart the web service if present
       update: "echo '[1/2] Обновление бинарника (официальный v2-инсталлер)...'; curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh; echo '[2/2] Перезапуск opencode-web...'; systemctl restart opencode-web 2>/dev/null && echo 'сервис перезапущен' || echo 'web-сервис не установлен (пропускаю)'; /root/.opencode/bin/opencode --version 2>/dev/null | head -1",
       desc: 'OpenCode — open-source AI coding agent. Режимы: TUI (терминал), Web UI (opencode serve на :4096 + свой домен), или оба.',
-      provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
+      provider: 'OpenRouter', key: null,
       web: { port: 4096, cmd: 'opencode serve --port 4096 --hostname 0.0.0.0' },
       uninstall: [
         "echo '[1/6] Остановка запущенных процессов opencode...'",
@@ -297,7 +297,7 @@ const HARNESSES_DEF = [
     id: 'codex', name: 'Codex', bin: ['codex'],
     install: "curl -fsSL https://chatgpt.com/codex/install.sh | sh </dev/null",
     desc: 'OpenAI Codex — официальный установщик OpenAI (не npm).',
-    provider: 'OpenAI', key: null,
+    provider: 'OpenAI', key: 'OPENAI_API_KEY',
     uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null); rm -rf /root/.codex /root/.local/share/codex /root/.cache/codex /root/.codex_auth.json",
   },
   {
