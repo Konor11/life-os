@@ -25,7 +25,9 @@ function FullscreenShell({ label, icon, height, children }) {
           <span className="text-xs hidden sm:inline">{fs ? 'Свернуть' : 'На весь экран'}</span>
         </button>
       </div>
-      <div className="flex-1 min-h-0" style={fs ? {} : { height: height }}>
+      {/* NOT flex-1 in normal mode: flex-basis:0% would override the explicit
+          height and collapse the shell to content height (dead strip below). */}
+      <div className={fs ? 'flex-1 min-h-0' : 'min-h-0'} style={fs ? {} : { height }}>
         {children}
       </div>
     </div>
@@ -52,7 +54,9 @@ export function FilesTab() {
 
 export function ChatTab() {
   return (
-    <FullscreenShell label="Chat" icon="MessageSquare" height="calc(100vh - 9rem)">
+    // 8.5rem reserve: page header + toolbar + status bar. The panel itself is
+    // h-full — it must NOT set its own height or a dead strip appears below it.
+    <FullscreenShell label="Chat" icon="MessageSquare" height="calc(100dvh - 8.5rem)">
       <ChatPanel fullscreen={false} />
     </FullscreenShell>
   )
