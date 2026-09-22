@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Terminal } from 'xterm'
+import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
-import 'xterm/css/xterm.css'
+import '@xterm/xterm/css/xterm.css'
 import { TermKeypad } from './TermKeypad'
+// Static import: dynamic import() created a separate chunk that failed to load
+// on some networks -> xterm silently fell back to the DOM renderer (stripes on
+// fractional-DPR screens). Bundled statically, the WebGL renderer always works.
+import { WebglAddon } from '@xterm/addon-webgl'
 
 // The xterm theme follows the Life OS theme (light/dark). TUI apps like opencode
 // v2 hot-reload their cli.json theme mode (see tui-ws), so both stay in sync.
@@ -282,17 +286,17 @@ export function ChatPanel({ fullscreen = false }) {
         term.unicode.activeVersion = '11'
       }).catch(() => {})
     } catch {}
+    term.open(el)
     // WebGL renderer: single texture, no subpixel seams between rows (the mobile
-    // DPR "stripes"), and much faster than canvas. Falls back to canvas renderer
-    // automatically when WebGL is unavailable (addon load throws / context loss).
-    import('@xterm/addon-webgl').then(({ WebglAddon }) => {
+    // DPR "stripes"), and much faster than canvas/DOM. Needs the terminal fully
+    // laid out — attach on the next frame after open().
+    requestAnimationFrame(() => {
       try {
         const wgl = new WebglAddon()
         wgl.onContextLoss(() => { try { wgl.dispose() } catch {} })
         term.loadAddon(wgl)
-      } catch {}
-    }).catch(() => {})
-    term.open(el)
+      } catch (e) { try { window.__wglErr = String(e?.message || e) } catch {} }
+    })
     // Hairline stripes fix: with lineHeight > 1 the canvas paints gaps between rows
     // (visible on mobile DPR) — paint the container with the SAME theme background
     // so gaps blend into the terminal instead of showing the page background.
