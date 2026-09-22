@@ -98,12 +98,18 @@ export function ChatPanel({ fullscreen = false }) {
   }, [])
 
   // When an engine with a built-in web UI is picked: start it and switch to iframe.
+  // src per engine is CACHED — switching engines back and forth shows the already
+  // loaded SPA instantly (no reload, no API round-trip).
+  const [webSrcCache, setWebSrcCache] = useState(() => ({ hermes: 'https://hermes.dktunnel.xyz' }))
   const pickEngine = async (id) => {
     setEngine(id)
     // Default view per user preference (Settings → Движки).
     setUseWeb(getEngineView(id, 'web') === 'web')
-    setWebToken(null)
-    setWebSessionId(null)
+    // Cached web UI (or hermes virtual dashboard) -> show it immediately.
+    if (webSrcCache[id]) {
+      setWebState('running')
+      return
+    }
     // Hermes Agent dashboard: virtual web UI, no harness to start — just show the iframe.
     if (id === 'hermes') {
       setWebState('running')
@@ -147,6 +153,7 @@ export function ChatPanel({ fullscreen = false }) {
           setWebToken(d.token)
         }
         // Auto-create session for opencode
+        let ocSessionId = null
         if (id === 'opencode') {
           try {
             const sessionRes = await fetch('/ocapi/session', {
@@ -156,6 +163,7 @@ export function ChatPanel({ fullscreen = false }) {
             })
             const sessionData = await sessionRes.json()
             if (sessionData?.data?.id) {
+              ocSessionId = sessionData.data.id
               setWebSessionId(sessionData.data.id)
               // update seed with the REAL session id so the v2 SPA restores /root directly
               try {
@@ -173,6 +181,15 @@ export function ChatPanel({ fullscreen = false }) {
             }
           } catch (e) { console.log('OC-SESSION-ERR', String(e && e?.toString ? e.toString() : e)) }
         }
+        // Cache the iframe src for this engine so future switches are instant.
+        const src = id === 'opencode'
+          ? `${opencodeWebBase}/${opencodeB64Dir}/session/${ocSessionId || ''}`
+          : id === 'deepseek'
+            ? `${deepseekWebBase}/${d?.token ? `?token=${d.token}` : ''}`
+            : id === 'openclaw'
+              ? openclawWebBase
+              : `/agent/${id}/${d?.token ? `?token=${d.token}` : ''}`
+        setWebSrcCache(prev => ({ ...prev, [id]: src }))
         setWebState('running')
       } catch { setWebState('running') }
     }
@@ -207,16 +224,6 @@ export function ChatPanel({ fullscreen = false }) {
   // browser-origin allowlist (gateway.controlUi.allowedOrigins) and serves SPA + WS
   // over the gateway port, so it cannot be prefixed under os.dktunnel.xyz.
   const openclawWebBase = 'https://openclaw.dktunnel.xyz'
-  // Hermes Agent web dashboard — its OAuth + Basic auth live in the app (on its own
-  // subdomain), so it loads straight from the subdomain like openclaw. External access
-  // stays OAuth+Basic protected for Remote Gateway/Desktop; the iframe uses the same origin.
-  const hermesWebBase = 'https://hermes.dktunnel.xyz'
-
-  // Build iframe src. Keep trailing slash so Caddy's /agent/<engine>/* matcher fires,
-  // then query string. opencode has no token -> ?session first; deepseek uses cookie.
-  const webSrc = `/agent/${engine}/` +
-    (webToken ? `?token=${webToken}` : '') +
-    (webSessionId ? (webToken ? `&session=${webSessionId}` : `?session=${webSessionId}`) : '')
 
   const changeFont = (delta) => {
     setFontSize(prev => {
@@ -336,6 +343,10 @@ export function ChatPanel({ fullscreen = false }) {
       try { themeObserver.disconnect() } catch {}
       onData.dispose()
       window.removeEventListener('resize', onResize)
+      // null the refs BEFORE disposing so a late window-resize can't call
+      // fit() on a disposed terminal (throws "reading 'dimensions'")
+      termRef.current = null
+      fitRef.current = null
       try { wsRef.current?.close() } catch {}
       try { term.dispose() } catch {}
     }
@@ -405,43 +416,30 @@ export function ChatPanel({ fullscreen = false }) {
           ))}
         </div>
       )}
-      {showWeb ? (
-        webState === 'starting' ? (
-          <div className="flex-1 flex items-center justify-center text-text-muted text-sm" style={{ minHeight: '280px' }}>
-            ⏳ Запускаю {engine} web-интерфейс...
-          </div>
-        ) : engine === 'openclaw' ? (
-          <iframe
-            src={openclawWebBase}
-            className="flex-1 w-full border-0"
-            style={{ minHeight: '420px', background: '#fff' }}
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"
-            allow="clipboard-read; clipboard-write"
-            title="OpenClaw Control"
-          />
-        ) : engine === 'hermes' ? (
-          <iframe
-            src={hermesWebBase}
-            className="flex-1 w-full border-0"
-            style={{ minHeight: '420px', background: '#fff' }}
-            allow="clipboard-read; clipboard-write; microphone; camera"
-            referrerPolicy="origin-when-cross-origin"
-            title="Hermes Dashboard"
-          />
-        ) : (
-          <iframe
-                      src={engine === 'opencode' && webSessionId
-                        ? `${opencodeWebBase}/${opencodeB64Dir}/session/${webSessionId}`
-                        : engine === 'deepseek'
-                          ? `${deepseekWebBase}/${webToken ? `?token=${webToken}` : ''}`
-                          : `/agent/${engine}/${webToken ? `?token=${webToken}` : ''}${webSessionId ? `&session=${webSessionId}` : ''}`}
-                      className="flex-1 w-full border-0"
-                      style={{ minHeight: '520px', width: '100%', height: '100%' }}
-                      title={`${engine} web`}
-            allow="clipboard-read; clipboard-write; microphone; camera"
-          />
-        )
-      ) : (
+      {showWeb && webState === 'starting' && !webSrcCache[engine] && (
+        <div className="flex-1 flex items-center justify-center text-text-muted text-sm" style={{ minHeight: '280px' }}>
+          ⏳ Запускаю {engine} web-интерфейс...
+        </div>
+      )}
+      {/* All started web UIs stay mounted (hidden with display:none) — switching
+          engines shows the already loaded SPA instantly instead of reloading it. */}
+      {Object.entries(webSrcCache).map(([id, src]) => (
+        <iframe
+          key={id}
+          src={src}
+          className="flex-1 w-full border-0"
+          style={{
+            minHeight: '420px', width: '100%', height: '100%',
+            display: (engine === id && showWeb && webState === 'running') ? 'block' : 'none',
+            background: '#fff',
+          }}
+          sandbox={id === 'openclaw' ? 'allow-scripts allow-same-origin allow-forms allow-popups allow-modals' : undefined}
+          allow="clipboard-read; clipboard-write; microphone; camera"
+          referrerPolicy="origin-when-cross-origin"
+          title={`${id} web`}
+        />
+      ))}
+      {!showWeb && (
         <>
           <div ref={containerRef} className="flex-1 overflow-auto p-0" style={{ minHeight: '280px', overflowX: 'auto', overflowY: 'auto', minWidth: '900px' }} />
           {keypadOn && <TermKeypad onSend={sendExternal} />}
