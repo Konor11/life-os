@@ -17,6 +17,10 @@ const execP = promisify(execFile)
 const execS = promisify(exec)
 
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || ''
+// Fixed password for the opencode v2 web server (it auths everything by default;
+// Caddy injects the matching Authorization header so browsers never see a 401).
+const OC_WEB_PASS = (() => { try { return readFileSync('/root/.opencode-web-pass', 'utf8').trim() } catch { return '' } })()
+const OC_BASIC = OC_WEB_PASS ? Buffer.from('opencode:' + OC_WEB_PASS).toString('base64') : ''
 const HERMES = '/usr/local/lib/hermes-agent/venv/bin/python'
 const HERMES_ENTRY = '/usr/local/lib/hermes-agent/hermes'
 
@@ -450,6 +454,8 @@ app.post('/api/harness/install', async (req, res) => {
       '[Install]',
       'WantedBy=multi-user.target',
       'UNIT',
+      '[ -f /root/.opencode-web-pass ] || (openssl rand -hex 16 > /root/.opencode-web-pass && chmod 600 /root/.opencode-web-pass)',
+      'echo "Environment=OPENCODE_PASSWORD=$(cat /root/.opencode-web-pass)" >> /etc/systemd/system/opencode-web.service',
       'systemctl daemon-reload && systemctl enable --now opencode-web',
       '# caddy site block for the chosen domain',
       "python3 - <<'PY'",
@@ -459,7 +465,7 @@ app.post('/api/harness/install', async (req, res) => {
       `dom='${dom}'`,
       "if not re.search(r'(?m)^'+re.escape(dom)+r'\\s*\\{', s):",
       "    if s and not s.endswith('\\n'): s += '\\n'",
-      "    s += dom + ' {\\n    reverse_proxy 127.0.0.1:4096\\n}\\n'",
+      "    s += dom + ' {\\n    reverse_proxy 127.0.0.1:4096 {\\n        header_up Authorization Basic " + OC_BASIC + "\\n    }\\n}\\n'",
       "    open(p,'w').write(s)",
       "    print('caddy site added')",
       'else:',
@@ -737,9 +743,11 @@ async function ensureRunning(id) {
   // start fully detached so it survives & doesn't block the request
   // Use a proper script file to ensure output redirection works
   const scriptPath = `/tmp/start-web-${id}.sh`
-  writeFileSync(scriptPath, `#!/bin/bash
-${fullCmd} >> /tmp/lifeos-web-${id}.log 2>&1
-`, { mode: 0o755 })
+  // opencode v2 requires a server password (service.json / OPENCODE_PASSWORD env).
+  // A fixed password lets Caddy inject the Authorization header, so the browser
+  // never sees a 401 (which would pop a native basic-auth dialog over the SPA).
+  const ocPassEnv = def.id === 'opencode' && OC_WEB_PASS ? `export OPENCODE_PASSWORD=${OC_WEB_PASS}\n` : ''
+  writeFileSync(scriptPath, `#!/bin/bash\n${ocPassEnv}${fullCmd} >> /tmp/lifeos-web-${id}.log 2>&1\n`, { mode: 0o755 })
   await execS(`setsid ${scriptPath} & echo $! > /tmp/lifeos-web-${id}.pid`, { timeout: 8000, shell: '/bin/bash' })
   try { record.pid = parseInt(readFileSync(`/tmp/lifeos-web-${id}.pid`, 'utf8')) } catch {}
   // wait for server to be ready
