@@ -305,6 +305,9 @@ export function ChatPanel({ fullscreen = false }) {
     }
     // apply the taller rows immediately after layout, before first paint of data
     try { term.resize(120, rowsFor()) } catch {}
+    // NOTE: no post-spawn resize loop — the PTY boots at the exact rows (via URL
+    // params) and re-resizing an Ink TUI after spawn makes it redraw skewed.
+    // Only a real window resize triggers a new resize message.
     setTimeout(doResize, 50)
     fitRef.current = fit
     termRef.current = term
@@ -313,7 +316,7 @@ export function ChatPanel({ fullscreen = false }) {
       setConn('connecting')
       // WSS via same origin (Caddy proxies /ws/* to backend)
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const ws = new WebSocket(`${proto}//${location.host}/ws/tui?engine=${engine}&profile=${agent}`)
+      const ws = new WebSocket(`${proto}//${location.host}/ws/tui?engine=${engine}&profile=${agent}&cols=120&rows=${term.rows}`)
       wsRef.current = ws
 
       ws.onopen = () => {

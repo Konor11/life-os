@@ -107,8 +107,12 @@ export function attachTuiServer(app, server) {
 
       const { cmd, args, cwd } = eng.build(profile)
       let pty
+      // cols/rows may come from the client URL so the PTY boots at the exact size
+      // the xterm already is (post-spawn resize makes Ink TUIs redraw skewed).
+      const qcols = Math.min(300, Math.max(20, parseInt(u.query.cols, 10) || 120))
+      const qrows = Math.min(300, Math.max(10, parseInt(u.query.rows, 10) || 40))
       try {
-        pty = spawn(cmd, args, { name: 'xterm-256color', cols: 120, rows: 40, cwd: cwd || '/root', env: ptyEnv })
+        pty = spawn(cmd, args, { name: 'xterm-256color', cols: qcols, rows: qrows, cwd: cwd || '/root', env: ptyEnv })
       } catch (e) {
         console.error(`[tui] pty spawn failed engine=${engine}: ${e.message}`)
         ws.send(JSON.stringify({ type: 'exit', code: 1, error: e.message }))
