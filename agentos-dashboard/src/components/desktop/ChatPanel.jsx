@@ -421,10 +421,13 @@ export function ChatPanel({ fullscreen = false }) {
         </div>
       )}
       {/* All started web UIs stay mounted (hidden with display:none) — switching
-          engines shows the already loaded SPA instantly instead of reloading it. */}
+          engines shows the already loaded SPA instantly instead of reloading it.
+          The key includes the theme: SPAs like opencode read prefers-color-scheme
+          ONCE at boot and never react to live changes, so a theme switch must
+          remount the iframe (color-scheme style is set before it boots). */}
       {Object.entries(webSrcCache).map(([id, src]) => (
         <iframe
-          key={id}
+          key={`${id}-${themeDark ? 'dark' : 'light'}`}
           src={src}
           className="flex-1 w-full border-0"
           style={{
