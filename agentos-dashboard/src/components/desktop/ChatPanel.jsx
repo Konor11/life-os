@@ -250,7 +250,7 @@ export function ChatPanel({ fullscreen = false }) {
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 11,
-      lineHeight: 1.25,
+      lineHeight: 1,
       fontFamily: 'monospace',
       theme: activeTheme,
       scrollback: 2000,
