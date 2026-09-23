@@ -75,6 +75,7 @@ export function ChatPanel({ fullscreen = false }) {
   const termRef = useRef(null)
   const fitRef = useRef(null)
   const wsRef = useRef(null)
+  const showWebRef = useRef(false)
   const [agent, setAgent] = useState('coordinator')
   const [engine, setEngine] = useState('hermes')
   const [conn, setConn] = useState('disconnected')
@@ -253,6 +254,7 @@ export function ChatPanel({ fullscreen = false }) {
 
   // Connect WS + attach xterm (skip for engines with a built-in web UI)
   useEffect(() => {
+    showWebRef.current = showWeb
     if (showWeb) {
       setConn('web')
       return () => {}
@@ -340,7 +342,12 @@ export function ChatPanel({ fullscreen = false }) {
     fitRef.current = fit
     termRef.current = term
 
+    // Only connect TUI WebSocket when NOT in Web UI mode
     const connect = () => {
+      if (showWeb) {
+        setConn('web')
+        return
+      }
       setConn('connecting')
       // WSS via same origin (Caddy proxies /ws/* to backend)
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -360,8 +367,12 @@ export function ChatPanel({ fullscreen = false }) {
           else if (msg.type === 'exit') { setConn('exited'); term.writeln(`\r\n\x1b[31m[TUI exited code ${msg.code}]\x1b[0m`) }
         } catch { term.write(String(ev.data)) }
       }
-      ws.onclose = () => { setConn('disconnected') }
-      ws.onerror = () => { setConn('error') }
+      ws.onclose = () => {
+        if (!showWebRef.current) setConn('disconnected')
+      }
+      ws.onerror = () => {
+        if (!showWebRef.current) setConn('error')
+      }
     }
 
     connect()
