@@ -269,7 +269,7 @@ const HARNESSES_DEF = [
     provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
     update: [
       "echo '[1/3] Обновление пакета hermes-agent...'",
-      "/usr/local/lib/hermes-agent/venv/bin/pip install --upgrade hermes-agent 2>&1 | tail -2",
+      "/usr/local/lib/hermes-agent/venv/bin/pip install --upgrade hermes-agent 2>&1",
       "echo '[2/3] Проверка версии...'",
       "/usr/local/lib/hermes-agent/venv/bin/pip show hermes-agent 2>/dev/null | grep -i '^Version' || true",
       "echo '[3/3] Готово — перезапусти открытые TUI-сессии Hermes, чтобы применить новую версию.'",
