@@ -62,7 +62,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
           </>
         )}
       </div>
-      {busy && logs[item.id] && (
+      {logs[item.id] && (
         <pre className="mt-2 bg-bg-elevated border border-border rounded-lg p-2 overflow-auto max-h-[140px] text-[11px] text-text whitespace-pre-wrap break-words">{logs[item.id]}</pre>
       )}
     </div>
