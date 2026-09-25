@@ -9,6 +9,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import { attachTuiServer } from './tui-ws.js'
+console.log('>>> [MODULE LOAD] server.js executing')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = '/root/agentos-data'
@@ -344,6 +345,51 @@ const HARNESSES_DEF = [
   // NOTE: Coder is NOT here — it is a full service (systemd + Postgres docker) and
   // lives in COMPONENTS_DEF below («Установка компонентов»), not an engine harness.
 ]
+
+// ---- Merge Orca agents (37 agents) into harnesses ----
+// Load at startup to avoid ES module issues in running server
+let ORCA_AGENTS = []
+try {
+  const data = readFileSync(new URL('./agent-definitions.json', import.meta.url), 'utf8')
+  ORCA_AGENTS = JSON.parse(data)
+  console.log(`>>> [STARTUP] Loaded ${ORCA_AGENTS.length} Orca agents for harness merge`)
+} catch (e) {
+  console.error('>>> [STARTUP] Failed to load Orca agents:', e)
+}
+
+// Convert Orca agents to HARNESSES_DEF format and merge (avoid duplicates)
+const existingIds = new Set(HARNESSES_DEF.map(h => h.id))
+const existingNames = new Set(HARNESSES_DEF.map(h => h.name.toLowerCase()))
+for (const a of ORCA_AGENTS) {
+  if (existingIds.has(a.id)) continue  // already in HARNESSES_DEF
+  if (existingNames.has(a.name.toLowerCase())) continue  // duplicate name (e.g. claude vs claude-code)
+  if (a.category === 'lifeos') continue  // LifeOS profiles are Hermes profiles, not separate engines
+  if (a.category === 'infrastructure' && a.isComponent) continue  // n8n/Coder are components
+  if (!a.launch?.tui?.cmd) continue  // only engines with TUI command
+  
+  const harnessDef = {
+    id: a.id,
+    name: a.name,
+    bin: Array.isArray(a.detect?.bin) ? a.detect.bin : [a.detect?.bin].filter(Boolean),
+    install: typeof a.install === 'string' ? a.install : (a.detect?.install || null),
+    desc: a.description || a.desc || '',
+    provider: a.provider || 'Unknown',
+    key: (a.keys && a.keys[0]) || null,
+    web: a.launch?.web ? { 
+      port: a.launch.web.port, 
+      cmd: a.launch.web.cmd,
+      publicPort: a.launch.web.publicPort 
+    } : null,
+    uninstall: typeof a.uninstall === 'string' ? a.uninstall : null,
+    update: a.update || null,
+  }
+  if (harnessDef.bin.length > 0) {
+    HARNESSES_DEF.push(harnessDef)
+    existingIds.add(a.id)
+    existingNames.add(a.name.toLowerCase())
+  }
+}
+console.log(`>>> [STARTUP] Merged harnesses total: ${HARNESSES_DEF.length}`)
 
 async function binExists(names) {
   // Also probe common per-agent install dirs (installers place binaries in ~/.<agent>/bin).
@@ -1110,6 +1156,22 @@ app.post('/api/agent', async (req, res) => {
   const { profile = 'planner', message = '', mode = 'fast' } = req.body || {}
   const answer = mode === 'agent' ? await askAgent(profile, message) : await askFast(profile, message)
   res.json({ profile, answer })
+})
+
+// ---- Agent definitions (37 agents from Orca) ----
+// Load from JSON file (avoids ES module import issues in running server)
+let AGENT_DEFINITIONS_CACHE = []
+try {
+  const data = readFileSync(new URL('./agent-definitions.json', import.meta.url), 'utf8')
+  AGENT_DEFINITIONS_CACHE = JSON.parse(data)
+  console.log(`>>> [STARTUP] Loaded ${AGENT_DEFINITIONS_CACHE.length} agent definitions from JSON`)
+} catch (e) {
+  console.error('>>> [STARTUP] Failed to load agent definitions from JSON:', e)
+}
+
+app.get('/api/agents', async (req, res) => {
+  console.log('>>> GET /api/agents CALLED')
+  res.json({ agents: AGENT_DEFINITIONS_CACHE })
 })
 
 // ---- TTS (edge-tts) ----

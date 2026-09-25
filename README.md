@@ -16,6 +16,19 @@ Hermes Desktop: терминал, файлы, чат и встроенные web
 
 ## Запуск
 
+Одна команда ставит всё и поднимает systemd-сервис:
+
+```bash
+sudo bash deploy/install.sh
+```
+
+Что делает `install.sh`: npm install (backend + dashboard) → production build
+(`NODE_OPTIONS="--max-old-space-size=4096"`, OOM-фикс) → генерация
+`agent-definitions.json` из `src/config/agents` → пишет и включает **один**
+юнит `lifeos.service` → health check (:3004 + :3002).
+
+Ручной запуск (для отладки):
+
 ```bash
 # backend
 cd agentos-backend && npm install
@@ -26,6 +39,21 @@ cd agentos-backend && npm install
 cd agentos-dashboard && npm install
 NODE_OPTIONS="--max-old-space-size=4096" npm run build   # нужен повышенный heap (OOM-фикс)
 ```
+
+## systemd
+
+Один юнит на весь стек — **`lifeos.service`** (backend `:3004` + dashboard `:3002`
+под супервизором `deploy/lifeos-stack.sh`):
+
+```bash
+systemctl status lifeos        # статус
+systemctl restart lifeos       # применить правки кода (обязательно после билда)
+journalctl -u lifeos -f        # логи
+```
+
+Если один из процессов умирает — супервизор гасит второй, и systemd перезапускает
+стек целиком (`Restart=always`). Отдельных юнитов `agentos-backend` /
+`agentos-dashboard` больше нет; install.sh гасит их остатки при переустановке.
 
 ## Ingress-архитектура (см. `deploy/Caddyfile`)
 

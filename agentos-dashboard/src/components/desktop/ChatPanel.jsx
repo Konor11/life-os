@@ -7,6 +7,15 @@ import { TermKeypad } from './TermKeypad'
 // on some networks -> xterm silently fell back to the DOM renderer (stripes on
 // fractional-DPR screens). Bundled statically, the WebGL renderer always works.
 import { WebglAddon } from '@xterm/addon-webgl'
+import { 
+  ENGINES, 
+  WEB_ENGINES, 
+  ENGINE_VIEW_KEY, 
+  getEngineView, 
+  setEngineView 
+} from './ChatPanelEngines'
+import { AGENT_STATES, AGENT_STATE_LABELS, AGENT_STATE_COLORS, AGENT_STATE_BG, detectAgentState } from '../../config/agentStates'
+import { getAgentsByCategory, getAgentById } from '../../config/agents'
 
 // The xterm theme follows the Life OS theme (light/dark). TUI apps like opencode
 // v2 hot-reload their cli.json theme mode (see tui-ws), so both stay in sync.
@@ -29,45 +38,22 @@ function getXtermTheme() {
   }
 }
 
-const AGENTS = [
-  { id: 'coordinator', name: 'Coordinator', color: '#5865f2' },
-  { id: 'planner', name: 'Planner', color: '#10b981' },
-  { id: 'tasks', name: 'Tasks', color: '#f59e0b' },
-  { id: 'knowledge', name: 'Knowledge', color: '#8b5cf6' },
-  { id: 'habits', name: 'Habits', color: '#ef4444' },
-]
-
-// External engines (their CLI spawned directly when installed). engine differs from profile.
-// Exported so SettingsPanel can offer a default-view (Web/TUI) choice per engine.
-export const ENGINES = [
-  { id: 'hermes', name: 'Hermes' },
-  { id: 'opencode', name: 'OpenCode' },
-  { id: 'codex', name: 'Codex' },
-  { id: 'claude', name: 'Claude' },
-  { id: 'pi', name: 'Pi' },
-  { id: 'deepseek', name: 'DeepSeek' },
-  { id: 'openclaw', name: 'OpenClaw' },
-]
-
-// Engines that expose a built-in web UI (the rest are TUI-only).
-export const WEB_ENGINES = new Set(['hermes', 'opencode', 'deepseek', 'openclaw'])
-
-const ENGINE_VIEW_KEY = 'lifeos.engine.view'  // { [engineId]: 'web'|'tui' }
-
-export function getEngineView(engineId, fallback = 'web') {
-  try {
-    const m = JSON.parse(localStorage.getItem(ENGINE_VIEW_KEY) || '{}')
-    if (m[engineId]) return m[engineId]
-  } catch {}
-  return fallback
-}
-
-export function setEngineView(engineId, view) {
-  try {
-    const m = JSON.parse(localStorage.getItem(ENGINE_VIEW_KEY) || '{}')
-    m[engineId] = view
-    localStorage.setItem(ENGINE_VIEW_KEY, JSON.stringify(m))
-  } catch {}
+function getProfileColor(id) {
+  const colors = {
+    'planner': '#10b981',
+    'tasks': '#f59e0b',
+    'knowledge': '#8b5cf6',
+    'habits': '#ef4444',
+    'finances': '#f97316',
+    'health': '#ec4899',
+    'learning': '#06b6d4',
+    'contacts': '#eab308',
+    'automations': '#6366f1',
+    'calendar': '#8b5cf6',
+    'projects': '#14b8a6',
+    'default': '#6b7280',
+  }
+  return colors[id] || '#6b7280'
 }
 
 export function ChatPanel({ fullscreen = false }) {
@@ -76,7 +62,7 @@ export function ChatPanel({ fullscreen = false }) {
   const fitRef = useRef(null)
   const wsRef = useRef(null)
   const showWebRef = useRef(false)
-  const [agent, setAgent] = useState('coordinator')
+  const [agent, setAgent] = useState('default')
   const [engine, setEngine] = useState('hermes')
   const [conn, setConn] = useState('disconnected')
   const [fontSize, setFontSize] = useState(11)
@@ -100,6 +86,21 @@ export function ChatPanel({ fullscreen = false }) {
       setWebPorts(m)
       setInstalledEngines(inst)
     }).catch(() => { setInstalledEngines({}) })
+  }, [])
+
+  // Fetch LifeOS profiles for Hermes profile selector
+  const [lifeosProfiles, setLifeosProfiles] = useState([])
+  useEffect(() => {
+    fetch('/api/agents')
+      .then(r => r.json())
+      .then(d => {
+        const profiles = (d.agents || [])
+          .filter(a => a.category === 'lifeos')
+          .map(a => ({ id: a.id, name: a.name, color: getProfileColor(a.id) }))
+        // Add 'default' as first option
+        setLifeosProfiles([{ id: 'default', name: 'Default', color: '#6b7280' }, ...profiles])
+      })
+      .catch(() => setLifeosProfiles([{ id: 'default', name: 'Default', color: '#6b7280' }]))
   }, [])
 
   // When an engine with a built-in web UI is picked: start it and switch to iframe.
@@ -195,7 +196,9 @@ export function ChatPanel({ fullscreen = false }) {
   // Web/TUI toggle for engines that support both. Initial value honors the user's
   // per-engine default from Settings («Движки · открывать по умолчанию»), so the
   // first Chat mount opens the preferred view, not a hardcoded Web.
-  const [useWeb, setUseWeb] = useState(() => getEngineView('hermes', 'web') === 'web')
+  const [useWeb, setUseWeb] = useState(() => getEngineView(engine, 'web') === 'web')
+  // Agent state machine (Herdr-style): unknown | idle | working | blocked | done
+  const [agentState, setAgentState] = useState(AGENT_STATES.UNKNOWN)
   // Track the Life OS theme so embedded web UIs (opencode/deepseek SPAs follow
   // prefers-color-scheme) can be forced to match via the iframe's color-scheme.
   const [themeDark, setThemeDark] = useState(() => document.documentElement.getAttribute('data-theme') !== 'light')
@@ -363,7 +366,13 @@ export function ChatPanel({ fullscreen = false }) {
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data)
-          if (msg.type === 'data') term.write(msg.data)
+          if (msg.type === 'data') {
+            term.write(msg.data)
+            // Detect agent state from terminal output (Herdr-style)
+            if (msg.data && typeof msg.data === 'string') {
+              setAgentState(prev => detectAgentState(msg.data, prev))
+            }
+          }
           else if (msg.type === 'exit') { setConn('exited'); term.writeln(`\r\n\x1b[31m[TUI exited code ${msg.code}]\x1b[0m`) }
         } catch { term.write(String(ev.data)) }
       }
@@ -449,16 +458,32 @@ export function ChatPanel({ fullscreen = false }) {
         <button onClick={() => setKeypadOn(!keypadOn)}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
-        <span className={`ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap ${conn==='connected' ? 'text-success' : conn==='connecting' ? 'text-warning' : conn==='web' ? 'text-accent' : 'text-danger'}`}>
-          <span className={`w-2 h-2 rounded-full ${conn==='connected'?'bg-success':conn==='connecting'?'bg-warning':conn==='web'?'bg-accent':'bg-danger'}`} />
-          {conn}
-        </span>
+        {/* Connection + Agent state indicator */}
+        {(() => {
+          // In Web mode: show "web"
+          if (showWeb) return (
+            <span className="ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap text-accent">
+              <span className="w-2 h-2 rounded-full bg-accent" />
+              web
+            </span>
+          )
+          // In TUI mode: show agent state (Herdr-style 5 states)
+          const label = AGENT_STATE_LABELS[agentState] || agentState
+          const color = AGENT_STATE_COLORS[agentState] || 'text-text-muted'
+          const bgColor = AGENT_STATE_BG[agentState] || 'bg-text-muted'
+          return (
+            <span className={`ml-auto flex items-center gap-1.5 text-xs whitespace-nowrap ${color}`}>
+              <span className={`w-2 h-2 rounded-full ${bgColor}`} />
+              {conn === 'connected' ? label : conn}
+            </span>
+          )
+        })()}
       </div>
       {/* Profile row (only for the hermes engine) */}
       {engine === 'hermes' && !showWeb && (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated/70 border-b border-border overflow-x-auto">
           <span className="text-xs text-text-muted whitespace-nowrap">профиль:</span>
-          {AGENTS.map(a => (
+          {lifeosProfiles.map(a => (
             <button
               key={a.id}
               onClick={() => setAgent(a.id)}
@@ -500,7 +525,7 @@ export function ChatPanel({ fullscreen = false }) {
       ))}
       {!showWeb && (
         <>
-          <div ref={containerRef} className="flex-1 overflow-auto p-0" style={{ minHeight: '280px', overflowX: 'auto', overflowY: 'auto', minWidth: '900px' }} />
+          <div ref={containerRef} className="flex-1 w-full overflow-hidden" style={{ minHeight: '280px', minWidth: '900px' }} />
           {/* on-screen keypad only for touch/narrow screens — laptops have a real keyboard */}
           {keypadOn && (
             <div className="lg:hidden">

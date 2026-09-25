@@ -11,6 +11,8 @@ const AutomationsDashboardView = lazy(() => import('./components/AutomationsDash
 const MemoryView = lazy(() => import('./components/MemoryView').then(m => ({ default: m.MemoryView })))
 const CalendarView = lazy(() => import('./components/CalendarView').then(m => ({ default: m.CalendarView })))
 const ProjectsView = lazy(() => import('./components/ProjectsView').then(m => ({ default: m.ProjectsView })))
+// SplitPaneView loaded eagerly to debug
+import { SplitPaneView } from './components/desktop/SplitPane/SplitPaneView'
 
 const emptyPlan = { date: new Date().toISOString().slice(0,10), timeBlocks: [], priorities: [], metrics: { deepWorkHours: 0, meetingsHours: 0 } }
 const emptyTasks = []
@@ -245,6 +247,7 @@ function App() {
               {activeView === 'agents' && <AgentsView />}
               {activeView === 'keys' && <KeysView />}
               {activeView === 'harness' && <HarnessView />}
+              {activeView === 'split' && <SplitPaneView />}
             </MainContent>
             <StatusBar agents={[
               { id: 'planner', name: 'Planner', status: 'idle' },

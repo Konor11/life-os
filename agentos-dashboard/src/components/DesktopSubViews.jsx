@@ -37,7 +37,7 @@ function FullscreenShell({ label, icon, height, children }) {
 export function TerminalTab() {
   const [cwd, setCwd] = useState('/root')
   return (
-    <FullscreenShell label="Terminal" icon="Terminal" height="calc(100vh - 9rem)">
+    <FullscreenShell label="Terminal" icon="Terminal" height="calc(100dvh - 9rem)">
       <TerminalPanel cwd={cwd} onCwdChange={setCwd} />
     </FullscreenShell>
   )
@@ -46,7 +46,7 @@ export function TerminalTab() {
 export function FilesTab() {
   const [cwd, setCwd] = useState('/root')
   return (
-    <FullscreenShell label="Файловый менеджер" icon="Folder" height="calc(100vh - 9rem)">
+    <FullscreenShell label="Файловый менеджер" icon="Folder" height="calc(100dvh - 9rem)">
       <FileManagerPanel cwd={cwd} onCwdChange={setCwd} />
     </FullscreenShell>
   )
@@ -64,7 +64,7 @@ export function ChatTab() {
 
 export function SettingsTab() {
   return (
-    <FullscreenShell label="Настройки" icon="Settings" height="calc(100vh - 9rem)">
+    <FullscreenShell label="Настройки" icon="Settings" height="calc(100dvh - 9rem)">
       <SettingsPanel />
     </FullscreenShell>
   )

@@ -11,5 +11,5 @@ if [ -f /root/.hermes/.env ]; then
 fi
 set +a
 unset HERMES_TUI_GATEWAY_URL
-cd /root/agentos-backend
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec node server.js

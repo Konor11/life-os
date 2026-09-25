@@ -68,7 +68,7 @@ export function AssistantView() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] h-[calc(100vh-9rem)] gap-4 min-h-[600px]">
+    <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] h-[calc(100dvh-9rem)] gap-4 min-h-[600px]">
       {/* Agent roster */}
       <div className="glass p-3 rounded-xl overflow-y-auto">
         <h3 className="font-semibold text-text text-sm mb-3 flex items-center gap-2"><Icon name="Brain" size={16} /> Субагенты</h3>

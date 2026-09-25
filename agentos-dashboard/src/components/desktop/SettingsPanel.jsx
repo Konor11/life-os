@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '../Icons'
-import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanel'
+import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanelEngines'
 
 const API = '/api'
 
