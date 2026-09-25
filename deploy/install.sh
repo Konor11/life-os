@@ -23,9 +23,83 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> Life OS directory: $DIR"
 
-command -v node >/dev/null 2>&1 || { echo "✘ node не найден (нужен Node 18+)"; exit 1; }
-command -v npm  >/dev/null 2>&1 || { echo "✘ npm не найден"; exit 1; }
 command -v systemctl >/dev/null 2>&1 || { echo "✘ systemd не найден — этот скрипт для прод-сервера с systemd"; exit 1; }
+
+# -------------------------------------------------- install prerequisites ----
+# Определяем пакетный менеджер (apt/dnf/yum/pacman/zypper)
+PKG=""
+if command -v apt-get >/dev/null 2>&1; then PKG="apt"
+elif command -v dnf >/dev/null 2>&1; then PKG="dnf"
+elif command -v yum >/dev/null 2>&1; then PKG="yum"
+elif command -v pacman >/dev/null 2>&1; then PKG="pacman"
+elif command -v zypper >/dev/null 2>&1; then PKG="zypper"
+fi
+
+install_pkg() {
+  case "$PKG" in
+    apt)    apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$1" ;;
+    dnf)    dnf install -y -q "$1" ;;
+    yum)    yum install -y -q "$1" ;;
+    pacman) pacman -S --noconfirm "$1" ;;
+    zypper) zypper --non-interactive install "$1" ;;
+  esac
+}
+
+# curl — нужен для health check
+if ! command -v curl >/dev/null 2>&1; then
+  echo "==> ставлю curl"
+  [ -n "$PKG" ] && install_pkg curl || { echo "✘ curl не найден и пакетный менеджер не определён — поставь вручную"; exit 1; }
+fi
+
+# Node.js 18+ — ставим через NodeSource, если нет или слишком старый
+NODE_OK=0
+if command -v node >/dev/null 2>&1; then
+  NODE_MAJOR=$(node -v | sed 's/^v//' | cut -d. -f1)
+  [ "$NODE_MAJOR" -ge 18 ] 2>/dev/null && NODE_OK=1
+fi
+if [ "$NODE_OK" != "1" ]; then
+  echo "==> ставлю Node.js 20 (NodeSource)"
+  if [ "$PKG" = "apt" ]; then
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - >/dev/null
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
+  elif [ "$PKG" = "dnf" ] || [ "$PKG" = "yum" ]; then
+    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - >/dev/null
+    "$PKG" install -y -q nodejs
+  else
+    echo "✘ не могу поставить Node автоматически (pkg=$PKG) — поставь Node 18+ вручную"
+    exit 1
+  fi
+fi
+command -v node >/dev/null 2>&1 || { echo "✘ node не появился после установки"; exit 1; }
+command -v npm  >/dev/null 2>&1 || { echo "✘ npm не появился после установки"; exit 1; }
+
+# Caddy — ставим через официальный репозиторий, если нет ни бинарника, ни docker-caddy
+CADDY_PRESENT=0
+command -v caddy >/dev/null 2>&1 && CADDY_PRESENT=1
+docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^caddy$' && CADDY_PRESENT=1
+if [ "$CADDY_PRESENT" != "1" ]; then
+  echo "==> ставлю Caddy"
+  if [ "$PKG" = "apt" ]; then
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl >/dev/null
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+    apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq caddy
+  elif [ "$PKG" = "dnf" ] || [ "$PKG" = "yum" ]; then
+    tee /etc/yum.repos.d/caddy.repo >/dev/null <<'REPO'
+[caddy-stable]
+name=Caddy Stable Repository
+baseurl=https://dl.cloudsmith.io/public/caddy/stable/rpm/el_any/
+gpgcheck=1
+repo_gpgcheck=1
+enabled=1
+gpgkey=https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+REPO
+    "$PKG" install -y -q caddy
+  else
+    echo "✘ не могу поставить Caddy автоматически (pkg=$PKG) — поставь вручную: https://caddyserver.com/docs/install"
+    echo "   (продолжаю без Caddy — сгенерирую только Caddyfile)"
+  fi
+fi
 
 # ------------------------------------------------------- stop legacy units ----
 systemctl disable --now lifeos-stack.service 2>/dev/null || true
