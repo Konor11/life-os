@@ -7,10 +7,15 @@ export PYTHONUNBUFFERED=1
 
 LIFEOS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# serve ставится через npm i -g и может лежать в /usr/bin или /usr/local/bin —
+# ищем динамически; если нет вообще — нpx-фолбэк не нужен, systemd перезапустит стек
+SERVE_BIN="$(command -v serve || true)"
+[ -z "$SERVE_BIN" ] && npm install -g serve >/dev/null 2>&1 && SERVE_BIN="$(command -v serve || true)"
+
 "$LIFEOS_DIR/agentos-backend/start_backend.sh" &
 P1=$!
 
-/usr/local/bin/serve -s "$LIFEOS_DIR/agentos-dashboard/dist" -l 3002 &
+"$SERVE_BIN" -s "$LIFEOS_DIR/agentos-dashboard/dist" -l 3002 &
 P2=$!
 
 term() {
