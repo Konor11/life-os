@@ -73,6 +73,20 @@ fi
 command -v node >/dev/null 2>&1 || { echo "✘ node не появился после установки"; exit 1; }
 command -v npm  >/dev/null 2>&1 || { echo "✘ npm не появился после установки"; exit 1; }
 
+# Сборочные тулзы — нативные модули (node-pty) собираются через node-gyp,
+# которому нужны make и g++; python3 тоже нужен (обычно уже есть)
+if ! command -v make >/dev/null 2>&1 || ! command -v g++ >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+  echo "==> ставлю build tools (make, g++, python3)"
+  case "$PKG" in
+    apt)    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential python3 ;;
+    dnf)    dnf install -y -q gcc-c++ make python3 ;;
+    yum)    yum install -y -q gcc-c++ make python3 ;;
+    pacman) pacman -S --noconfirm base-devel python ;;
+    zypper) zypper --non-interactive install gcc-c++ make python3 ;;
+    *)      echo "✘ не могу поставить build tools автоматически (pkg=$PKG) — поставь make и g++ вручную"; exit 1 ;;
+  esac
+fi
+
 # Caddy — ставим через официальный репозиторий, если нет ни бинарника, ни docker-caddy
 CADDY_PRESENT=0
 command -v caddy >/dev/null 2>&1 && CADDY_PRESENT=1
