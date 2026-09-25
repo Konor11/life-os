@@ -212,6 +212,17 @@ if [ -f "$DIR/deploy/Caddyfile" ]; then
   PREV_DOMAIN=$(grep -E '^os\\.' "$DIR/deploy/Caddyfile" | head -1 | sed 's/^os\\.//; s/ .*//')
 fi
 
+# Спрашиваем домен. curl | bash: stdin — пайп (bash читает из него сам скрипт),
+# поэтому читаем ТОЛЬКО с /dev/tty и промпт печатаем прямо туда же.
+read_tty() {
+  # $1 — промпт; печатает его на /dev/tty и возвращает введённое в stdout
+  if { printf '' >/dev/tty; } 2>/dev/null; then
+    printf '%s' "$1" >/dev/tty
+    local v=""
+    IFS= read -r v </dev/tty && printf '%s' "$v"
+  fi
+}
+
 if [ -t 0 ]; then
   # обычный запуск: stdin — терминал
   if [ -n "$PREV_DOMAIN" ]; then
@@ -220,12 +231,17 @@ if [ -t 0 ]; then
   else
     read -rp "   Базовый домен для Life OS (например, example.com): " BASE_DOMAIN
   fi
-elif [ -e /dev/tty ] && read -rp "   Базовый домен для Life OS (например, example.com): " BASE_DOMAIN </dev/tty 2>/dev/null && [ -n "$BASE_DOMAIN" ]; then
-  # curl | bash: stdin — пайп, но терминал доступен через /dev/tty
-  :
 else
-  # совсем неинтерактивно (CI): env или предыдущий
-  BASE_DOMAIN="${LIFEOS_DOMAIN:-$PREV_DOMAIN}"
+  # curl | bash (или CI): пробуем спросить через /dev/tty
+  TTY_DOMAIN="$(read_tty 'Базовый домен для Life OS (например, example.com): ' || true)"
+  if [ -n "$TTY_DOMAIN" ]; then
+    BASE_DOMAIN="$TTY_DOMAIN"
+  else
+    BASE_DOMAIN="${LIFEOS_DOMAIN:-$PREV_DOMAIN}"
+    if [ -n "$BASE_DOMAIN" ]; then
+      echo "   Терминал недоступен — беру домен из env/конфига: $BASE_DOMAIN"
+    fi
+  fi
 fi
 
 if [ -z "$BASE_DOMAIN" ]; then
