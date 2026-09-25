@@ -16,23 +16,27 @@ Hermes Desktop: терминал, файлы, чат и встроенные web
 
 ## Запуск
 
-Одна команда ставит всё и поднимает systemd-сервис:
+Одна команда ставит всё с нуля (исходники скачаются сами):
 
 ```bash
-sudo bash deploy/install.sh
+curl -fsSL https://raw.githubusercontent.com/Konor11/life-os/main/deploy/bootstrap.sh | bash
 ```
 
-Что делает `install.sh`: npm install (backend + dashboard) → production build
-(`NODE_OPTIONS="--max-old-space-size=4096"`, OOM-фикс) → генерация
-`agent-definitions.json` из `src/config/agents` → пишет и включает **один**
-юнит `lifeos.service` → health check (:3004 + :3002) → **опционально спрашивает
-базовый домен и генерирует Caddyfile только для `os.<domain>` (Life OS)**.
-Остальные поддомены (admin, hermes, workspace, движки) настраиваются отдельно.
+Bootstrap сам ставит git (если нет), клонирует/обновляет репозиторий в
+`/root/life-os` (путь переопределяется: `LIFEOS_DIR=/srv/life-os`) и запускает
+`deploy/install.sh`.
 
-Если скрипт запущен интерактивно — спросит домен (с дефолтом из предыдущего
-Caddyfile). Неинтерактивно (CI) — читает `LIFEOS_DOMAIN` из env или берёт
-предыдущий. Без домена — просто пишет `deploy/Caddyfile` с инструкцией
-настроить Caddy вручную.
+Что делает `install.sh`: ставит недостающее (curl, Node.js 20 через NodeSource,
+Caddy через официальный репозиторий) → npm install (backend + dashboard) →
+production build (`NODE_OPTIONS="--max-old-space-size=4096"`, OOM-фикс) →
+генерация `agent-definitions.json` из `src/config/agents` → пишет и включает
+**один** юнит `lifeos.service` → health check (:3004 + :3002) → **опционально
+спрашивает базовый домен и генерирует Caddyfile только для `os.<domain>`
+(Life OS)**. Остальные поддомены (admin, hermes, workspace, движки)
+настраиваются отдельно.
+
+Повторный запуск идемпотентен: обновляет клон, пересобирает, перезапускает
+`lifeos.service`. Неинтерактивно (CI) домен читается из `LIFEOS_DOMAIN`.
 
 Ручной запуск (для отладки):
 
