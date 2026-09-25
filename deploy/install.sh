@@ -23,6 +23,44 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> Life OS directory: $DIR"
 
+# ------------------------------------------------------------------- domain ----
+# Спрашиваем домен СРАЗУ, до всех установок. При `curl | bash` stdin — пайп
+# (bash читает из него сам скрипт), поэтому терминал берём через /dev/tty.
+PREV_DOMAIN=""
+if [ -f "$DIR/deploy/Caddyfile" ]; then
+  PREV_DOMAIN=$(grep -E '^os\.' "$DIR/deploy/Caddyfile" | head -1 | sed 's/^os\.//; s/ .*//')
+fi
+
+if [ -t 0 ]; then
+  # обычный запуск: stdin — терминал
+  if [ -n "$PREV_DOMAIN" ]; then
+    read -rp "Базовый домен для Life OS (например, example.com) [$PREV_DOMAIN]: " BASE_DOMAIN
+    BASE_DOMAIN="${BASE_DOMAIN:-$PREV_DOMAIN}"
+  else
+    read -rp "Базовый домен для Life OS (например, example.com): " BASE_DOMAIN
+  fi
+elif { printf '' >/dev/tty; } 2>/dev/null; then
+  # curl | bash: stdin — пайп, но терминал доступен
+  printf 'Базовый домен для Life OS (например, example.com): ' >/dev/tty
+  TTY_DOMAIN=""
+  IFS= read -r TTY_DOMAIN </dev/tty || TTY_DOMAIN=""
+  if [ -n "$TTY_DOMAIN" ]; then
+    BASE_DOMAIN="$TTY_DOMAIN"
+  else
+    BASE_DOMAIN="${LIFEOS_DOMAIN:-$PREV_DOMAIN}"
+  fi
+else
+  # совсем нет терминала (CI)
+  BASE_DOMAIN="${LIFEOS_DOMAIN:-$PREV_DOMAIN}"
+fi
+
+if [ -n "$BASE_DOMAIN" ]; then
+  echo "==> Домен Life OS: $BASE_DOMAIN"
+else
+  echo "==> Домен не задан — Caddyfile не сгенерируется."
+  echo "    Для неинтерактивной установки: LIFEOS_DOMAIN=example.com curl -fsSL ... | bash"
+fi
+
 command -v systemctl >/dev/null 2>&1 || { echo "✘ systemd не найден — этот скрипт для прод-сервера с systemd"; exit 1; }
 
 # -------------------------------------------------- install prerequisites ----
@@ -207,43 +245,6 @@ else
   GENERATE_ONLY=0
 fi
 
-PREV_DOMAIN=""
-if [ -f "$DIR/deploy/Caddyfile" ]; then
-  PREV_DOMAIN=$(grep -E '^os\\.' "$DIR/deploy/Caddyfile" | head -1 | sed 's/^os\\.//; s/ .*//')
-fi
-
-# Спрашиваем домен. curl | bash: stdin — пайп (bash читает из него сам скрипт),
-# поэтому читаем ТОЛЬКО с /dev/tty и промпт печатаем прямо туда же.
-read_tty() {
-  # $1 — промпт; печатает его на /dev/tty и возвращает введённое в stdout
-  if { printf '' >/dev/tty; } 2>/dev/null; then
-    printf '%s' "$1" >/dev/tty
-    local v=""
-    IFS= read -r v </dev/tty && printf '%s' "$v"
-  fi
-}
-
-if [ -t 0 ]; then
-  # обычный запуск: stdin — терминал
-  if [ -n "$PREV_DOMAIN" ]; then
-    read -rp "   Базовый домен для Life OS (например, example.com) [$PREV_DOMAIN]: " BASE_DOMAIN
-    BASE_DOMAIN="${BASE_DOMAIN:-$PREV_DOMAIN}"
-  else
-    read -rp "   Базовый домен для Life OS (например, example.com): " BASE_DOMAIN
-  fi
-else
-  # curl | bash (или CI): пробуем спросить через /dev/tty
-  TTY_DOMAIN="$(read_tty 'Базовый домен для Life OS (например, example.com): ' || true)"
-  if [ -n "$TTY_DOMAIN" ]; then
-    BASE_DOMAIN="$TTY_DOMAIN"
-  else
-    BASE_DOMAIN="${LIFEOS_DOMAIN:-$PREV_DOMAIN}"
-    if [ -n "$BASE_DOMAIN" ]; then
-      echo "   Терминал недоступен — беру домен из env/конфига: $BASE_DOMAIN"
-    fi
-  fi
-fi
-
 if [ -z "$BASE_DOMAIN" ]; then
   echo "   Домен не задан — пропускаю генерацию Caddyfile."
   echo "   Настройте Caddy вручную: deploy/Caddyfile → /etc/caddy/Caddyfile"
@@ -309,6 +310,8 @@ fi
 
 echo ""
 echo "=== ИТОГ ==="
-echo "Life OS:      https://$OS_DOMAIN"
+if [ -n "${BASE_DOMAIN:-}" ]; then
+  echo "Life OS:      https://os.$BASE_DOMAIN"
+fi
 echo "Компоненты (n8n, Coder, движки): вкладка «Установка компонентов» в UI"
 echo "Логи:         journalctl -u lifeos -f"
