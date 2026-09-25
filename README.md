@@ -26,11 +26,8 @@ sudo bash deploy/install.sh
 (`NODE_OPTIONS="--max-old-space-size=4096"`, OOM-фикс) → генерация
 `agent-definitions.json` из `src/config/agents` → пишет и включает **один**
 юнит `lifeos.service` → health check (:3004 + :3002) → **опционально спрашивает
-базовый домен и генерирует Caddyfile для `os.<domain>` + инфраструктурных
-поддоменов `admin.<domain>`, `hermes.<domain>`, `workspace.<domain>`**.
-Поддомены движков (`oc.*`, `ds.*`, `n8n.*`) **не создаются здесь** — они
-добавляются автоматически при установке соответствующих компонентов через
-UI («Установка компонентов»).
+базовый домен и генерирует Caddyfile только для `os.<domain>` (Life OS)**.
+Остальные поддомены (admin, hermes, workspace, движки) настраиваются отдельно.
 
 Если скрипт запущен интерактивно — спросит домен (с дефолтом из предыдущего
 Caddyfile). Неинтерактивно (CI) — читает `LIFEOS_DOMAIN` из env или берёт
