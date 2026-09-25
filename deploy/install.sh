@@ -28,20 +28,20 @@ echo "==> Life OS directory: $DIR"
 # (bash читает из него сам скрипт), поэтому терминал берём через /dev/tty.
 PREV_DOMAIN=""
 if [ -f "$DIR/deploy/Caddyfile" ]; then
-  PREV_DOMAIN=$(grep -E '^os\.' "$DIR/deploy/Caddyfile" | head -1 | sed 's/^os\.//; s/ .*//')
+  PREV_DOMAIN=$(grep -vE '^\s*(#|$)' "$DIR/deploy/Caddyfile" | head -1 | awk '{print $1}')
 fi
 
 if [ -t 0 ]; then
   # обычный запуск: stdin — терминал
   if [ -n "$PREV_DOMAIN" ]; then
-    read -rp "Базовый домен для Life OS (например, example.com) [$PREV_DOMAIN]: " BASE_DOMAIN
+    read -rp "Домен для Life OS (например, os.example.com) [$PREV_DOMAIN]: " BASE_DOMAIN
     BASE_DOMAIN="${BASE_DOMAIN:-$PREV_DOMAIN}"
   else
-    read -rp "Базовый домен для Life OS (например, example.com): " BASE_DOMAIN
+    read -rp "Домен для Life OS (например, os.example.com): " BASE_DOMAIN
   fi
 elif { printf '' >/dev/tty; } 2>/dev/null; then
   # curl | bash: stdin — пайп, но терминал доступен
-  printf 'Базовый домен для Life OS (например, example.com): ' >/dev/tty
+  printf 'Домен для Life OS (например, os.example.com): ' >/dev/tty
   TTY_DOMAIN=""
   IFS= read -r TTY_DOMAIN </dev/tty || TTY_DOMAIN=""
   if [ -n "$TTY_DOMAIN" ]; then
@@ -254,7 +254,7 @@ else
     echo "   Генерирую как есть, проверьте вручную."
   fi
 
-  OS_DOMAIN="os.$BASE_DOMAIN"
+  OS_DOMAIN="$BASE_DOMAIN"
 
   echo "   Генерирую Caddyfile для: $OS_DOMAIN (Life OS)"
 
@@ -311,7 +311,7 @@ fi
 echo ""
 echo "=== ИТОГ ==="
 if [ -n "${BASE_DOMAIN:-}" ]; then
-  echo "Life OS:      https://os.$BASE_DOMAIN"
+  echo "Life OS:      https://$OS_DOMAIN"
 fi
 echo "Компоненты (n8n, Coder, движки): вкладка «Установка компонентов» в UI"
 echo "Логи:         journalctl -u lifeos -f"
