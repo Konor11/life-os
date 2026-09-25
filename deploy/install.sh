@@ -213,13 +213,18 @@ if [ -f "$DIR/deploy/Caddyfile" ]; then
 fi
 
 if [ -t 0 ]; then
+  # обычный запуск: stdin — терминал
   if [ -n "$PREV_DOMAIN" ]; then
     read -rp "   Базовый домен для Life OS (например, example.com) [$PREV_DOMAIN]: " BASE_DOMAIN
     BASE_DOMAIN="${BASE_DOMAIN:-$PREV_DOMAIN}"
   else
     read -rp "   Базовый домен для Life OS (например, example.com): " BASE_DOMAIN
   fi
+elif [ -e /dev/tty ] && read -rp "   Базовый домен для Life OS (например, example.com): " BASE_DOMAIN </dev/tty 2>/dev/null && [ -n "$BASE_DOMAIN" ]; then
+  # curl | bash: stdin — пайп, но терминал доступен через /dev/tty
+  :
 else
+  # совсем неинтерактивно (CI): env или предыдущий
   BASE_DOMAIN="${LIFEOS_DOMAIN:-$PREV_DOMAIN}"
 fi
 
