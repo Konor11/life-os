@@ -25,7 +25,15 @@ sudo bash deploy/install.sh
 Что делает `install.sh`: npm install (backend + dashboard) → production build
 (`NODE_OPTIONS="--max-old-space-size=4096"`, OOM-фикс) → генерация
 `agent-definitions.json` из `src/config/agents` → пишет и включает **один**
-юнит `lifeos.service` → health check (:3004 + :3002).
+юнит `lifeos.service` → health check (:3004 + :3002) → **опционально спрашивает
+базовый домен и генерирует Caddyfile** для `os.<domain>`, `oc.<domain>`,
+`ds.<domain>`, `n8n.<domain>`, `admin.<domain>`, `hermes.<domain>`,
+`workspace.<domain>` с правильными Referer-gate'ами и CSP.
+
+Если скрипт запущен интерактивно — спросит домен (с дефолтом из предыдущего
+Caddyfile). Неинтерактивно (CI) — читает `LIFEOS_DOMAIN` из env или берёт
+предыдущий. Без домена — просто пишет `deploy/Caddyfile` с инструкцией
+настроить Caddy вручную.
 
 Ручной запуск (для отладки):
 
