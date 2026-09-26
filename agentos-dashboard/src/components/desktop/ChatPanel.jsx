@@ -422,9 +422,15 @@ export function ChatPanel({ fullscreen = false }) {
       repaintTimer = setTimeout(refreshScreen, 600)
     }
     const doResize = () => {
+      // Размер ДО подгонки: applyFit() внутри вызывает fit(), который сам поднимает onResize и
+      // обновляет lastSentSize, поэтому сравнивать надо с прежним значением, иначе «changed»
+      // всегда ложно и чистый кадр после смены раскладки не заказывается.
+      const before = lastSentSize
       const { cols, rows } = applyFit()
+      const key = `${cols}x${rows}`
+      const changed = key !== before
       const widthOrFontChanged = repaintKey() !== lastRepaintKey
-      lastSentSize = `${cols}x${rows}`
+      lastSentSize = key
       publishSize()
       sendSizeSoon()
       // Чистый кадр нужен и при смене ширины/кегля, и при смене ВЫСОТЫ: на смене высоты Ink
