@@ -60,8 +60,25 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
           </>
         )}
       </div>
+      {/* Live screen of an interactive install. The wizard marks the highlighted option with
+          a leading "→" and keeps "(●)" on the *recommended* row (it never moves), so the
+          selected line is highlighted here — otherwise "which one am I choosing?" is
+          unreadable. */}
       {logs[item.id] && (
-        <pre className="mt-2 bg-bg-elevated border border-border rounded-lg p-2 overflow-auto max-h-[140px] text-[11px] text-text whitespace-pre-wrap break-words">{logs[item.id]}</pre>
+        <div className="mt-2 bg-bg-elevated border border-border rounded-lg p-2 max-h-[200px] overflow-auto">
+          <div className="text-[11px] font-mono text-text whitespace-pre-wrap break-words">{logs[item.id].split('\n').map((line, i) => (
+              /^\s*→/.test(line)
+                ? <span key={i} className="text-accent font-semibold">{line + '\n'}</span>
+                : line + '\n'
+            ))}</div>
+          {/^\s*→\s/m.test(logs[item.id]) && (
+            <p className="mt-1 pt-1 border-t border-border text-[10px] text-text-muted">
+              Сейчас выбрана строка со стрелкой <span className="text-accent font-semibold">→</span>.
+              Значок <span className="font-semibold">(●)</span> — просто «рекомендованный вариант», он не двигается;
+              переключение — кнопками <span className="font-semibold">↑</span>/<span className="font-semibold">↓</span>, подтверждение — <span className="font-semibold">⏎ Enter</span>.
+            </p>
+          )}
+        </div>
       )}
       {/* Interactive installs (Hermes: `hermes setup` is an arrow-key menu running in a PTY)
           — the keystrokes are forwarded to the live process. */}
