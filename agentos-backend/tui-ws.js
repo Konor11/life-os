@@ -4,7 +4,7 @@ import { exec } from 'child_process'
 import http from 'http'
 import url from 'url'
 import { promisify } from 'util'
-import { readFileSync, writeFileSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync } from 'fs'
 
 const execS = promisify(exec)
 const HOME_BINS = ['/root/.opencode/bin', '/root/.codex/bin', '/root/.claude/local/bin',
@@ -28,12 +28,49 @@ const HERMES = '/usr/local/lib/hermes-agent/venv/bin/python'
 const HERMES_ENTRY = '/usr/local/lib/hermes-agent/hermes'
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || ''
 
+// Hermes homes differ per install method: the one-line installer puts a self-contained
+// launcher in ~/.hermes/hermes-agent/.hermes/bin/hermes, older layouts exposed
+// /usr/local/lib/hermes-agent (python + entry script). Spawning one hardcoded path made
+// the Chat tab die with "execvp(3) failed: No such file or directory" on a fresh server.
+const HERMES_CANDIDATES = [
+  '/usr/local/bin/hermes',
+  '/root/.hermes/hermes-agent/.hermes/bin/hermes',
+  '/root/.hermes/bin/hermes',
+  '/usr/local/lib/hermes-agent/.hermes/bin/hermes',
+]
+
+function hermesLaunch() {
+  for (const p of HERMES_CANDIDATES) {
+    try { if (existsSync(p)) return { cmd: p, args: [] } } catch {}
+  }
+  try {
+    if (existsSync(HERMES) && existsSync(HERMES_ENTRY)) return { cmd: HERMES, args: [HERMES_ENTRY] }
+  } catch {}
+  return null
+}
+
+// Managed profiles live in ~/.hermes/profiles/<name>; 'default' is implicit. Passing -p
+// for a profile that does not exist aborts the TUI, so only add it when it is real.
+function profileExists(name) {
+  if (!name || name === 'default') return false
+  try { return existsSync(`/root/.hermes/profiles/${name}`) } catch { return false }
+}
+
 // Engine registry: how to spawn each agent harness in a PTY.
 // engine=hermes -> hermes --tui -p profile (managed profiles)
 // engine=opencode/codex/claude/openclaw -> spawn the CLI directly (must be installed)
 const ENGINES = {
   hermes: {
-    build: (profile) => ({ cmd: HERMES, args: [HERMES_ENTRY, '--tui', '-p', profile], cwd: '/root' }),
+    build: (profile) => {
+      const launch = hermesLaunch()
+      if (!launch) {
+        throw new Error('Hermes не установлен: не найден ни один из ' + HERMES_CANDIDATES.join(', ')
+          + '. Установи движок во вкладке «Установка компонентов».')
+      }
+      const args = [...launch.args, '--tui']
+      if (profileExists(profile)) args.push('-p', profile)
+      return { cmd: launch.cmd, args, cwd: '/root' }
+    },
   },
   opencode: { build: (p) => ({ cmd: 'opencode', args: [], cwd: '/root' }), bin: 'opencode' },
   codex: { build: (p) => ({ cmd: 'codex', args: [], cwd: '/root' }), bin: 'codex' },
@@ -114,11 +151,20 @@ export function attachTuiServer(app, server) {
       console.log(`[tui] re-attached session engine=${engine} profile=${profile} (replay ${s.buffer.length} chunks)`)
     } else {
       const ptyEnv = { ...process.env, TERM: 'xterm-256color', OPENROUTER_API_KEY: OPENROUTER_KEY,
-        PATH: `/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
+        PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
       delete ptyEnv.HERMES_TUI_GATEWAY_URL
       delete ptyEnv.HERMES_TUI_SIDECAR_URL
 
-      const { cmd, args, cwd } = eng.build(profile)
+      // eng.build() throws with a readable reason when the engine is not installed.
+      let built
+      try {
+        built = eng.build(profile)
+      } catch (e) {
+        ws.send(JSON.stringify({ type: 'exit', code: 1, error: e?.message || String(e) }))
+        ws.close()
+        return
+      }
+      const { cmd, args, cwd } = built
       // apply the client's theme to opencode's config BEFORE the TUI boots
       syncOpencodeTheme(u.query.theme)
       let pty
