@@ -486,11 +486,17 @@ export function ChatPanel({ fullscreen = false }) {
     // xterm может менять размер сам (свой ResizeObserver/FitAddon) — сразу сообщаем новый размер
     // в PTY, чтобы приложение не осталось с прежним представлением о терминале.
     const keepSizeInSync = term.onResize(({ cols, rows }) => {
-      lastSentSize = `${cols}x${rows}`
+      const key = `${cols}x${rows}`
+      const changed = key !== lastSentSize
+      lastSentSize = key
       publishSize()
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
+      // Именно здесь ловится реальная смена размера: fit() сначала меняет term.cols/rows, и к
+      // моменту проверки в doResize размер уже совпадает — без этой ветки чистый кадр не
+      // заказывался вообще (в замере уходили одни resize без repaint).
+      if (changed) scheduleCleanRepaint()
     })
     // NOTE: no post-spawn resize loop — the PTY boots at the exact rows (via URL
     // params) and re-resizing an Ink TUI after spawn makes it redraw skewed.
