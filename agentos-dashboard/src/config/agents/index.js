@@ -241,7 +241,7 @@ export const AGENT_DEFINITIONS = [
       tui: { cmd: 'hermes', args: ['chat', '-p', 'coordinator'] },
       web: { url: 'https://hermes.dktunnel.xyz', port: 9119 }
     },
-    detect: { bin: ['/usr/local/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'], install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash' },
+    detect: { bin: ['/usr/local/bin/hermes', '/root/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'], install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash' },
     uninstall: null,
     update: [
       "echo '[1/3] Обновление пакета hermes-agent (pip)...'",

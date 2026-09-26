@@ -55,8 +55,11 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
               className={`px-4 py-2 rounded-lg font-medium text-sm text-white bg-accent hover:opacity-90 transition-opacity ${busy ? 'opacity-60' : ''}`}>
               {busy && busyOp === 'install' ? '⏳ Устанавливается...' : `⬇ Установить ${item.name}`}
             </button>
-            {item.installCmd && (
+            {item.installCmd && !item.needsInstallOptions && (
               <code className="px-2 py-1 rounded text-[11px] bg-bg-elevated border border-border text-text-muted font-mono break-all max-w-full">{item.installCmd}</code>
+            )}
+            {item.needsInstallOptions && (
+              <span className="text-[11px] text-text-muted">откроется мастер: режим, домен и защита</span>
             )}
             {item.key && <span className="text-[11px] text-text-muted">требуется {item.key}</span>}
           </>

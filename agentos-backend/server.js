@@ -269,7 +269,7 @@ const HARNESSES_DEF = [
     // Caddy/Node exist), so a hardcoded "installed" was a lie on every fresh server.
     // Detect the real binary; if it's missing, offer the official installer.
     id: 'hermes', name: 'Hermes',
-    bin: ['/usr/local/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
+    bin: ['/usr/local/bin/hermes', '/root/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
     install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash',
     interactive: true,   // installer + `hermes setup` need a TTY (arrow-key menus)
     desc: 'Hermes Agent (Nous Research) — один из доступных движков. Пользователь сам выбирает, какой агент использовать.',
@@ -463,13 +463,108 @@ const HERMES_INSTALL_CMD = 'curl -fsSL https://hermes-agent.nousresearch.com/ins
 // (`has_terminal`) and skips `hermes setup` + `hermes gateway install` when there is
 // none, so a plain pipe yields a half-installed agent. Run it in a PTY instead and
 // let the UI forward keystrokes through /api/harness/install/keys.
+//
+// Interactive steps are full-screen TUIs: raw output is a stream of cursor moves and
+// colour codes that reads as noise in a <pre>. Keep a virtual screen (honouring CR/LF,
+// cursor moves and erases) and publish the rendered screen instead of the byte stream.
+const PTY_COLS = 100
+const PTY_ROWS = 34
+
+function makeScreen(cols = PTY_COLS, rows = PTY_ROWS) {
+  const blank = () => Array.from({ length: rows }, () => new Array(cols).fill(' '))
+  let grid = blank()
+  // Full-screen TUIs (the setup wizard) draw into the alternate screen buffer. Without
+  // honouring ?1049h/l the log keeps showing the wizard menu after it exits, hiding the
+  // real install output (progress + errors) on the normal buffer.
+  let altSaved = null
+  const cur = { r: 0, c: 0 }
+  const clip = (n, max) => Math.max(0, Math.min(max, n))
+  const put = (ch) => {
+    if (cur.c >= cols) return            // no wrap for the last column (like a real TUI)
+    grid[cur.r][cur.c] = ch
+    cur.c = clip(cur.c + 1, cols - 1)
+  }
+  const feed = (s) => {
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i]
+      if (ch === '\x1b') {
+        const csi = /^\x1b\[([0-9;?]*)([A-Za-z])/.exec(s.slice(i))
+        if (csi) {
+          const nums = csi[1].split(';').filter(x => x !== '').map(Number)
+          const n = nums[0] || 1
+          const f = csi[2]
+          if (csi[1].startsWith('?')) {          // private modes: only the screen buffer matters
+            const modes = csi[1].slice(1).split(';').map(Number)
+            if (modes.some(m => m === 1049 || m === 1047 || m === 47)) {
+              if (f === 'h') { altSaved = grid; grid = blank(); cur.r = 0; cur.c = 0 }
+              else if (f === 'l' && altSaved) {
+                grid = altSaved; altSaved = null
+                cur.r = rows - 1; cur.c = 0
+              }
+            }
+            i += csi[0].length - 1
+            continue
+          }
+          if (f === 'H' || f === 'f') {
+            cur.r = clip((nums[0] || 1) - 1, rows - 1)
+            cur.c = clip((nums[1] || 1) - 1, cols - 1)
+          } else if (f === 'A') cur.r = clip(cur.r - n, rows - 1)
+          else if (f === 'B') cur.r = clip(cur.r + n, rows - 1)
+          else if (f === 'C') cur.c = clip(cur.c + n, cols - 1)
+          else if (f === 'D') cur.c = clip(cur.c - n, cols - 1)
+          else if (f === 'G') cur.c = clip(n - 1, cols - 1)
+          else if (f === 'K') {
+            const mode = nums[0] || 0
+            if (mode === 0) for (let c = cur.c; c < cols; c++) grid[cur.r][c] = ' '
+            else if (mode === 1) for (let c = 0; c <= cur.c; c++) grid[cur.r][c] = ' '
+            else grid[cur.r] = new Array(cols).fill(' ')
+          } else if (f === 'J') {
+            const mode = nums[0] || 0
+            if (mode === 2 || mode === 3) grid = blank()
+          }
+          i += csi[0].length - 1
+          continue
+        }
+        const set = /^\x1b[()][A-Za-z0-9]/.exec(s.slice(i))   // charset selection
+        i += set ? set[0].length - 1 : 1                       // lone/unknown ESC: drop
+        continue
+      }
+      if (ch === '\n') { cur.r = clip(cur.r + 1, rows - 1); continue }
+      if (ch === '\r') { cur.c = 0; continue }
+      if (ch === '\b') { cur.c = clip(cur.c - 1, cols - 1); continue }
+      if (ch === '\t') { for (let k = 0; k < 8 && cur.c < cols - 1; k++) put(' '); continue }
+      if (ch < ' ') continue
+      put(ch)
+    }
+  }
+  const text = () => grid
+    .map(l => l.join('').replace(/\s+$/, ''))
+    .join('\n')
+    .replace(/^\n+/, '')
+    .replace(/\n{3,}/g, '\n\n')
+  return { feed, text }
+}
+
+// Errors/build output from non-interactive runs can still carry colour codes.
+const stripAnsi = (s) => String(s)
+  .replace(/\x1b\[[0-9;?]*[A-Za-z]/g, '')
+  .replace(/\x1b[()][A-Za-z0-9]/g, '')
+  .replace(/\r\n?/g, '\n')
+
 function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000) {
   store[id] = { state: 'running', log: '', interactive: true, pty: null }
   let term
   try {
     term = ptySpawn('/bin/bash', ['-lc', cmd], {
-      name: 'xterm-256color', cols: 120, rows: 40, cwd: '/root',
-      env: { ...process.env, TERM: 'xterm-256color', HOME: '/root' },
+      name: 'xterm-256color', cols: PTY_COLS, rows: PTY_ROWS, cwd: '/root',
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        HOME: '/root',
+        // `hermes gateway install` writes a *user* service; systemd --user needs a bus.
+        XDG_RUNTIME_DIR: '/run/user/0',
+        DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/0/bus',
+      },
     })
   } catch (e) {
     store[id].state = 'error'
@@ -477,19 +572,20 @@ function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000) {
     return
   }
   store[id].pty = term
-  const push = (chunk) => {
+  const screen = makeScreen()
+  term.onData((chunk) => {
     const s = store[id]; if (!s) return
-    s.log += chunk
-    if (s.log.length > LOG_CAP) s.log = s.log.slice(-LOG_CAP)
-  }
-  term.onData(push)
+    screen.feed(chunk)
+    s.log = screen.text()
+    if (s.log.length > 64000) s.log = s.log.slice(-64000)
+  })
   const timer = setTimeout(() => { try { term.kill() } catch {} }, timeoutMs)
   term.onExit(({ exitCode }) => {
     clearTimeout(timer)
     const s = store[id]; if (!s) return
     s.pty = null; s.interactive = false
     s.state = exitCode === 0 ? 'done' : 'error'
-    s.log += `\n[${doneLabel}${exitCode === 0 ? '' : ` с ошибкой, код ${exitCode}`}]`
+    s.log += `\n\n[${doneLabel}${exitCode === 0 ? '' : ` с ошибкой, код ${exitCode}`}]`
   })
 }
 
@@ -500,8 +596,17 @@ function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000) {
 function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic' } = {}) {
   const lines = [
     'set -e',
+    // `hermes gateway install` writes a *user* systemd service; systemd --user needs a
+    // session bus, otherwise the whole install ends with "Could not start the gateway
+    // service" and a non-zero exit (which is how the first Life OS run failed).
+    'export XDG_RUNTIME_DIR=/run/user/0',
+    'export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus',
+    '[ -d "$XDG_RUNTIME_DIR" ] || { mkdir -p "$XDG_RUNTIME_DIR"; chmod 700 "$XDG_RUNTIME_DIR"; }',
+    'loginctl enable-linger root 2>/dev/null || true',
     "echo '[1/3] Hermes: официальный инсталлятор (интерактивно — отвечай кнопками под логом)'",
     HERMES_INSTALL_CMD,
+    // Safety net: if the user-scope service could not be started, install it system-wide.
+    "systemctl --user is-active hermes-gateway >/dev/null 2>&1 || hermes gateway install --if-missing 2>&1 || hermes gateway install --system --run-as-user root --no-start-on-login 2>&1 || echo '[warn] гейтвей не поднялся: hermes gateway install --system'",
   ]
   if (mode === 'tui') {
     lines.push("echo '[готово] Hermes установлен в режиме TUI'")
@@ -551,13 +656,20 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic' } 
     'User=root',
     'Environment=HOME=/root',
     'EnvironmentFile=-/root/.hermes/dashboard_auth_env.conf',
-    "ExecStart=/bin/bash -lc 'exec hermes dashboard --host 0.0.0.0 --port 9119 --no-open'",
+    // The installer drops the CLI in ~/.hermes/hermes-agent/.hermes/bin (not always on a
+    // login-shell PATH), so resolve the real binary and bake it into the unit.
+    'ExecStart=__HERMES_BIN__ dashboard --host 0.0.0.0 --port 9119 --no-open',
     'Restart=always',
     'RestartSec=3',
     '',
     '[Install]',
     'WantedBy=multi-user.target',
     'UNIT',
+    'HB="$(command -v hermes || true)"',
+    '[ -x "$HB" ] || HB=/root/.hermes/hermes-agent/.hermes/bin/hermes',
+    '[ -x "$HB" ] || HB=/usr/local/bin/hermes',
+    'sed -i "s|^ExecStart=.*|ExecStart=$HB dashboard --host 0.0.0.0 --port 9119 --no-open|" /etc/systemd/system/hermes-dashboard.service',
+    "echo \"[bin] dashboard запускается из $HB\"",
     'systemctl daemon-reload',
     'systemctl enable --now hermes-dashboard',
     "python3 - <<'PY'",
@@ -594,7 +706,7 @@ function runLogged(store, id, cmd, doneLabel, timeoutMs = 600000) {
   const push = (chunk) => {
     const s = store[id]
     if (!s) return
-    s.log += chunk
+    s.log += stripAnsi(chunk)
     if (s.log.length > LOG_CAP) s.log = s.log.slice(-LOG_CAP)
   }
   const child = spawn('/bin/bash', ['-lc', cmd], { env: { ...process.env, TERM: 'xterm-256color' } })
