@@ -429,7 +429,9 @@ export function ChatPanel({ fullscreen = false }) {
         // не выдёргиваем экран из-под печатающего пользователя
         const ae = document.activeElement
         if (ae && ae !== document.body && ae.closest && ae.closest('.xterm')) return
-        try { term.reset() } catch {}
+        // clear() вместо reset(): чистит экран, но не трогает фокус/textarea — reset() поднимал
+        // экранную клавиатуру Android и она мигала в цикле
+        try { term.clear() } catch {}
         if (wsRef.current && wsRef.current.readyState === 1) {
           wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
         }
@@ -444,10 +446,11 @@ export function ChatPanel({ fullscreen = false }) {
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
-      // ширины/кегля достаточно: именно смена ширины вызывает артефакт старого кадра, а
-      // высота (клавиатура) — нет. `changed` тут не годится: при смене кегля число строк
-      // может остаться прежним, и чистый кадр не заказывался.
-      if (widthOrFontChanged) {
+      // Чистый кадр нужен и при смене ширины/кегля, и при смене ВЫСОТЫ: на смене высоты Ink
+      // перерисовывает кадр, но старые строки приглашения остаются «призраками» — на скрине
+      // пользователя их было четыре подряд под строкой статуса. `widthOrFontChanged` ловит
+      // смену кегля (число строк при шаге на 1px может не измениться), `changed` — остальное.
+      if (changed || widthOrFontChanged) {
         lastRepaintKey = repaintKey()
         scheduleCleanRepaint()
       }
@@ -488,6 +491,11 @@ export function ChatPanel({ fullscreen = false }) {
     fitRef.current = fit
     termRef.current = term
     doResizeRef.current = doResize
+    // Смена раскладки (скрыть/показать клавиатуру, перенос тулбара) меняет высоту контейнера
+    // БЕЗ события window.resize — без наблюдателя PTY остаётся в старом размере, и Ink
+    // оставляет призрачные строки приглашения. ResizeObserver закрывает этот случай.
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => doResize()) : null
+    if (ro) { try { ro.observe(containerRef.current) } catch {} }
 
     // Only connect TUI WebSocket when NOT in Web UI mode
     const connect = () => {
@@ -563,6 +571,7 @@ export function ChatPanel({ fullscreen = false }) {
     return () => {
       try { themeObserver.disconnect() } catch {}
       try { keepSizeInSync.dispose() } catch {}
+      if (ro) { try { ro.disconnect() } catch {} }
       onData.dispose()
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
