@@ -5,6 +5,7 @@
 DOM="$(cat /root/.deepseek-domain 2>/dev/null || true)"
 if [ -z "$DOM" ]; then
   B="$(grep -oP 'base domain:\s*\K\S+' /etc/caddy/Caddyfile 2>/dev/null | head -1)"
+  case "$B" in *.*.*) B="${B#*.}";; esac
   [ -n "$B" ] && DOM="deepseek.$B"
 fi
 export PATH="/root/.deepseek/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/snap/bin:$PATH"

@@ -514,8 +514,15 @@ function lifeosBaseDomain() {
 function webOriginFor(id, { installed = false, file = '' } = {}) {
   const rec = readWebDomain(file || `/root/.${id}-domain`)
   if (rec) return rec
-  const base = lifeosBaseDomain()
+  const base = parentDomain(lifeosBaseDomain())
   return installed && base ? `https://${id}.${base}` : null
+}
+
+// install.sh records the Life OS *site* domain (lifeos.example.com); component subdomains
+// hang off its parent (example.com), which is how the previous fixed subdomains worked.
+function parentDomain(dom) {
+  const parts = String(dom || '').split('.').filter(Boolean)
+  return parts.length > 2 ? parts.slice(1).join('.') : parts.join('.')
 }
 
 // Shell prelude for components that need a public domain: resolve it (recorded value wins,
@@ -524,7 +531,8 @@ function componentDomainPrelude(id, port) {
   const { file: caddyFile, reload: caddyReload } = caddyTarget()
   return [
     `DOM="$(cat /root/.${id}-domain 2>/dev/null || true)"`,
-    `if [ -z "$DOM" ]; then B="$(grep -oP 'base domain:\\s*\\K\\S+' ${caddyFile} 2>/dev/null | head -1)"; [ -n "$B" ] && DOM="${id}.$B"; fi`,
+    // the header holds the Life OS site domain (lifeos.example.com) — use its parent
+    `if [ -z "$DOM" ]; then B="$(grep -oP 'base domain:\\s*\\K\\S+' ${caddyFile} 2>/dev/null | head -1)"; case "$B" in *.*.*) B="${'$'}{B#*.}";; esac; [ -n "$B" ] && DOM="${id}.$B"; fi`,
     `if [ -n "$DOM" ]; then echo "$DOM" > /root/.${id}-domain; else echo '[warn] домен не определён — впиши вручную в /root/.${id}-domain'; fi`,
     "python3 - \"$DOM\" <<'PY'",
     'import sys',
