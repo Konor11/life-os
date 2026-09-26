@@ -127,8 +127,6 @@ export function ChatPanel({ fullscreen = false }) {
     const t = setInterval(loadProfiles, 60000)
     return () => { document.removeEventListener('visibilitychange', onVis); clearInterval(t) }
   }, [loadProfiles])
-  // смена движка/вида — тоже повод обновить список (профиль мог появиться только что)
-  useEffect(() => { if (engine === 'hermes' && !showWeb) loadProfiles() }, [engine, showWeb, loadProfiles])
 
   // When an engine with a built-in web UI is picked: start it and switch to iframe.
   // src per engine is CACHED — switching engines back and forth shows the already
@@ -284,6 +282,11 @@ export function ChatPanel({ fullscreen = false }) {
   }, [])
   const hasWeb = webPorts[engine] !== undefined
   const showWeb = hasWeb && useWeb
+
+  // Смена движка/вида — тоже повод перечитать профили (мог появиться новый).
+  // Объявлено здесь, а не выше: engine/useWeb/showWeb определяются только сейчас,
+  // в списке зависимостей они читаются прямо во время рендера (TDZ-ошибка иначе).
+  useEffect(() => { if (engine === 'hermes' && !showWeb) loadProfiles() }, [engine, showWeb, loadProfiles])
 
   // OpenCode v2 web (>=2.0.14) routes: /server/:serverKey/session/:id, where
   // serverKey is base64 of the server URL. The origin is the domain entered at install
