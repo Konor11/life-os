@@ -97,14 +97,19 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
     for (const cb of resizeListeners) { try { cb({ cols: c, rows: r }) } catch {} }
   }
 
-  // Отрисовка канваса. rioterm сам планирует кадр по onUpdate, но на практике кадр иногда не
-  // появляется вовсе (канвас остаётся белым, хотя размеры и отсутствие ошибок в норме) — поэтому
-  // после открытия и после каждой порции вывода пинаем рендерер явно. Это дешевле, чем показывать
-  // пользователю пустой терминал.
-  const forcePaint = () => {
+  // Отрисовка канваса. rioterm сам планирует кадр по onUpdate, но на практике канвас оставался
+  // пустым (средняя яркость 246-254, то есть не закрашен даже фон), хотя буфер полон: в замере
+  // dump() отдавал 41 703 символа с баннером, а рисовалось ноль. Причина — метрики знакоместа:
+  // если контейнер на момент open() не разложен, cellWidth/cellHeight нулевые и рисовать нечего
+  // (canvas пустой при верных cols/rows). Лечится явным fit() по фактическому размеру контейнера
+  // ПОСЛЕ раскладки — render() дёргать нельзя, он ломает собственное планирование кадров rioterm.
+  const refit = () => {
     if (!handle) return
+    try {
+      const w = el.clientWidth, h = el.clientHeight
+      if (w > 0 && h > 0) handle.renderer.fit(w, h)
+    } catch {}
     try { handle.renderer.schedule() } catch {}
-    try { handle.renderer.render() } catch {}
   }
 
   const start = async () => {
@@ -133,9 +138,9 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
     notifyResize()
     // Кадр просим сразу и ещё раз после раскладки: если контейнер в момент open() был не
     // отрисован, канвас остаётся пустым до следующей записи вывода.
-    forcePaint()
+    refit()
     for (const delay of [60, 300, 1000, 2500]) {
-      setTimeout(() => { if (!disposed) forcePaint() }, delay)
+      setTimeout(() => { if (!disposed) refit() }, delay)
     }
     scheduleReady && scheduleReady()
   }
@@ -163,7 +168,7 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
         const m = /^#(..)(..)(..)$/.exec(bg)
         const want = m ? (parseInt(m[1], 16) + parseInt(m[2], 16) + parseInt(m[3], 16)) / 3 - 26 : 0
         // Канвас белый (не закрашен даже фон) — значит рендерер не нарисовал кадр.
-        if (avg > 240 && avg > want + 60) forcePaint()
+        if (avg > 240 && avg > want + 60) refit()
       } catch { /* getImageData может быть недоступен — не критично */ }
     }, 300)
     const stop = () => clearInterval(t)
@@ -198,7 +203,9 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
       write(d) {
         if (handle) {
           try { handle.terminal.write(d) } catch {}
-          forcePaint()   // см. комментарий forcePaint: без явного кадра канвас может остаться пустым
+          // Кадр планирует сам rioterm по onUpdate; нам достаточно держать актуальный fit, если
+          // контейнер менял размер без его ведома.
+          try { handle.renderer.schedule() } catch {}
         } else pendingWrites.push(d)
       },
       writeln(d) { this.write((d || '') + '\r\n') },
