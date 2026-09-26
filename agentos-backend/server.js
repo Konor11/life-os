@@ -442,6 +442,13 @@ async function binExists(names) {
   return false
 }
 
+function readWebDomain(file) {
+  try {
+    const d = readFileSync(file, 'utf8').trim()
+    return d ? `https://${d}` : null
+  } catch { return null }
+}
+
 async function discoverHarnesses() {
   const out = []
   for (const h of HARNESSES_DEF) {
@@ -457,6 +464,11 @@ async function discoverHarnesses() {
       interactive: !!h.interactive,   // UI shows the keystroke pad while installing
       // installed engines that expose an interactive setup wizard (Hermes: provider, tools)
       setupAvailable: installed && !!h.setupAvailable,
+      // Web UI domain chosen at install time (the chat's Web tab embeds it in an iframe,
+      // so it must come from here instead of a baked-in subdomain).
+      webUrl: h.id === 'hermes'
+        ? (installed && existsSync('/etc/systemd/system/hermes-dashboard.service') ? readWebDomain('/root/.hermes-domain') : null)
+        : h.id === 'opencode' ? (installed ? readWebDomain('/root/.opencode-domain') : null) : readWebDomain(h.webDomainFile || ''),
       web: h.web || null,
       bin: installed ? null : h.bin.join(' / '),
     })

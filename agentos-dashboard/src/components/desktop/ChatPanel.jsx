@@ -106,7 +106,24 @@ export function ChatPanel({ fullscreen = false }) {
   // When an engine with a built-in web UI is picked: start it and switch to iframe.
   // src per engine is CACHED — switching engines back and forth shows the already
   // loaded SPA instantly (no reload, no API round-trip).
-  const [webSrcCache, setWebSrcCache] = useState(() => ({ hermes: 'https://hermes.dktunnel.xyz' }))
+  // Web UI origins come from the BACKEND (the domain typed at install time). A baked-in
+  // 'https://hermes.dktunnel.xyz' here pointed the iframe at a subdomain from an older
+  // deployment, so the Web tab showed an empty frame while its own domain worked.
+  const [webUrls, setWebUrls] = useState({})
+  const [webSrcCache, setWebSrcCache] = useState(() => ({}))
+  useEffect(() => {
+    let alive = true
+    fetch('/api/harnesses').then(r => r.json()).then(d => {
+      if (!alive) return
+      const urls = {}
+      for (const h of d.harnesses || []) if (h.webUrl) urls[h.id] = h.webUrl
+      setWebUrls(urls)
+      // Hermes' dashboard is a plain virtual web UI — pre-fill its iframe. opencode
+      // builds a session URL first, so it must NOT be pre-filled here.
+      setWebSrcCache(prev => (prev.hermes || !urls.hermes) ? prev : { ...prev, hermes: urls.hermes })
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [])
   const pickEngine = async (id) => {
     setEngine(id)
     // Default view per user preference (Settings → Движки).
@@ -116,9 +133,10 @@ export function ChatPanel({ fullscreen = false }) {
       setWebState('running')
       return
     }
-    // Hermes Agent dashboard: virtual web UI, no harness to start — just show the iframe.
+    // Hermes Agent dashboard: virtual web UI, no harness to start — just show the iframe
+    // (its origin comes from /api/harnesses; without one there is nothing to embed).
     if (id === 'hermes') {
-      setWebState('running')
+      setWebState(webSrcCache[id] || webUrls[id] ? 'running' : 'nodomain')
       return
     }
     // opencode web UI: its SPA follows prefers-color-scheme (system), NOT the
@@ -221,8 +239,9 @@ export function ChatPanel({ fullscreen = false }) {
   const showWeb = hasWeb && useWeb
 
   // OpenCode v2 web (>=2.0.14) routes: /server/:serverKey/session/:id, where
-  // serverKey is base64 of the server URL ("https://oc.dktunnel.xyz/").
-  const opencodeWebBase = 'https://oc.dktunnel.xyz'
+  // serverKey is base64 of the server URL. The origin is the domain entered at install
+  // time (falls back to the historical default when the install recorded none).
+  const opencodeWebBase = webUrls.opencode || 'https://oc.dktunnel.xyz'
   const opencodeServerKey = (() => {
     try {
       const bin = new TextEncoder().encode(opencodeWebBase + '/')
@@ -493,6 +512,12 @@ export function ChatPanel({ fullscreen = false }) {
               {a.name}
             </button>
           ))}
+        </div>
+      )}
+      {showWeb && webState === 'nodomain' && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center text-sm text-text-muted" style={{ minHeight: '280px' }}>
+          <span>Web UI не настроен: при установке движка не был указан домен.</span>
+          <span className="text-xs">Переустанови движок и впиши домен — адрес подхватится автоматически.</span>
         </div>
       )}
       {showWeb && webState === 'starting' && !webSrcCache[engine] && (
