@@ -82,6 +82,7 @@ export function ChatPanel({ fullscreen = false }) {
   const fitRef = useRef(null)
   const wsRef = useRef(null)
   const showWebRef = useRef(false)
+  const doResizeRef = useRef(null)   // resize-путь из эффекта терминала (для смены кегля)
   const [agent, setAgent] = useState('default')
   const [engine, setEngine] = useState('hermes')
   const [conn, setConn] = useState('disconnected')
@@ -319,9 +320,10 @@ export function ChatPanel({ fullscreen = false }) {
       try { localStorage.setItem(FONT_KEY, String(nf)) } catch {}
       const t = termRef.current
       if (t) { t.options.fontSize = nf; try { fitRef.current?.fit() } catch {} }
-      if (wsRef.current && wsRef.current.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: 'resize', cols: t?.cols, rows: t?.rows }))
-      }
+      // Кегль меняет ширину знакоместа → нужен чистый кадр. Полагаться на fit() нельзя: если
+      // предложенные им размеры совпали с текущими, xterm не поднимает событие размера и
+      // перерисовка не заказа́ется. Поэтому зовём путь resize напрямую.
+      doResizeRef.current?.()
       return nf
     })
   }
@@ -412,6 +414,7 @@ export function ChatPanel({ fullscreen = false }) {
     // ширине («вот так бывает» после смены шрифта/размера). Поэтому после реального изменения
     // размера чистим локальный экран и просим приложение нарисовать кадр заново (SIGWINCH-нудж
     // на сервере), а не оставляем клиент собирать диффы поверх мусора.
+    doResizeRef.current = null
     let repaintTimer = null
     // Чистый кадр нужен, когда меняется ширина/кегль (Ink перерисовывает по новой ширине, а
     // стирает по старой). При изменении ТОЛЬКО высоты (экранная клавиатура Android) перерисовку
@@ -457,6 +460,7 @@ export function ChatPanel({ fullscreen = false }) {
     setTimeout(doResize, 50)
     fitRef.current = fit
     termRef.current = term
+    doResizeRef.current = doResize
 
     // Only connect TUI WebSocket when NOT in Web UI mode
     const connect = () => {
