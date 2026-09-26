@@ -234,8 +234,10 @@ export function HarnessView() {
 
       {/* Install options modal (OpenCode: TUI / Web / both + domain) */}
       {installOpts && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setInstallOpts(null)}>
-          <div className="glass rounded-xl border border-border p-5 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/50 overflow-y-auto p-3 sm:p-4 flex items-start sm:items-center justify-center"
+          onClick={() => setInstallOpts(null)}>
+          <div className="glass rounded-xl border border-border p-4 sm:p-5 w-full max-w-md space-y-4 my-2 sm:my-0 max-h-[92vh] overflow-y-auto overscroll-contain"
+            onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-text">Установка {installOpts.name}</h3>
             <div className="space-y-2">
               <p className="text-sm text-text-muted">Что установить:</p>
@@ -303,7 +305,8 @@ export function HarnessView() {
                 )}
               </div>
             )}
-            <div className="flex gap-2 justify-end">
+            {/* Sticky so Отмена/Установить stay reachable on a phone (modal scrolls). */}
+            <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-3 mt-1 bg-bg-card/95 backdrop-blur border-t border-border flex gap-2 justify-end">
               <button onClick={() => setInstallOpts(null)}
                 className="px-4 py-2 rounded-lg text-sm border border-border text-text-muted hover:text-text">Отмена</button>
               <button onClick={confirmInstallOpts}
