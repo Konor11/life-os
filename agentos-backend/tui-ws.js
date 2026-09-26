@@ -95,6 +95,18 @@ function killSession(s) {
   try { s.pty.kill() } catch {}
 }
 
+// Ink-интерфейсы перерисовывают кадр целиком по SIGWINCH. При переподключении клиент
+// получал хвост сырого PTY-потока, а он начинается с середины escape-последовательности:
+// экран собирался из обрывков и сам больше не восстанавливался (на телефоне WS рвётся при
+// сворачивании вкладки или смене сети — «через какое-то время интерфейс кривой»).
+// Вместо реплея просим приложение нарисовать кадр заново: resize в (-1 строку) и обратно.
+function nudgeRepaint(s, cols, rows) {
+  const c = Math.max(20, parseInt(cols, 10) || 120)
+  const r = Math.max(10, parseInt(rows, 10) || 40)
+  setTimeout(() => { try { s.pty.resize(c, Math.max(10, r - 1)) } catch {} }, 200)
+  setTimeout(() => { try { s.pty.resize(c, r) } catch {} }, 450)
+}
+
 export function attachTuiServer(app, server) {
   // Upgrade /ws/tui?engine=E&profile=P to a PTY running the chosen engine.
   const wss = new WebSocketServer({ noServer: true, clientTracking: true })
@@ -137,6 +149,9 @@ export function attachTuiServer(app, server) {
 
     const key = sessionKey(engine, profile)
     let s = sessions.get(key)
+    // размеры из URL: PTY должен родиться/перерисоваться ровно в размере xterm
+    const qcols = Math.min(300, Math.max(20, parseInt(u.query.cols, 10) || 120))
+    const qrows = Math.min(300, Math.max(10, parseInt(u.query.rows, 10) || 40))
 
     if (s && s.pty) {
       // Fast path: re-attach to a live session (no cold spawn).
@@ -144,11 +159,15 @@ export function attachTuiServer(app, server) {
       if (s.timer) { clearTimeout(s.timer); s.timer = null }
       s.ws = ws
       active.set(ws, s)
-      // replay the detached window into a clean terminal
-      if (s.buffer.length) {
+      // Реплей только по явному запросу (отладка): он даёт битую картинку, потому что
+      // буфер — хвост потока, а не целый кадр. Обычный путь — перерисовка приложения.
+      if (u.query.replay === '1' && s.buffer.length) {
         try { ws.send(JSON.stringify({ type: 'data', data: s.buffer.join('') })) } catch {}
+        console.log(`[tui] re-attached (raw replay ${s.buffer.length} chunks)`)
+      } else {
+        nudgeRepaint(s, qcols, qrows)
+        console.log(`[tui] re-attached engine=${engine} profile=${profile} — repaint requested`)
       }
-      console.log(`[tui] re-attached session engine=${engine} profile=${profile} (replay ${s.buffer.length} chunks)`)
     } else {
       const ptyEnv = { ...process.env, TERM: 'xterm-256color', OPENROUTER_API_KEY: OPENROUTER_KEY,
         PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
@@ -168,10 +187,6 @@ export function attachTuiServer(app, server) {
       // apply the client's theme to opencode's config BEFORE the TUI boots
       syncOpencodeTheme(u.query.theme)
       let pty
-      // cols/rows may come from the client URL so the PTY boots at the exact size
-      // the xterm already is (post-spawn resize makes Ink TUIs redraw skewed).
-      const qcols = Math.min(300, Math.max(20, parseInt(u.query.cols, 10) || 120))
-      const qrows = Math.min(300, Math.max(10, parseInt(u.query.rows, 10) || 40))
       try {
         pty = spawn(cmd, args, { name: 'xterm-256color', cols: qcols, rows: qrows, cwd: cwd || '/root', env: ptyEnv })
       } catch (e) {
@@ -217,6 +232,9 @@ export function attachTuiServer(app, server) {
         else if (msg.type === 'theme' && msg.theme) { syncOpencodeTheme(msg.theme); }
         else if (msg.type === 'resize' && msg.cols && msg.rows) {
           try { pty.resize(msg.cols, msg.rows) } catch {}
+        }
+        else if (msg.type === 'repaint') {
+          nudgeRepaint(s, msg.cols || qcols, msg.rows || qrows)
         }
       } catch {
         // not JSON — treat as raw input

@@ -1792,6 +1792,21 @@ app.get('/api/agents', async (req, res) => {
   res.json({ agents: AGENT_DEFINITIONS_CACHE })
 })
 
+// ---- Hermes-профили ----
+// Профиль = каталог ~/.hermes/profiles/<name> — ровно то же правило использует tui-ws при
+// спавне (несуществующий профиль ломает запуск TUI). Читаем список с диска, а не из
+// статичного agent-definitions.json: иначе селектор показывает выдуманные профили, а
+// созданный позже не появляется.
+const HERMES_PROFILES_DIR = process.env.HERMES_PROFILES_DIR || '/root/.hermes/profiles'
+app.get('/api/profiles', async (req, res) => {
+  let names = []
+  try {
+    const ents = await readdir(HERMES_PROFILES_DIR, { withFileTypes: true })
+    names = ents.filter(e => e.isDirectory() && !e.name.startsWith('.')).map(e => e.name).sort()
+  } catch {}
+  res.json({ profiles: [{ id: 'default', name: 'Default' }, ...names.map(n => ({ id: n, name: n }))] })
+})
+
 // ---- TTS (edge-tts) ----
 const EDGE_TTS = '/root/.local/bin/edge-tts'
 app.post('/api/tts', async (req, res) => {

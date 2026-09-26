@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -16,6 +16,20 @@ import {
 } from './ChatPanelEngines'
 import { AGENT_STATES, AGENT_STATE_LABELS, AGENT_STATE_COLORS, AGENT_STATE_BG, detectAgentState } from '../../config/agentStates'
 import { getAgentsByCategory, getAgentById } from '../../config/agents'
+
+// Размер шрифта терминала: на телефоне 120-колоночный TUI в экран не влезает, поэтому
+// мелкий шрифт нужен (7 было мало — просили меньше), и он должен переживать перезагрузку
+// страницы, а не сбрасываться на 11.
+const FONT_KEY = 'lifeos.chat.fontSize'
+const FONT_MIN = 4
+const FONT_MAX = 24
+function storedFontSize() {
+  try {
+    const v = parseInt(localStorage.getItem(FONT_KEY), 10)
+    if (Number.isFinite(v)) return Math.min(FONT_MAX, Math.max(FONT_MIN, v))
+  } catch {}
+  return 11
+}
 
 // The xterm theme follows the Life OS theme (light/dark). TUI apps like opencode
 // v2 hot-reload their cli.json theme mode (see tui-ws), so both stay in sync.
@@ -65,7 +79,7 @@ export function ChatPanel({ fullscreen = false }) {
   const [agent, setAgent] = useState('default')
   const [engine, setEngine] = useState('hermes')
   const [conn, setConn] = useState('disconnected')
-  const [fontSize, setFontSize] = useState(11)
+  const [fontSize, setFontSize] = useState(storedFontSize)
   const [webPorts, setWebPorts] = useState({})  // engineId -> port (harness web UIs)
   const [webState, setWebState] = useState('stopped')  // stopped|starting|running
   const [webToken, setWebToken] = useState(null)
@@ -88,20 +102,33 @@ export function ChatPanel({ fullscreen = false }) {
     }).catch(() => { setInstalledEngines({}) })
   }, [])
 
-  // Fetch LifeOS profiles for Hermes profile selector
-  const [lifeosProfiles, setLifeosProfiles] = useState([])
-  useEffect(() => {
-    fetch('/api/agents')
+  // Профили Hermes для селектора в чате. Список приходит с бэкенда из РЕАЛЬНЫХ каталогов
+  // профилей (~/.hermes/profiles/<name>) — раньше он брался из статичного конфига агентов,
+  // поэтому показывал несуществующие профили и не видел только что созданный.
+  const [lifeosProfiles, setLifeosProfiles] = useState([{ id: 'default', name: 'Default', color: '#6b7280' }])
+  const loadProfiles = useCallback(() => {
+    fetch('/api/profiles')
       .then(r => r.json())
       .then(d => {
-        const profiles = (d.agents || [])
-          .filter(a => a.category === 'lifeos')
-          .map(a => ({ id: a.id, name: a.name, color: getProfileColor(a.id) }))
-        // Add 'default' as first option
-        setLifeosProfiles([{ id: 'default', name: 'Default', color: '#6b7280' }, ...profiles])
+        const list = (d.profiles || []).map(pr => ({ id: pr.id, name: pr.name, color: getProfileColor(pr.id) }))
+        if (!list.length) return
+        setLifeosProfiles(list)
+        // профиль могли удалить, пока он был выбран — не висим на несуществующем
+        setAgent(prev => (list.some(x => x.id === prev) ? prev : 'default'))
       })
-      .catch(() => setLifeosProfiles([{ id: 'default', name: 'Default', color: '#6b7280' }]))
+      .catch(() => {})
   }, [])
+  useEffect(() => {
+    loadProfiles()
+    // вернулся к вкладке (мобильный Chrome выгружает её) или создал профиль в терминале —
+    // список перечитываем без перезагрузки страницы
+    const onVis = () => { if (!document.hidden) loadProfiles() }
+    document.addEventListener('visibilitychange', onVis)
+    const t = setInterval(loadProfiles, 60000)
+    return () => { document.removeEventListener('visibilitychange', onVis); clearInterval(t) }
+  }, [loadProfiles])
+  // смена движка/вида — тоже повод обновить список (профиль мог появиться только что)
+  useEffect(() => { if (engine === 'hermes' && !showWeb) loadProfiles() }, [engine, showWeb, loadProfiles])
 
   // When an engine with a built-in web UI is picked: start it and switch to iframe.
   // src per engine is CACHED — switching engines back and forth shows the already
@@ -279,7 +306,8 @@ export function ChatPanel({ fullscreen = false }) {
 
   const changeFont = (delta) => {
     setFontSize(prev => {
-      const nf = Math.min(24, Math.max(7, prev + delta))
+      const nf = Math.min(FONT_MAX, Math.max(FONT_MIN, prev + delta))
+      try { localStorage.setItem(FONT_KEY, String(nf)) } catch {}
       const t = termRef.current
       if (t) { t.options.fontSize = nf; try { fitRef.current?.fit() } catch {} }
       if (wsRef.current && wsRef.current.readyState === 1) {
@@ -309,7 +337,7 @@ export function ChatPanel({ fullscreen = false }) {
     const activeTheme = getXtermTheme()
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 11,
+      fontSize: storedFontSize(),
       lineHeight: 1,
       fontFamily: 'monospace',
       theme: activeTheme,
@@ -402,6 +430,9 @@ export function ChatPanel({ fullscreen = false }) {
         // clear terminal on (re)connect
         term.reset()
         term.writeln('\x1b[2J\x1b[H')
+        // Просим приложение перерисовать кадр (SIGWINCH): сырой реплей буфера после обрыва
+        // WS собирал экран из обрывков escape-последовательностей и больше не восстанавливался.
+        try { ws.send(JSON.stringify({ type: 'repaint', cols: 120, rows: term.rows })) } catch {}
       }
       ws.onmessage = (ev) => {
         try {
@@ -441,11 +472,18 @@ export function ChatPanel({ fullscreen = false }) {
       }
     }
     window.addEventListener('resize', onResize)
+    // На телефоне адресная строка и экранная клавиатура меняют видимую высоту без события
+    // resize у window — тогда TUI обрезался снизу. visualViewport ловит и это.
+    const onViewport = () => doResize()
+    try { window.visualViewport?.addEventListener('resize', onViewport) } catch {}
+    try { window.visualViewport?.addEventListener('scroll', onViewport) } catch {}
 
     return () => {
       try { themeObserver.disconnect() } catch {}
       onData.dispose()
       window.removeEventListener('resize', onResize)
+      try { window.visualViewport?.removeEventListener('resize', onViewport) } catch {}
+      try { window.visualViewport?.removeEventListener('scroll', onViewport) } catch {}
       // null the refs BEFORE disposing so a late window-resize can't call
       // fit() on a disposed terminal (throws "reading 'dimensions'")
       termRef.current = null
