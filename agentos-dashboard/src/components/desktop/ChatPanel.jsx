@@ -531,9 +531,10 @@ export function ChatPanel({ fullscreen = false }) {
 
       ws.onopen = () => {
         setConn('connected')
-        // clear terminal on (re)connect
-        term.reset()
-        term.writeln('\x1b[2J\x1b[H')
+        // Экран НЕ стираем. Раньше здесь был term.reset() + очистка: при переподключении (а оно
+        // случается при каждой смене состояния) пользователь получал чёрный экран с курсором,
+        // если приложение в этот момент ничего не перерисовывало. Теперь просто просим полный
+        // кадр, а прежнее содержимое остаётся на месте до перерисовки.
         // Просим приложение перерисовать кадр (SIGWINCH): сырой реплей буфера после обрыва
         // WS собирал экран из обрывков escape-последовательностей и больше не восстанавливался.
         try { ws.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows })) } catch {}
@@ -608,7 +609,11 @@ export function ChatPanel({ fullscreen = false }) {
       try { wsRef.current?.close() } catch {}
       try { term.dispose() } catch {}
     }
-  }, [agent, engine, webPorts, fullscreen, showWeb])  // reconnect when profile, engine or view (web/tui) changes
+    // webPorts[engine] — ПРИМИТИВ. Раньше в массиве стоял объект webPorts: каждый fetch списка
+    // движков создавал новый объект, эффект перезапускался, сокет терминала рвался и подключался
+    // заново десятками раз — в логах это «ws connected → ws closed» через секунду и мигающий
+    // статус «disconnect» в панели.
+  }, [agent, engine, showWeb, fullscreen, webPorts[engine]])
 
   return (
     <div className="flex flex-col h-full w-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background: themeDark ? '#0b0e14' : '#ffffff', borderColor: themeDark ? '#0b0e14' : 'rgb(var(--term-border))' }}>
