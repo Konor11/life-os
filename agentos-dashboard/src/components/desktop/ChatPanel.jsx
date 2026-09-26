@@ -454,6 +454,33 @@ export function ChatPanel({ fullscreen = false }) {
     }
     // apply the taller rows immediately after layout, before first paint of data
     try { term.resize(120, rowsFor()) } catch {}
+    // Диагностика для проверок: что реально у xterm и что мы сказали PTY. Если разъедется,
+    // Ink начнёт писать 120-колоночные строки в экран другой ширины — обрывки вроде
+    // `tery "/help" for commands` и дублированная строка статуса внизу.
+    const publishSize = () => {
+      const c = containerRef.current
+      if (!c) return
+      c.dataset.termSize = `${term.cols}x${term.rows}`
+      c.dataset.ptySize = `120x${rowsFor()}`
+    }
+    // FitAddon может менять размер терминала сам (свой ResizeObserver) — возвращаем
+    // согласованные с PTY 120 колонок, иначе размеры расходятся молча.
+    let syncing = false
+    const keepSizeInSync = term.onResize(({ cols, rows }) => {
+      publishSize()
+      if (syncing) return
+      if (cols !== 120 || rows !== rowsFor()) {
+        syncing = true
+        setTimeout(() => {
+          try { term.resize(120, rowsFor()) } catch {}
+          syncing = false
+          publishSize()
+          if (wsRef.current && wsRef.current.readyState === 1) {
+            wsRef.current.send(JSON.stringify({ type: 'resize', cols: 120, rows: rowsFor() }))
+          }
+        }, 0)
+      }
+    })
     // NOTE: no post-spawn resize loop — the PTY boots at the exact rows (via URL
     // params) and re-resizing an Ink TUI after spawn makes it redraw skewed.
     // Only a real window resize triggers a new resize message.
@@ -526,6 +553,7 @@ export function ChatPanel({ fullscreen = false }) {
 
     return () => {
       try { themeObserver.disconnect() } catch {}
+      try { keepSizeInSync.dispose() } catch {}
       onData.dispose()
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
