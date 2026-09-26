@@ -6,7 +6,6 @@ import { TermKeypad } from './TermKeypad'
 // Static import: dynamic import() created a separate chunk that failed to load
 // on some networks -> xterm silently fell back to the DOM renderer (stripes on
 // fractional-DPR screens). Bundled statically, the WebGL renderer always works.
-import { WebglAddon } from '@xterm/addon-webgl'
 import { 
   ENGINES, 
   WEB_ENGINES, 
@@ -347,7 +346,8 @@ export function ChatPanel({ fullscreen = false }) {
     // init terminal
     const activeTheme = getXtermTheme()
     const term = new Terminal({
-      cursorBlink: true,
+      cursorBlink: false,   // мигающий блок-курсор на тёмном экране читается как «постоянно моргает»
+      //                       (мобильные терминалы так и делают); у xterm это ~600 мс вспышка
       fontSize: storedFontSize(),
       lineHeight: 1,
       fontFamily: 'monospace',
@@ -368,16 +368,11 @@ export function ChatPanel({ fullscreen = false }) {
       }).catch(() => {})
     } catch {}
     term.open(el)
-    // WebGL renderer: single texture, no subpixel seams between rows (the mobile
-    // DPR "stripes"), and much faster than canvas/DOM. Needs the terminal fully
-    // laid out — attach on the next frame after open().
-    requestAnimationFrame(() => {
-      try {
-        const wgl = new WebglAddon()
-        wgl.onContextLoss(() => { try { wgl.dispose() } catch {} })
-        term.loadAddon(wgl)
-      } catch (e) { try { window.__wglErr = String(e?.message || e) } catch {} }
-    })
+    // Рендерер — только canvas, БЕЗ WebGL-аддона. Официальный дашборд Hermes ровно так и сделал
+    // (NousResearch/hermes-agent PR «remove xterm WebGL renderer from embedded ChatPage; always use
+    // canvas»): на встроенном в страницу терминале WebGL на мобильных даёт потерянный контекст и
+    // мигание, а канвас стабильнее. Плата — тонкие «полосы» между строками при DPR > 1, их гасим
+    // фоном контейнера ниже.
     // Hairline stripes fix: with lineHeight > 1 the canvas paints gaps between rows
     // (visible on mobile DPR) — paint the container with the SAME theme background
     // so gaps blend into the terminal instead of showing the page background.
@@ -404,6 +399,15 @@ export function ChatPanel({ fullscreen = false }) {
       try { fit.fit() } catch {}
       return { cols: term.cols, rows: term.rows }
     }
+    let pendingWrite = ''
+    let flushRaf = 0
+    let gotData = false
+    const flushWrites = () => {
+      flushRaf = 0
+      const d = pendingWrite
+      pendingWrite = ''
+      if (d) { try { term.write(d) } catch {} }
+    }
     let lastSentSize = ''
     // Смена размера идёт сериями: выезд экранной клавиатуры — это десятки кадров анимации, каждый
     // со своей высотой. Отправлять resize на каждый кадр нельзя: приложение перерисовывает кадр
@@ -417,55 +421,31 @@ export function ChatPanel({ fullscreen = false }) {
         scheduleCleanRepaint()
       }, 250)
     }
-    // Ink-приложения при смене ширины/высоты дописывают новый кадр поверх старого: на экране
-    // остаются куски прошлого кадра — два баннера HERMES-AGENT, строки, обрезанные по прежней
-    // ширине («вот так бывает» после смены шрифта/размера). Поэтому после реального изменения
-    // размера чистим локальный экран и просим приложение нарисовать кадр заново (SIGWINCH-нудж
-    // на сервере), а не оставляем клиент собирать диффы поверх мусора.
+    // Раньше здесь после каждого изменения размера делались term.clear() и SIGWINCH-нудж
+    // приложению, плюс чистка по таймеру каждые 15 с. Это и было главным источником мигания:
+    // полная очистка экрана + полный кадр = вспышка на весь терминал, а нудж — это дёргание
+    // размера на строку, заставляющее приложение перерисоваться целиком (практика встраивания
+    // TUI прямо предупреждает: «never thrash WINCH… visible flicker»). Поэтому:
+    //   • очисток экрана нет вообще,
+    //   • WINCH-нудж заказывается только когда экран пуст,
+    //   • после изменения размера просто перерисовываем уже имеющееся содержимое: term.refresh().
     doResizeRef.current = null
     let repaintTimer = null
-    let scrubTimer = null
-    let lastInputAt = 0   // когда пользователь последний раз что-то отправлял в терминал
-    // Чистый кадр нужен, когда меняется ширина/кегль (Ink перерисовывает по новой ширине, а
-    // стирает по старой). При изменении ТОЛЬКО высоты (экранная клавиатура Android) перерисовку
-    // не заказываем: xterm.reset() возвращает фокус скрытому textarea, Android снова поднимает
-    // клавиатуру → снова resize, и клавиатура начинает мигать.
+    let lastInputAt = 0
+    const refreshScreen = () => {
+      if (document.hidden) return
+      // refresh() перерисовывает буфер по текущему размеру. Он же лечит «частичный кадр», который
+      // Chromium оставляет на канвасе до следующей записи вывода.
+      try { term.refresh(0, Math.max(0, term.rows - 1)) } catch {}
+    }
     let lastRepaintKey = ''
     // берём кегль у самого xterm: fontSize из замыкания эффекта может быть устаревшим
     const repaintKey = () => `${term.options.fontSize}x${containerRef.current ? containerRef.current.clientWidth : 0}`
     const scheduleCleanRepaint = () => {
       if (repaintTimer) clearTimeout(repaintTimer)
-      if (scrubTimer) clearTimeout(scrubTimer)
-      repaintTimer = setTimeout(() => {
-        // не выдёргиваем экран из-под печатающего пользователя
-        // clear() вместо reset(): чистит экран и НЕ трогает фокус/скрытый textarea, поэтому
-        // чистку можно делать и когда терминал в фокусе (reset() поднимал клавиатуру Android —
-        // отсюда было мигание). Раньше здесь стоял ранний выход по фокусу — из-за него призраки
-        // прошлой строки статуса оставались, когда высота менялась на одну строку (адресная
-        // строка Chrome съезжает на пару пикселей и обратно).
-        try { term.clear() } catch {}
-        if (wsRef.current && wsRef.current.readyState === 1) {
-          wsRef.current.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows }))
-        }
-      }, 600)   // всплеск мелких изменений высоты → один чистый кадр, а не серия
-      // Вторая чистка — позже. Одной чистки в 600 мс мало: приложение после смены размера само
-      // перерисовывает статусную строку ещё раз, и её прежняя копия остаётся призраком (в замере
-      // — строка вида `k Ury "/help" for commandsa ultra-max 21s ...`).
-      scrubTimer = setTimeout(() => scrub(), 2500)
+      // Всплеск мелких изменений высоты (адресная строка Chrome, тулбар) → одна перерисовка.
+      repaintTimer = setTimeout(refreshScreen, 600)
     }
-    // Чистка кадра: clear() + просьба к приложению нарисовать кадр заново (SIGWINCH-нудж).
-    // Не делается, пока пользователь печатает, — иначе дёргается строка ввода.
-    const scrub = () => {
-      if (document.hidden) return
-      if (Date.now() - lastInputAt < 3000) return
-      try { term.clear() } catch {}
-      if (wsRef.current && wsRef.current.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows }))
-      }
-    }
-    // Призраки копятся от собственных перерисовок приложения (статусная строка тикает каждую
-    // секунду), поэтому «тишины» в потоке не бывает — чистим по таймеру, а не по паузе вывода.
-    const scrubLoop = setInterval(scrub, 15000)
     const doResize = () => {
       const { cols, rows } = applyFit()
       const widthOrFontChanged = repaintKey() !== lastRepaintKey
@@ -531,28 +511,33 @@ export function ChatPanel({ fullscreen = false }) {
 
       ws.onopen = () => {
         setConn('connected')
-        // Экран НЕ стираем. Раньше здесь был term.reset() + очистка: при переподключении (а оно
-        // случается при каждой смене состояния) пользователь получал чёрный экран с курсором,
-        // если приложение в этот момент ничего не перерисовывало. Теперь просто просим полный
-        // кадр, а прежнее содержимое остаётся на месте до перерисовки.
-        // Просим приложение перерисовать кадр (SIGWINCH): сырой реплей буфера после обрыва
-        // WS собирал экран из обрывков escape-последовательностей и больше не восстанавливался.
-        try { ws.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows })) } catch {}
-        // PTY рождается с rows, посчитанными ДО финальной раскладки (тулбар/клавиатура меняют
-        // высоту контейнера). Если размеры разошлись, Ink рисует свой кадр выше/ниже видимой
-        // области, и нижняя строка статуса остаётся дублем поверх новой. Поэтому после того как
-        // раскладка устоялась, сообщаем фактический размер и заказываем чистый кадр.
+        // Экран НЕ стираем и полный кадр у приложения заказываем ТОЛЬКО если экран пуст.
+        // SIGWINCH-нудж — это дёргание размера на строку, заставляющее приложение перерисоваться
+        // целиком; на каждом переподключении это и выглядело как мигание. Когда содержимое уже
+        // есть, достаточно перерисовать буфер на клиенте.
+        if (!gotData) {
+          try { ws.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows })) } catch {}
+        } else {
+          refreshScreen()
+        }
+        // Сообщаем фактический размер после того, как раскладка устоялась (без заказа кадра):
+        // PTY рождается с rows, посчитанными ДО финальной раскладки, и Ink тогда рисует кадр
+        // выше/ниже видимой области.
         setTimeout(() => {
           if (!wsRef.current || wsRef.current.readyState !== 1) return
           try { wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })) } catch {}
-          scheduleCleanRepaint()
         }, 500)
       }
       ws.onmessage = (ev) => {
         try {
           const msg = JSON.parse(ev.data)
           if (msg.type === 'data') {
-            term.write(msg.data)
+            // Вывод PTY склеиваем по кадру анимации: середина перерисовки (батч CSI-последовательностей)
+            // иначе попадает в разные write'ы, и xterm перерисовывает регион по частям — это заметное
+            // дрожание. Один write за кадр = одна перерисовка (совет из практики встраивания TUI).
+            gotData = true
+            pendingWrite += msg.data
+            if (!flushRaf) flushRaf = requestAnimationFrame(flushWrites)
             // Detect agent state from terminal output (Herdr-style)
             if (msg.data && typeof msg.data === 'string') {
               setAgentState(prev => detectAgentState(msg.data, prev))
@@ -598,9 +583,9 @@ export function ChatPanel({ fullscreen = false }) {
       onData.dispose()
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
-      if (scrubTimer) clearTimeout(scrubTimer)
       if (sizeTimer) clearTimeout(sizeTimer)
-      clearInterval(scrubLoop)
+      // таймерной чистки кадра больше нет: она давала видимую вспышку каждые 15 с
+      if (flushRaf) cancelAnimationFrame(flushRaf)
       // визуальный вьюпорт больше не слушаем — см. комментарий в начале эффекта
       // null the refs BEFORE disposing so a late window-resize can't call
       // fit() on a disposed terminal (throws "reading 'dimensions'")

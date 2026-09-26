@@ -103,6 +103,10 @@ function killSession(s) {
 function nudgeRepaint(s, cols, rows) {
   const c = Math.max(20, parseInt(cols, 10) || 120)
   const r = Math.max(10, parseInt(rows, 10) || 40)
+  // Нудж — это два SIGWINCH (строка туда-обратно), на каждый Ink перерисовывает кадр целиком.
+  // Если размер уже совпадает с PTY, нудж всё равно стоил бы двух полных перерисовок — а это и
+  // есть то мигание, на которое жалуются. Дёргаем только когда размер реально другой.
+  if (s.pty.cols === c && s.pty.rows === r) return
   setTimeout(() => { try { s.pty.resize(c, Math.max(10, r - 1)) } catch {} }, 200)
   setTimeout(() => { try { s.pty.resize(c, r) } catch {} }, 450)
 }
@@ -165,8 +169,10 @@ export function attachTuiServer(app, server) {
         try { ws.send(JSON.stringify({ type: 'data', data: s.buffer.join('') })) } catch {}
         console.log(`[tui] re-attached (raw replay ${s.buffer.length} chunks)`)
       } else {
-        nudgeRepaint(s, qcols, qrows)
-        console.log(`[tui] re-attached engine=${engine} profile=${profile} — repaint requested`)
+        // На переподключении НЕ дёргаем размер: клиент сам перерисует уже имеющийся буфер, а если
+        // у него пустой экран — он явно попросит кадр сообщением {type:'repaint'}. Нудж на каждом
+        // переподключении заставлял приложение перерисовываться целиком (мигание).
+        console.log(`[tui] re-attached engine=${engine} profile=${profile} — no replay (client repaints)`)
       }
     } else {
       const ptyEnv = { ...process.env, TERM: 'xterm-256color', OPENROUTER_API_KEY: OPENROUTER_KEY,
@@ -231,7 +237,10 @@ export function attachTuiServer(app, server) {
         if (msg.type === 'input' && msg.data) pty.write(msg.data)
         else if (msg.type === 'theme' && msg.theme) { syncOpencodeTheme(msg.theme); }
         else if (msg.type === 'resize' && msg.cols && msg.rows) {
-          try { pty.resize(msg.cols, msg.rows) } catch {}
+          // Пропускаем повтор того же размера: node-pty пошлёт SIGWINCH, приложение перерисует
+          // кадр целиком. Именно повторные одинаковые resize (серии от раскладки) давали мигание.
+          const c = parseInt(msg.cols, 10), r = parseInt(msg.rows, 10)
+          if (c && r && (c !== pty.cols || r !== pty.rows)) { try { pty.resize(c, r) } catch {} }
         }
         else if (msg.type === 'repaint') {
           nudgeRepaint(s, msg.cols || qcols, msg.rows || qrows)
