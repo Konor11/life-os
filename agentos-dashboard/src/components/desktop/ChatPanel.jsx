@@ -598,7 +598,10 @@ export function ChatPanel({ fullscreen = false }) {
     // движков создавал новый объект, эффект перезапускался, сокет терминала рвался и подключался
     // заново десятками раз — в логах это «ws connected → ws closed» через секунду и мигающий
     // статус «disconnect» в панели.
-  }, [agent, engine, showWeb, fullscreen, webPorts[engine]])
+    // webPorts здесь больше нет вовсе: эффект терминала не зависит от списка движков. Даже
+    // примитив webPorts[engine] менялся с undefined на номер, когда приходил /api/harnesses, —
+    // эффект перезапускался и рвал сокет в первый же момент после загрузки страницы.
+  }, [agent, engine, showWeb, fullscreen])
 
   return (
     <div className="flex flex-col h-full w-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background: themeDark ? '#0b0e14' : '#ffffff', borderColor: themeDark ? '#0b0e14' : 'rgb(var(--term-border))' }}>
