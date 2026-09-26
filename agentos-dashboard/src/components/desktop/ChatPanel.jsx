@@ -398,6 +398,8 @@ export function ChatPanel({ fullscreen = false }) {
     // Fill the container VERTICALLY: cols stay fixed at 120 (Ink box-drawing breaks
     // otherwise) but rows follow the real container height, so the TUI stretches
     // to the full screen instead of floating in a 40-row strip.
+    // NOTE: cols фиксированы на 120 (Ink ломает рамки при узкой ширине) — компенсируем
+    // шрифтом и горизонтальным свайпом, а не пересчётом колонок под вьюпорт.
     const rowsFor = () => {
       try {
         const d = fit.proposeDimensions()
@@ -656,7 +658,11 @@ export function ChatPanel({ fullscreen = false }) {
       ))}
       {!showWeb && (
         <>
-          <div ref={containerRef} className="flex-1 w-full overflow-hidden" style={{ minHeight: '280px', minWidth: '900px' }} />
+          {/* ширина = 120 колонок при текущем шрифте, поэтому мелкий шрифт реально вмещает
+              TUI в экран, а крупный доступен горизонтальным свайпом (раньше стоял
+              overflow-hidden при жёстких 900px — правый край было не достать) */}
+          <div ref={containerRef} className="flex-1 w-full overflow-x-auto overflow-y-hidden"
+            style={{ minHeight: '280px', minWidth: `${Math.ceil(120 * fontSize * 0.62) + 8}px` }} />
           {/* on-screen keypad only for touch/narrow screens — laptops have a real keyboard */}
           {keypadOn && (
             <div className="lg:hidden">
