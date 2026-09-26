@@ -455,6 +455,8 @@ async function discoverHarnesses() {
       // engines with an install-time choice: mode (TUI/Web/both), Web UI domain, auth gate
       needsInstallOptions: h.id === 'opencode' || h.id === 'hermes',
       interactive: !!h.interactive,   // UI shows the keystroke pad while installing
+      // installed engines that expose an interactive setup wizard (Hermes: provider, tools)
+      setupAvailable: installed && !!h.setupAvailable,
       web: h.web || null,
       bin: installed ? null : h.bin.join(' / '),
     })
@@ -823,6 +825,34 @@ function buildHermesUninstall() {
 // Attach the removal command (HARNESSES_DEF itself is defined earlier in the file).
 const HERMES_DEF = HARNESSES_DEF.find(h => h.id === 'hermes')
 if (HERMES_DEF) HERMES_DEF.uninstall = buildHermesUninstall()
+if (HERMES_DEF) HERMES_DEF.setupAvailable = true
+
+// Re-run the interactive setup wizard of an installed engine. Hermes cancels its wizard
+// (or the user exits it), leaving the engine installed but without an AI provider — there
+// was no way to open the wizard again from the panel.
+function buildHermesSetup() {
+  return [
+    'export XDG_RUNTIME_DIR=/run/user/0',
+    'export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus',
+    'HB="$(command -v hermes || true)"',
+    'for c in /usr/local/bin/hermes /root/.hermes/hermes-agent/.hermes/bin/hermes /root/.hermes/bin/hermes; do [ -x "$c" ] && HB="$c" && break; done',
+    'if [ -z "$HB" ]; then echo "Hermes не установлен — сначала установи движок"; exit 1; fi',
+    'echo "[мастер настроек Hermes] отвечай кнопками под логом: ↑↓ выбор, ⏎ подтвердить, Esc отмена"',
+    '"$HB" setup',
+    'echo "[мастер настроек завершён]"',
+  ].join('\n')
+}
+
+// POST /api/harness/setup — open the interactive setup wizard of an installed engine
+app.post('/api/harness/setup', async (req, res) => {
+  const { id } = req.body || {}
+  const def = HARNESSES_DEF.find(h => h.id === id)
+  if (!def) return res.status(404).json({ error: 'агент не найден' })
+  if (id !== 'hermes') return res.status(400).json({ error: 'для этого движка нет мастера настроек' })
+  if (installs[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
+  runLoggedPty(installs, id, buildHermesSetup(), 'настройка завершена', 1800000)
+  res.json({ ok: true, state: 'running' })
+})
 
 // POST /api/harness/install — install one agent (runs installCmd in background)
 const installs = {}  // id -> {state, log}

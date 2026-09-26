@@ -4,7 +4,7 @@ import { Icon } from '../Icons'
 const API = '/api'
 
 // One installable row: engines (binaries) and components (systemd services) share it.
-function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate, onKey }) {
+function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate, onKey, onSetup }) {
   const [textInput, setTextInput] = useState('')
   const missingKey = item.installed && item.key && !keys.some(k => k.env === item.key)
   const busy = busyId === item.id
@@ -40,6 +40,12 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
               <button onClick={() => onUninstall(item.id)} disabled={!!busyId}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 ${busy && busyOp === 'uninstall' ? 'opacity-60' : ''}`}>
                 {busy && busyOp === 'uninstall' ? '⏳ Удаление...' : '🗑 Удалить'}
+              </button>
+            )}
+            {item.id === 'hermes' && item.setupAvailable && (
+              <button onClick={() => onSetup(item.id)} disabled={!!busyId}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'setup' ? 'opacity-60' : ''}`}>
+                {busy && busyOp === 'setup' ? '⏳ Мастер запущен...' : '⚙ Мастер настроек'}
               </button>
             )}
             {!item.uninstallCmd && item.id === 'hermes' && null}
@@ -82,7 +88,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
       )}
       {/* Interactive installs (Hermes: `hermes setup` is an arrow-key menu running in a PTY)
           — the keystrokes are forwarded to the live process. */}
-      {busy && (busyOp === 'install' || busyOp === 'uninstall') && item.interactive && (
+      {busy && (busyOp === 'install' || busyOp === 'uninstall' || busyOp === 'setup') && item.interactive && (
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
           <span className="text-[11px] text-text-muted mr-1">Управление установкой:</span>
           {[['up', '↑'], ['down', '↓'], ['left', '←'], ['right', '→'], ['enter', '⏎ Enter'],
@@ -116,6 +122,7 @@ export function HarnessView() {
   const [installing, setInstalling] = useState(null)
   const [uninstalling, setUninstalling] = useState(null)
   const [updating, setUpdating] = useState(null)
+  const [setting, setSetting] = useState(null)   // engine's interactive setup wizard running
   const [logs, setLogs] = useState({})
   const [keys, setKeys] = useState([])
   // Install options modal: mode (tui/web/both) + domain for the web UI, plus the
@@ -141,22 +148,25 @@ export function HarnessView() {
   const allItems = [...components, ...harnesses]
 
   // poll the active op (install / uninstall / update) while running
-  const busyId = installing || uninstalling || updating
-  const busyOp = updating ? 'update' : uninstalling ? 'uninstall' : 'install'
+  const busyId = installing || uninstalling || updating || setting
+  const busyOp = updating ? 'update' : uninstalling ? 'uninstall' : setting ? 'setup' : 'install'
   useEffect(() => {
     if (!busyId) return
     const kind = busyOp
     const timer = setInterval(async () => {
       try {
         // components and harnesses have separate status endpoints; probe both
-        let d = await (await fetch(`${API}/components/${kind}/status?id=${busyId}`)).json().catch(() => null)
+        // (a setup run lives in the harness store only)
+        let d = kind === 'setup' ? null
+          : await (await fetch(`${API}/components/${kind}/status?id=${busyId}`)).json().catch(() => null)
         if (!d || d.state === 'none') {
-          d = await (await fetch(`${API}/harness/${kind}/status?id=${busyId}`)).json()
+          d = await (await fetch(`${API}/harness/${kind === 'setup' ? 'install' : kind}/status?id=${busyId}`)).json()
         }
         if (d?.log) setLogs(prev => ({ ...prev, [busyId]: d.log }))
         if (d?.state === 'done' || d?.state === 'error') {
           if (kind === 'install') setInstalling(null)
           else if (kind === 'uninstall') setUninstalling(null)
+          else if (kind === 'setup') setSetting(null)
           else setUpdating(null)
           load()  // re-detect installation state
         }
@@ -202,6 +212,14 @@ export function HarnessView() {
     await runInstall(id, { mode, domain, protection, basicUser, basicPass })
   }
 
+  // Open an installed engine's interactive setup wizard (Hermes: choose the AI provider).
+  const openSetup = async (id) => {
+    try {
+      await fetch(`${API}/harness/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+      setSetting(id); setLogs(prev => ({ ...prev, [id]: '⏳ запускаю мастер настроек...' }))
+    } catch (e) { setError(e.message) }
+  }
+
   const uninstall = async (id) => {
     try {
       const isComponent = components.some(c => c.id === id)
@@ -234,7 +252,7 @@ export function HarnessView() {
           </h2>
           {components.map(c => (
             <ItemCard key={c.id} item={c} keys={keys} busyId={busyId} busyOp={busyOp}
-              logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} onKey={sendKey} />
+              logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} onKey={sendKey} onSetup={openSetup} />
           ))}
         </>
       )}
@@ -244,7 +262,7 @@ export function HarnessView() {
       </h2>
       {harnesses.map(h => (
         <ItemCard key={h.id} item={h} keys={keys} busyId={busyId} busyOp={busyOp}
-          logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} onKey={sendKey} />
+          logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} onKey={sendKey} onSetup={openSetup} />
       ))}
 
       {error && <p className="text-sm text-danger">Ошибка: {error}</p>}
