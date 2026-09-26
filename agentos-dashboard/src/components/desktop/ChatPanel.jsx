@@ -427,15 +427,16 @@ export function ChatPanel({ fullscreen = false }) {
       if (repaintTimer) clearTimeout(repaintTimer)
       repaintTimer = setTimeout(() => {
         // не выдёргиваем экран из-под печатающего пользователя
-        const ae = document.activeElement
-        if (ae && ae !== document.body && ae.closest && ae.closest('.xterm')) return
-        // clear() вместо reset(): чистит экран, но не трогает фокус/textarea — reset() поднимал
-        // экранную клавиатуру Android и она мигала в цикле
+        // clear() вместо reset(): чистит экран и НЕ трогает фокус/скрытый textarea, поэтому
+        // чистку можно делать и когда терминал в фокусе (reset() поднимал клавиатуру Android —
+        // отсюда было мигание). Раньше здесь стоял ранний выход по фокусу — из-за него призраки
+        // прошлой строки статуса оставались, когда высота менялась на одну строку (адресная
+        // строка Chrome съезжает на пару пикселей и обратно).
         try { term.clear() } catch {}
         if (wsRef.current && wsRef.current.readyState === 1) {
           wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
         }
-      }, 350)
+      }, 600)   // всплеск мелких изменений высоты → один чистый кадр, а не серия
     }
     const doResize = () => {
       const cols = 120
