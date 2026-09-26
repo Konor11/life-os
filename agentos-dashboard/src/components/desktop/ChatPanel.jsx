@@ -111,6 +111,10 @@ export function ChatPanel({ fullscreen = false }) {
   // deployment, so the Web tab showed an empty frame while its own domain worked.
   const [webUrls, setWebUrls] = useState({})
   const [webSrcCache, setWebSrcCache] = useState(() => ({}))
+  // Ручная перезагрузка фрейма: вход в дашборд движка можно завершить в отдельной вкладке
+  // (портал Nous не позволяет фреймить себя), после чего cookie уже в общем jar браузера —
+  // достаточно перезагрузить фрейм здесь.
+  const [webReload, setWebReload] = useState(0)
   useEffect(() => {
     let alive = true
     fetch('/api/harnesses').then(r => r.json()).then(d => {
@@ -494,6 +498,26 @@ export function ChatPanel({ fullscreen = false }) {
         <button onClick={() => setKeypadOn(!keypadOn)}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
+        {/* Web-режим: вход и внешнее открытие. Дашборд движка со своей аутентификацией
+            (Hermes) требует логина, а вход через Nous Portal невозможен внутри фрейма —
+            портал запрещает фрейминг. Поэтому логин-пароль вводится прямо здесь, а OAuth
+            открывается в новой вкладке; после входа cookie уже в общем jar браузера
+            (домены движка и панели — один сайт), и «Обновить» показывает дашборд. */}
+        {showWeb && (webSrcCache[engine] || webUrls[engine]) && (
+          <>
+            <button onClick={() => setWebReload(n => n + 1)}
+              className="ml-1 px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors"
+              title="Перезагрузить встроенный интерфейс (например, после входа в отдельной вкладке)">↻</button>
+            <button onClick={() => window.open(webUrls[engine] || webSrcCache[engine], '_blank', 'noopener')}
+              className="px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors"
+              title="Открыть web-интерфейс движка в новой вкладке">↗</button>
+            {engine === 'hermes' && webUrls.hermes && (
+              <button onClick={() => window.open(`${webUrls.hermes}/auth/login?provider=nous`, '_blank', 'noopener')}
+                className="px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors whitespace-nowrap"
+                title="Вход через Nous Portal: откроется в новой вкладке (внутри фрейма портал себя фреймить не даёт), после входа вернись сюда и нажми ↻">🔑 Nous</button>
+            )}
+          </>
+        )}
         {/* Connection + Agent state indicator */}
         {(() => {
           // In Web mode: show "web"
@@ -549,7 +573,7 @@ export function ChatPanel({ fullscreen = false }) {
           remount the iframe (color-scheme style is set before it boots). */}
       {Object.entries(webSrcCache).map(([id, src]) => (
         <iframe
-          key={`${id}-${themeDark ? 'dark' : 'light'}`}
+          key={`${id}-${themeDark ? 'dark' : 'light'}-${webReload}`}
           src={src}
           className="flex-1 w-full border-0"
           style={{
