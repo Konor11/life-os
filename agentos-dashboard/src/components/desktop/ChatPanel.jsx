@@ -20,6 +20,12 @@ import { getAgentsByCategory, getAgentById } from '../../config/agents'
 // Размер шрифта терминала: на телефоне 120-колоночный TUI в экран не влезает, поэтому
 // мелкий шрифт нужен (7 было мало — просили меньше), и он должен переживать перезагрузку
 // страницы, а не сбрасываться на 11.
+const KEYPAD_KEY = 'lifeos.chat.keypad'
+// Экранная клавиатура: выбор запоминается — если её убрали, после перезагрузки она не
+// должна возвращаться.
+function storedKeypad() {
+  try { const v = localStorage.getItem(KEYPAD_KEY); return v === null ? true : v === '1' } catch { return true }
+}
 const FONT_KEY = 'lifeos.chat.fontSize'
 const FONT_MIN = 4
 const FONT_MAX = 24
@@ -255,7 +261,7 @@ export function ChatPanel({ fullscreen = false }) {
     }
   }
 
-  const [keypadOn, setKeypadOn] = useState(true)
+  const [keypadOn, setKeypadOn] = useState(storedKeypad)
   // Web/TUI toggle for engines that support both. Initial value honors the user's
   // per-engine default from Settings («Движки · открывать по умолчанию»), so the
   // first Chat mount opens the preferred view, not a hardcoded Web.
@@ -399,13 +405,30 @@ export function ChatPanel({ fullscreen = false }) {
       } catch {}
       return 40
     }
+    // Ink-приложения при смене ширины/высоты дописывают новый кадр поверх старого: на экране
+    // остаются куски прошлого кадра — два баннера HERMES-AGENT, строки, обрезанные по прежней
+    // ширине («вот так бывает» после смены шрифта/размера). Поэтому после реального изменения
+    // размера чистим локальный экран и просим приложение нарисовать кадр заново (SIGWINCH-нудж
+    // на сервере), а не оставляем клиент собирать диффы поверх мусора.
+    let repaintTimer = null
+    const scheduleCleanRepaint = () => {
+      if (repaintTimer) clearTimeout(repaintTimer)
+      repaintTimer = setTimeout(() => {
+        try { term.reset() } catch {}
+        if (wsRef.current && wsRef.current.readyState === 1) {
+          wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
+        }
+      }, 350)
+    }
     const doResize = () => {
       const cols = 120
       const rows = rowsFor()
+      const changed = term.cols !== cols || term.rows !== rows
       try { term.resize(cols, rows) } catch {}
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
+      if (changed) scheduleCleanRepaint()
     }
     // apply the taller rows immediately after layout, before first paint of data
     try { term.resize(120, rowsFor()) } catch {}
@@ -467,12 +490,9 @@ export function ChatPanel({ fullscreen = false }) {
       }
     })
     const onResize = () => {
-      if (termRef.current && fitRef.current) {
-        try { fitRef.current.fit() } catch {}
-        if (wsRef.current && wsRef.current.readyState === 1) {
-          wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
-        }
-      }
+      if (!termRef.current || !fitRef.current) return
+      try { fitRef.current.fit() } catch {}
+      doResize()   // меряем строки по контейнеру и чистим экран при смене размера
     }
     window.addEventListener('resize', onResize)
     // На телефоне адресная строка и экранная клавиатура меняют видимую высоту без события
@@ -485,6 +505,7 @@ export function ChatPanel({ fullscreen = false }) {
       try { themeObserver.disconnect() } catch {}
       onData.dispose()
       window.removeEventListener('resize', onResize)
+      if (repaintTimer) clearTimeout(repaintTimer)
       try { window.visualViewport?.removeEventListener('resize', onViewport) } catch {}
       try { window.visualViewport?.removeEventListener('scroll', onViewport) } catch {}
       // null the refs BEFORE disposing so a late window-resize can't call
@@ -536,7 +557,11 @@ export function ChatPanel({ fullscreen = false }) {
           <button onClick={() => changeFont(1)} className="px-2 py-0.5 text-sm font-bold text-text-muted hover:text-text hover:bg-bg-card transition-colors" title="Увеличить шрифт">+</button>
         </div>
         {/* Keypad toggle */}
-        <button onClick={() => setKeypadOn(!keypadOn)}
+        <button onClick={() => setKeypadOn(v => {
+          const nv = !v
+          try { localStorage.setItem(KEYPAD_KEY, nv ? '1' : '0') } catch {}
+          return nv
+        })}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
         {/* Web-режим: вход и внешнее открытие. У дашбордов движков своя страница входа;
