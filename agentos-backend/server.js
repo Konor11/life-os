@@ -203,6 +203,29 @@ function agentExtraTokens(id) {
                  source: p, desc: 'Токен Control UI OpenClaw (вход в openclaw.dktunnel.xyz)' }]
     } catch { return [] }
   }
+  if (id === 'hermes') {
+    // Credentials for the Hermes Web UI gate — the same values the install wrote, so the
+    // owner can look them up later instead of digging in /root/.hermes-web-auth.
+    try {
+      let dom = ''
+      try { dom = readFileSync('/root/.hermes-domain', 'utf8').trim() } catch {}
+      const p = '/root/.hermes-web-auth'
+      if (!existsSync(p)) return []
+      const txt = readFileSync(p, 'utf8')
+      const get = (k) => { const m = txt.match(new RegExp(`^${k}=(.*)$`, 'm')); return m ? m[1].replace(/\r?$/, '') : null }
+      const user = get('AUTH_USER') || '', pw = get('AUTH_PASS') || ''
+      const out = []
+      if (user) out.push({ env: 'HERMES_DASHBOARD_USER', agentToken: true, value: user, masked: user, length: user.length,
+                 source: p, desc: 'Логин входа в Hermes Web UI' + (dom ? ` (${dom})` : '') })
+      if (pw) { const m = pw.length > 8 ? pw.slice(0, 3) + '…' + pw.slice(-3) : '•••'
+        out.push({ env: 'HERMES_DASHBOARD_PASSWORD', agentToken: true, value: pw, masked: m, length: pw.length,
+                   source: p, desc: 'Пароль входа в Hermes Web UI' })
+      }
+      if (dom) out.push({ env: 'HERMES_WEB_DOMAIN', agentToken: true, value: dom, masked: dom, length: dom.length,
+                 source: '/root/.hermes-domain', desc: 'Домен Web UI Hermes (проксируется Caddy)' })
+      return out
+    } catch { return [] }
+  }
   if (id === 'coder') {
     try {
       // Coder admin credentials (owner). Email is fixed; password/user live in the
@@ -599,7 +622,7 @@ function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000, { screen: 
 // the dashboard auth gate. The dashboard's own providers are configured through env vars
 // read by hermes-dashboard.service: BASIC_AUTH_* (username + password) and the Nous
 // Portal OAuth client id written by `hermes dashboard register`.
-function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic' } = {}) {
+function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', basicUser = '', basicPass = '' } = {}) {
   const lines = [
     'set -e',
     // `hermes gateway install` writes a *user* systemd service; systemd --user needs a
@@ -631,16 +654,17 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic' } 
     `grep -q '^HERMES_DASHBOARD_PUBLIC_URL=' "$ENVF" || printf 'HERMES_DASHBOARD_PUBLIC_URL=https://%s\\n' '${dom}' >> "$ENVF"`,
   )
   if (wantBasic) {
+    // Credentials come from the UI when the user typed them; otherwise generate.
+    const sq = (v) => String(v).replace(/'/g, "'\\''")
     lines.push(
-      'if [ ! -f /root/.hermes-web-auth ]; then',
-      "  printf 'AUTH_USER=%s\\nAUTH_PASS=%s\\nAUTH_SECRET=%s\\n' \"lifeos-$(openssl rand -hex 2)\" \"$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-18)\" \"$(openssl rand -hex 32)\" > /root/.hermes-web-auth",
-      '  chmod 600 /root/.hermes-web-auth',
-      'fi',
-      'set -a; . /root/.hermes-web-auth; set +a',
-      "grep -q '^HERMES_DASHBOARD_BASIC_AUTH_USERNAME=' \"$ENVF\" || printf 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME=%s\\n' \"$AUTH_USER\" >> \"$ENVF\"",
-      "grep -q '^HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=' \"$ENVF\" || printf 'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=%s\\n' \"$AUTH_PASS\" >> \"$ENVF\"",
-      "grep -q '^HERMES_DASHBOARD_BASIC_AUTH_SECRET=' \"$ENVF\" || printf 'HERMES_DASHBOARD_BASIC_AUTH_SECRET=%s\\n' \"$AUTH_SECRET\" >> \"$ENVF\"",
-      "echo \"[basic] логин: $AUTH_USER, пароль в /root/.hermes-web-auth (вкладка «Ключи»)\"",
+      basicUser ? `AUTH_USER='${sq(basicUser)}'` : "AUTH_USER=\"lifeos-$(openssl rand -hex 2)\"",
+      basicPass ? `AUTH_PASS='${sq(basicPass)}'` : "AUTH_PASS=\"$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-18)\"",
+      'AUTH_SECRET="$(openssl rand -hex 32)"',
+      "printf 'AUTH_USER=%s\\nAUTH_PASS=%s\\nAUTH_SECRET=%s\\n' \"$AUTH_USER\" \"$AUTH_PASS\" \"$AUTH_SECRET\" > /root/.hermes-web-auth",
+      'chmod 600 /root/.hermes-web-auth',
+      "sed -i '/^HERMES_DASHBOARD_BASIC_AUTH_/d' \"$ENVF\"",
+      "printf 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME=%s\\nHERMES_DASHBOARD_BASIC_AUTH_PASSWORD=%s\\nHERMES_DASHBOARD_BASIC_AUTH_SECRET=%s\\n' \"$AUTH_USER\" \"$AUTH_PASS\" \"$AUTH_SECRET\" >> \"$ENVF\"",
+      "echo \"[basic] вход: $AUTH_USER / $AUTH_PASS — сохрани, они же видны во вкладке «Ключи» → Hermes\"",
     )
   }
   if (wantOauth) {
@@ -804,7 +828,7 @@ function runLogged(store, id, cmd, doneLabel, timeoutMs = 600000) {
 }
 
 app.post('/api/harness/install', async (req, res) => {
-  const { id, mode, domain, protection } = req.body || {}
+  const { id, mode, domain, protection, basicUser, basicPass } = req.body || {}
   const def = HARNESSES_DEF.find(h => h.id === id)
   if (!def) return res.status(404).json({ error: 'агент не найден' })
   if (installs[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
@@ -872,8 +896,22 @@ app.post('/api/harness/install', async (req, res) => {
       if (!['basic', 'oauth', 'both'].includes(protection || 'basic')) {
         return res.status(400).json({ error: 'неизвестная защита: ' + protection })
       }
+      // Basic-auth credentials are the owner's choice; validate before they reach the script.
+      if ((protection || 'basic') !== 'oauth') {
+        const u = String(basicUser || '').trim()
+        const p = String(basicPass || '')
+        if (u && !/^[A-Za-z0-9._-]{1,32}$/.test(u)) {
+          return res.status(400).json({ error: 'логин: разрешены латиница, цифры, . _ - (до 32 символов)' })
+        }
+        if (p && (p.length < 8 || p.length > 64 || /[\s'"\\`$]/.test(p))) {
+          return res.status(400).json({ error: 'пароль: 8–64 символа, без пробелов и кавычек' })
+        }
+      }
     }
-    cmd = buildHermesInstall({ mode: mode || 'tui', domain, protection: protection || 'basic' })
+    cmd = buildHermesInstall({
+      mode: mode || 'tui', domain, protection: protection || 'basic',
+      basicUser: String(basicUser || '').trim(), basicPass: String(basicPass || ''),
+    })
   }
 
   // Interactive installers (Hermes) need a TTY — they probe /dev/tty and silently skip

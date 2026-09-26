@@ -180,9 +180,9 @@ export function HarnessView() {
 
   const confirmInstallOpts = async () => {
     if (!installOpts) return
-    const { id, mode, domain, protection } = installOpts
+    const { id, mode, domain, protection, basicUser, basicPass } = installOpts
     setInstallOpts(null)
-    await runInstall(id, { mode, domain, protection })
+    await runInstall(id, { mode, domain, protection, basicUser, basicPass })
   }
 
   const uninstall = async (id) => {
@@ -279,6 +279,28 @@ export function HarnessView() {
                     <div className="text-xs text-text-muted">{o.hint}</div>
                   </button>
                 ))}
+                {(installOpts.protection === 'basic' || installOpts.protection === 'both') && (
+                  <div className="space-y-2 pt-1">
+                    <div>
+                      <label className="text-sm text-text-muted block mb-1">Логин для входа в Web UI:</label>
+                      <input value={installOpts.basicUser || ''}
+                        onChange={e => setInstallOpts(p => ({ ...p, basicUser: e.target.value }))}
+                        placeholder="например, admin"
+                        className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
+                    </div>
+                    <div>
+                      <label className="text-sm text-text-muted block mb-1">Пароль:</label>
+                      <input value={installOpts.basicPass || ''} type="text" autoComplete="new-password"
+                        onChange={e => setInstallOpts(p => ({ ...p, basicPass: e.target.value }))}
+                        placeholder="минимум 8 символов, без пробелов и кавычек"
+                        className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
+                      <p className="text-xs text-text-muted mt-1">
+                        Оставь поле пустым — сгенерирую надёжный пароль. Заданные значения сохранятся
+                        в <code className="text-[11px]">/root/.hermes-web-auth</code> и будут видны во вкладке «Ключи» → Hermes.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex gap-2 justify-end">
