@@ -100,13 +100,16 @@ function killSession(s) {
 // экран собирался из обрывков и сам больше не восстанавливался (на телефоне WS рвётся при
 // сворачивании вкладки или смене сети — «через какое-то время интерфейс кривой»).
 // Вместо реплея просим приложение нарисовать кадр заново: resize в (-1 строку) и обратно.
-function nudgeRepaint(s, cols, rows) {
+function nudgeRepaint(s, cols, rows, force) {
   const c = Math.max(20, parseInt(cols, 10) || 120)
   const r = Math.max(10, parseInt(rows, 10) || 40)
   // Нудж — это два SIGWINCH (строка туда-обратно), на каждый Ink перерисовывает кадр целиком.
-  // Если размер уже совпадает с PTY, нудж всё равно стоил бы двух полных перерисовок — а это и
-  // есть то мигание, на которое жалуются. Дёргаем только когда размер реально другой.
-  if (s.pty.cols === c && s.pty.rows === r) return
+  // Если размер уже совпадает с PTY, автоматический нудж не нужен: он стоил бы двух полных
+  // перерисовок — а это и есть то мигание, на которое жалуются.
+  // НО: явная просьба клиента (`force`) выполняется всегда. Клиент просит кадр, когда его экран
+  // пуст (переподключение к живой сессии), и при равном размере подавление просьбы оставляло
+  // пользователя с пустым терминалом до первой записи вывода приложения.
+  if (!force && s.pty.cols === c && s.pty.rows === r) return
   setTimeout(() => { try { s.pty.resize(c, Math.max(10, r - 1)) } catch {} }, 200)
   setTimeout(() => { try { s.pty.resize(c, r) } catch {} }, 450)
 }
@@ -243,7 +246,8 @@ export function attachTuiServer(app, server) {
           if (c && r && (c !== pty.cols || r !== pty.rows)) { try { pty.resize(c, r) } catch {} }
         }
         else if (msg.type === 'repaint') {
-          nudgeRepaint(s, msg.cols || qcols, msg.rows || qrows)
+          // force: клиент сам решает, что ему нужен полный кадр (у него пустой экран).
+          nudgeRepaint(s, msg.cols || qcols, msg.rows || qrows, true)
         }
       } catch {
         // not JSON — treat as raw input
