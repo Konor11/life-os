@@ -417,8 +417,7 @@ export function ChatPanel({ fullscreen = false }) {
     doResizeRef.current = null
     let repaintTimer = null
     let scrubTimer = null
-    let lastDataAt = 0
-    const isIdle = () => Date.now() - lastDataAt > 2500   // приложение ничего не пишет → чистка не видна
+    let lastInputAt = 0   // когда пользователь последний раз что-то отправлял в терминал
     // Чистый кадр нужен, когда меняется ширина/кегль (Ink перерисовывает по новой ширине, а
     // стирает по старой). При изменении ТОЛЬКО высоты (экранная клавиатура Android) перерисовку
     // не заказываем: xterm.reset() возвращает фокус скрытому textarea, Android снова поднимает
@@ -441,17 +440,24 @@ export function ChatPanel({ fullscreen = false }) {
           wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
         }
       }, 600)   // всплеск мелких изменений высоты → один чистый кадр, а не серия
-      // Вторая чистка — позже и только когда вывод утих. Одной чистки в 600 мс мало: приложение
-      // после смены размера само перерисовывает статусную строку ещё раз, и её прежняя копия
-      // остаётся призраком (в замере — строка вида `k Ury "/help" for commandsa ultra-max ...`).
-      scrubTimer = setTimeout(() => {
-        if (!isIdle()) return
-        try { term.clear() } catch {}
-        if (wsRef.current && wsRef.current.readyState === 1) {
-          wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
-        }
-      }, 5000)
+      // Вторая чистка — позже. Одной чистки в 600 мс мало: приложение после смены размера само
+      // перерисовывает статусную строку ещё раз, и её прежняя копия остаётся призраком (в замере
+      // — строка вида `k Ury "/help" for commandsa ultra-max 21s ...`).
+      scrubTimer = setTimeout(() => scrub(), 5000)
     }
+    // Чистка кадра: clear() + просьба к приложению нарисовать кадр заново (SIGWINCH-нудж).
+    // Не делается, пока пользователь печатает, — иначе дёргается строка ввода.
+    const scrub = () => {
+      if (document.hidden) return
+      if (Date.now() - lastInputAt < 3000) return
+      try { term.clear() } catch {}
+      if (wsRef.current && wsRef.current.readyState === 1) {
+        wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
+      }
+    }
+    // Призраки копятся от собственных перерисовок приложения (статусная строка тикает каждую
+    // секунду), поэтому «тишины» в потоке не бывает — чистим по таймеру, а не по паузе вывода.
+    const scrubLoop = setInterval(scrub, 15000)
     const doResize = () => {
       const cols = 120
       const rows = rowsFor()
@@ -546,7 +552,6 @@ export function ChatPanel({ fullscreen = false }) {
         try {
           const msg = JSON.parse(ev.data)
           if (msg.type === 'data') {
-            lastDataAt = Date.now()   // приложение пишет → чистку экрана не заказываем
             term.write(msg.data)
             // Detect agent state from terminal output (Herdr-style)
             if (msg.data && typeof msg.data === 'string') {
@@ -568,6 +573,7 @@ export function ChatPanel({ fullscreen = false }) {
 
     // input -> WS
     const onData = term.onData((data) => {
+   lastInputAt = Date.now()
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'input', data }))
       }
@@ -592,6 +598,7 @@ export function ChatPanel({ fullscreen = false }) {
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
       if (scrubTimer) clearTimeout(scrubTimer)
+      clearInterval(scrubLoop)
       try { window.visualViewport?.removeEventListener('resize', onViewport) } catch {}
       try { window.visualViewport?.removeEventListener('scroll', onViewport) } catch {}
       // null the refs BEFORE disposing so a late window-resize can't call
