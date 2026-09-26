@@ -124,6 +124,15 @@ export function ChatPanel({ fullscreen = false }) {
     }).catch(() => {})
     return () => { alive = false }
   }, [])
+  // Engines whose web UI needs no start call (Hermes' dashboard) get their src pre-filled by
+  // the effect above, so the iframe mounts immediately. webState, however, only becomes
+  // 'running' inside pickEngine — i.e. after the user taps the engine chip AGAIN. Until then
+  // the frame is display:none and the Web view looks like an empty white area with no error,
+  // while the page inside it has actually loaded (that is what the Web tab did on first open).
+  useEffect(() => {
+    if (!webSrcCache[engine]) return
+    setWebState(s => (s === 'stopped' ? 'running' : s))
+  }, [webSrcCache, engine])
   const pickEngine = async (id) => {
     setEngine(id)
     // Default view per user preference (Settings → Движки).
