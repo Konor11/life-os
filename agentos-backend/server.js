@@ -501,9 +501,18 @@ function makeScreen(cols = PTY_COLS, rows = PTY_ROWS) {
   // real install output (progress + errors) on the normal buffer.
   let altSaved = null
   const cur = { r: 0, c: 0 }
+  let saved = null                      // DECSC/DECRC (ESC 7 / ESC 8, CSI s / CSI u)
+  let top = 0, bot = rows - 1           // DECSTBM scrolling region
   const clip = (n, max) => Math.max(0, Math.min(max, n))
+  const scrollUp = (n) => {
+    for (let k = 0; k < n; k++) { grid.splice(top, 1); grid.splice(bot, 0, new Array(cols).fill(' ')) }
+  }
+  const scrollDown = (n) => {
+    for (let k = 0; k < n; k++) { grid.splice(bot, 1); grid.splice(top, 0, new Array(cols).fill(' ')) }
+  }
+  const linefeed = () => { if (cur.r >= bot) scrollUp(1); else cur.r = clip(cur.r + 1, rows - 1) }
   const put = (ch) => {
-    if (cur.c >= cols) return            // no wrap for the last column (like a real TUI)
+    if (cur.c >= cols) { cur.c = 0; linefeed() }   // autowrap (the wizard turns ?7h on)
     grid[cur.r][cur.c] = ch
     cur.c = clip(cur.c + 1, cols - 1)
   }
@@ -536,6 +545,24 @@ function makeScreen(cols = PTY_COLS, rows = PTY_ROWS) {
           else if (f === 'C') cur.c = clip(cur.c + n, cols - 1)
           else if (f === 'D') cur.c = clip(cur.c - n, cols - 1)
           else if (f === 'G') cur.c = clip(n - 1, cols - 1)
+          // VPA: the setup wizard positions every menu row with CSI <row> d, so ignoring
+          // it shifted rows and lost options (the arrow appeared on the wrong line).
+          else if (f === 'd') cur.r = clip(n - 1, rows - 1)
+          else if (f === 'r') {
+            top = clip(n - 1, rows - 1)
+            bot = clip((nums[1] || rows) - 1, rows - 1)
+            if (bot <= top) bot = rows - 1
+            cur.r = top; cur.c = 0
+          }
+          else if (f === 's') saved = { r: cur.r, c: cur.c }
+          else if (f === 'u') { if (saved) { cur.r = saved.r; cur.c = saved.c } }
+          else if (f === 'X') { for (let k = 0; k < n && cur.c + k < cols; k++) grid[cur.r][cur.c + k] = ' ' }
+          else if (f === 'P') { const row = grid[cur.r]; row.splice(cur.c, n); while (row.length < cols) row.push(' ') }
+          else if (f === '@') { const row = grid[cur.r]; row.splice(cur.c, 0, ...new Array(n).fill(' ')); row.length = cols }
+          else if (f === 'L') { for (let k = 0; k < n; k++) { grid.splice(bot, 1); grid.splice(cur.r, 0, new Array(cols).fill(' ')) } }
+          else if (f === 'M') { for (let k = 0; k < n; k++) { grid.splice(cur.r, 1); grid.splice(bot, 0, new Array(cols).fill(' ')) } }
+          else if (f === 'S') scrollUp(n)
+          else if (f === 'T') scrollDown(n)
           else if (f === 'K') {
             const mode = nums[0] || 0
             if (mode === 0) for (let c = cur.c; c < cols; c++) grid[cur.r][c] = ' '
@@ -548,11 +575,18 @@ function makeScreen(cols = PTY_COLS, rows = PTY_ROWS) {
           i += csi[0].length - 1
           continue
         }
+        const saveCur = /^\x1b([78])/.exec(s.slice(i))         // ESC 7 / ESC 8
+        if (saveCur) {
+          if (saveCur[1] === '7') saved = { r: cur.r, c: cur.c }
+          else if (saved) { cur.r = saved.r; cur.c = saved.c }
+          i += 1
+          continue
+        }
         const set = /^\x1b[()][A-Za-z0-9]/.exec(s.slice(i))   // charset selection
         i += set ? set[0].length - 1 : 1                       // lone/unknown ESC: drop
         continue
       }
-      if (ch === '\n') { cur.r = clip(cur.r + 1, rows - 1); continue }
+      if (ch === '\n') { linefeed(); continue }
       if (ch === '\r') { cur.c = 0; continue }
       if (ch === '\b') { cur.c = clip(cur.c - 1, cols - 1); continue }
       if (ch === '\t') { for (let k = 0; k < 8 && cur.c < cols - 1; k++) put(' '); continue }
