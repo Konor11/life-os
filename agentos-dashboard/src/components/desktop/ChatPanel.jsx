@@ -658,11 +658,15 @@ export function ChatPanel({ fullscreen = false }) {
       ))}
       {!showWeb && (
         <>
-          {/* ширина = 120 колонок при текущем шрифте, поэтому мелкий шрифт реально вмещает
-              TUI в экран, а крупный доступен горизонтальным свайпом (раньше стоял
-              overflow-hidden при жёстких 900px — правый край было не достать) */}
-          <div ref={containerRef} className="flex-1 w-full overflow-x-auto overflow-y-hidden"
-            style={{ minHeight: '280px', minWidth: `${Math.ceil(120 * fontSize * 0.62) + 8}px` }} />
+          {/* Ширина полосы прокрутки = 120 колонок при текущем шрифте: мелкий шрифт реально
+              вмещает TUI в экран, крупный доступен горизонтальным свайпом. min-w-0 обязателен —
+              без него flex-элемент растягивается под внутреннюю ширину и прокрутки не будет
+              (раньше стоял overflow-hidden при жёстких 900px: правый край было не достать). */}
+          <div className="flex-1 w-full min-w-0 overflow-x-auto overflow-y-hidden" style={{ minHeight: '280px' }}>
+            <div style={{ width: `${Math.ceil(120 * fontSize * 0.62) + 8}px`, height: '100%' }}>
+              <div ref={containerRef} className="w-full h-full" />
+            </div>
+          </div>
           {/* on-screen keypad only for touch/narrow screens — laptops have a real keyboard */}
           {keypadOn && (
             <div className="lg:hidden">
