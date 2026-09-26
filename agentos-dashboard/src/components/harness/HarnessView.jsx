@@ -5,6 +5,7 @@ const API = '/api'
 
 // One installable row: engines (binaries) and components (systemd services) share it.
 function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate, onKey }) {
+  const [textInput, setTextInput] = useState('')
   const missingKey = item.installed && item.key && !keys.some(k => k.env === item.key)
   const busy = busyId === item.id
   return (
@@ -41,13 +42,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
                 {busy && busyOp === 'uninstall' ? '⏳ Удаление...' : '🗑 Удалить'}
               </button>
             )}
-            {!item.uninstallCmd && item.id !== 'hermes' && null}
-            {!item.uninstallCmd && item.id === 'hermes' && (
-              <button disabled title="Удаление Hermes появится позже — функционал будет протестирован на чистом сервере"
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-bg-elevated text-text-muted opacity-60 cursor-not-allowed">
-                🗑 Удалить (скоро)
-              </button>
-            )}
+            {!item.uninstallCmd && item.id === 'hermes' && null}
           </>
         ) : (
           <>
@@ -70,7 +65,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
       )}
       {/* Interactive installs (Hermes: `hermes setup` is an arrow-key menu running in a PTY)
           — the keystrokes are forwarded to the live process. */}
-      {busy && busyOp === 'install' && item.interactive && (
+      {busy && (busyOp === 'install' || busyOp === 'uninstall') && item.interactive && (
         <div className="flex flex-wrap items-center gap-1.5 mt-2">
           <span className="text-[11px] text-text-muted mr-1">Управление установкой:</span>
           {[['up', '↑'], ['down', '↓'], ['left', '←'], ['right', '→'], ['enter', '⏎ Enter'],
@@ -80,6 +75,17 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
               {label}
             </button>
           ))}
+          {/* The wizard also asks for typed answers (API key, model name) — send a line. */}
+          <div className="flex items-center gap-1.5 w-full mt-1">
+            <input value={textInput} onChange={e => setTextInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { onKey(item.id, null, textInput + '\n'); setTextInput('') } }}
+              placeholder="ввести текст (ключ, ответ) и нажать Отправить"
+              className="flex-1 min-w-[180px] px-2 py-1 rounded-md bg-bg-elevated border border-border text-text text-xs focus:outline-none focus:border-accent" />
+            <button onClick={() => { onKey(item.id, null, textInput + '\n'); setTextInput('') }}
+              className="px-2.5 py-1 rounded-md text-xs font-medium border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
+              Отправить
+            </button>
+          </div>
         </div>
       )}
     </div>

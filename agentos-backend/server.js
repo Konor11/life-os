@@ -551,7 +551,7 @@ const stripAnsi = (s) => String(s)
   .replace(/\x1b[()][A-Za-z0-9]/g, '')
   .replace(/\r\n?/g, '\n')
 
-function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000) {
+function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000, { screen: useScreen = true } = {}) {
   store[id] = { state: 'running', log: '', interactive: true, pty: null }
   let term
   try {
@@ -575,8 +575,14 @@ function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000) {
   const screen = makeScreen()
   term.onData((chunk) => {
     const s = store[id]; if (!s) return
-    screen.feed(chunk)
-    s.log = screen.text()
+    if (useScreen) {
+      screen.feed(chunk)
+      s.log = screen.text()
+    } else {
+      // Linear output (an uninstaller listing what it removes): a virtual screen would
+      // scroll the earliest lines away, so keep the plain text tail instead.
+      s.log += stripAnsi(chunk)
+    }
     if (s.log.length > 64000) s.log = s.log.slice(-64000)
   })
   const timer = setTimeout(() => { try { term.kill() } catch {} }, timeoutMs)
@@ -691,6 +697,74 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic' } 
   )
   return lines.join('\n')
 }
+
+// Hermes removal: the engine owns a user *and* a system gateway unit, our dashboard unit,
+// a Caddy site and ~/.hermes data/configs. `hermes uninstall --full` handles the agent
+// itself; the rest is ours to clean so a reinstall starts from scratch.
+function buildHermesUninstall() {
+  const { file: caddyFile, reload: caddyReload } = caddyTarget()
+  const lines = [
+    'export XDG_RUNTIME_DIR=/run/user/0',
+    'export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus',
+    "echo '[1/4] Останавливаю сервисы гейтвея и dashboard'",
+    'systemctl --user disable --now hermes-gateway 2>/dev/null || true',
+    'systemctl disable --now hermes-gateway 2>/dev/null || true',
+    'rm -f /root/.config/systemd/user/hermes-gateway.service /etc/systemd/system/hermes-gateway.service',
+    'systemctl disable --now hermes-dashboard 2>/dev/null || true',
+    'rm -f /etc/systemd/system/hermes-dashboard.service',
+    'systemctl daemon-reload 2>/dev/null || true',
+    'systemctl --user daemon-reload 2>/dev/null || true',
+    "echo '[2/4] Убираю домен из Caddy'",
+    'DOM="$(cat /root/.hermes-domain 2>/dev/null || true)"; export DOM',
+    "python3 - <<'PY'",
+    'import os, re',
+    'dom = os.environ.get("DOM", "").strip()',
+    'if not dom:',
+    '    print("домен не сохранён — пропускаю")',
+    'else:',
+    `    for p in ["${caddyFile}", "/etc/caddy/Caddyfile", "/root/remnawave-admin/Caddyfile"]:`,
+    '        if not os.path.exists(p):',
+    '            continue',
+    '        s = open(p).read()',
+    '        m = re.search(r"(?m)^\\s*" + re.escape(dom) + r"\\s*\\{", s)',
+    '        if not m:',
+    '            print("нет site-блока " + dom + " в " + p)',
+    '            continue',
+    '        i = s.index("{", m.start())',
+    '        depth = 0',
+    '        j = i',
+    '        while j < len(s):',
+    '            if s[j] == "{":',
+    '                depth += 1',
+    '            elif s[j] == "}":',
+    '                depth -= 1',
+    '                if depth == 0:',
+    '                    break',
+    '            j += 1',
+    '        end = j + 1',
+    '        while end < len(s) and s[end] == chr(10):',
+    '            end += 1',
+    '        open(p, "w").write(s[:m.start()] + s[end:])',
+    '        print("site-блок удалён из " + p)',
+    'PY',
+    caddyReload,
+    "echo '[3/4] Штатное удаление Hermes (--full: код + конфиги + данные)'",
+    'HB="$(command -v hermes || true)"',
+    '[ -x "$HB" ] || HB=/root/.hermes/hermes-agent/.hermes/bin/hermes',
+    '[ -x "$HB" ] && "$HB" uninstall --full --yes 2>&1 || echo "[warn] штатный uninstall недоступен — чищу файлы вручную"',
+    "echo '[4/4] Остатки'",
+    'rm -rf /root/.hermes/hermes-agent /root/.hermes/bin',
+    'rm -f /usr/local/bin/hermes /usr/bin/hermes /root/.hermes-web-auth /root/.hermes-domain /root/.hermes/dashboard_auth_env.conf',
+    "command -v hermes >/dev/null 2>&1 && echo \"[warn] бинарник всё ещё в PATH: $(command -v hermes)\" || echo '  бинарник удалён — чисто'",
+    "systemctl --user is-active hermes-gateway >/dev/null 2>&1 && echo '[warn] user-гейтвей всё ещё активен' || echo '  гейтвей остановлен'",
+    "echo '[Hermes удалён]'",
+  ]
+  return lines.join('\n')
+}
+
+// Attach the removal command (HARNESSES_DEF itself is defined earlier in the file).
+const HERMES_DEF = HARNESSES_DEF.find(h => h.id === 'hermes')
+if (HERMES_DEF) HERMES_DEF.uninstall = buildHermesUninstall()
 
 // POST /api/harness/install — install one agent (runs installCmd in background)
 const installs = {}  // id -> {state, log}
@@ -850,7 +924,10 @@ app.post('/api/harness/uninstall', async (req, res) => {
   if (!def) return res.status(404).json({ error: 'агент не найден' })
   if (!def.uninstall) return res.status(400).json({ error: 'для этого агента нет команды удаления' })
   if (uninstalls[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
-  runLogged(uninstalls, id, def.uninstall, 'удаление завершено', 120000)
+  // Interactive engines (Hermes) run their own uninstaller, which may still prompt —
+  // give it a PTY and the same keystroke pad as the install.
+  if (def.interactive) runLoggedPty(uninstalls, id, def.uninstall, 'удаление завершено', 900000, { screen: false })
+  else runLogged(uninstalls, id, def.uninstall, 'удаление завершено', 120000)
   res.json({ ok: true, state: 'running' })
 })
 
