@@ -32,7 +32,11 @@ export function preferredEngine() {
     const s = window.localStorage.getItem(TERM_KEY)
     if (s === 'xterm' || s === 'rio') return s
   } catch { /* приватный режим и т.п. */ }
-  return 'rio'
+  // По умолчанию — xterm.js. rioterm (вариант B) работает и включён одной кнопкой в тулбаре
+  // (или ?term=rio), но у него воспроизводится пустой канвас: движок поднимается, размеры и
+  // ошибки в норме, а renderer иногда не рисует вообще (средняя яркость канваса 253/255, то есть
+  // не закрашено даже фон). Пока это не вылечено, дефолтом оставляем проверенный xterm.
+  return 'xterm'
 }
 
 export function setPreferredEngine(kind) {
@@ -93,8 +97,21 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
     for (const cb of resizeListeners) { try { cb({ cols: c, rows: r }) } catch {} }
   }
 
+  // Отрисовка канваса. rioterm сам планирует кадр по onUpdate, но на практике кадр иногда не
+  // появляется вовсе (канвас остаётся белым, хотя размеры и отсутствие ошибок в норме) — поэтому
+  // после открытия и после каждой порции вывода пинаем рендерер явно. Это дешевле, чем показывать
+  // пользователю пустой терминал.
+  const forcePaint = () => {
+    if (!handle) return
+    try { handle.renderer.schedule() } catch {}
+    try { handle.renderer.render() } catch {}
+  }
+
   const start = async () => {
     const { open } = await import('rioterm')
+    // Перед открытием убираем канвас прошлого инстанса: эффект ChatPanel может перезапуститься
+    // (тулбар Web/TUI, смена профиля), и два канваса в одном контейнере оставляли видимым пустой.
+    try { el.innerHTML = '' } catch {}
     const h = await open(el, {
       renderer: 'canvas', fontFamily: 'monospace', fontSize: opts.fontSize, lineHeight: 1,
       theme: opts.theme, scrollback: opts.scrollback, cols: opts.cols, rows: opts.rows,
@@ -112,7 +129,14 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
     for (const chunk of pendingWrites) { try { h.terminal.write(chunk) } catch {} }
     pendingWrites = []
     size = { cols: h.terminal.options.cols, rows: h.terminal.options.rows }
+    el.__rio = h          // ручка для диагностики из браузера (канвас/дамп буфера)
     notifyResize()
+    // Кадр просим сразу и ещё раз после раскладки: если контейнер в момент open() был не
+    // отрисован, канвас остаётся пустым до следующей записи вывода.
+    forcePaint()
+    for (const delay of [60, 300, 1000, 2500]) {
+      setTimeout(() => { if (!disposed) forcePaint() }, delay)
+    }
     scheduleReady && scheduleReady()
   }
 
@@ -121,7 +145,27 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
     if (!disposed) { try { onFallback && onFallback(String(e && e.message || e)) } catch {} }
   })
   if (typeof window !== 'undefined') {
-    const t = setInterval(notifyResize, 300)   // страховка: fit внутри rioterm без событий
+    // Раз в 300 мс: следим за размером (страховка, если fit внутри rioterm не поднял onUpdate) и
+    // за тем, что канвас вообще закрашен — пустой терминал пользователю хуже лишнего кадра.
+    const t = setInterval(() => {
+      notifyResize()
+      if (!handle) return
+      try {
+        const cv = el.querySelector('canvas')
+        const g = cv && cv.getContext('2d')
+        if (!g) return
+        const n = 24
+        const d = g.getImageData(0, 0, Math.min(n, cv.width), Math.min(n, cv.height)).data
+        let sum = 0
+        for (let i = 0; i < d.length; i += 4) sum += d[i] + d[i + 1] + d[i + 2]
+        const avg = sum / (d.length / 4) / 3
+        const bg = opts.theme && opts.theme.background ? opts.theme.background : '#000000'
+        const m = /^#(..)(..)(..)$/.exec(bg)
+        const want = m ? (parseInt(m[1], 16) + parseInt(m[2], 16) + parseInt(m[3], 16)) / 3 - 26 : 0
+        // Канвас белый (не закрашен даже фон) — значит рендерер не нарисовал кадр.
+        if (avg > 240 && avg > want + 60) forcePaint()
+      } catch { /* getImageData может быть недоступен — не критично */ }
+    }, 300)
     const stop = () => clearInterval(t)
     el.__rioStop = stop
   }
@@ -151,7 +195,12 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
         get theme() { return opts.theme },
         set theme(t) { recreate({ theme: rioTheme(t) }) },
       },
-      write(d) { if (handle) { try { handle.terminal.write(d) } catch {} } else pendingWrites.push(d) },
+      write(d) {
+        if (handle) {
+          try { handle.terminal.write(d) } catch {}
+          forcePaint()   // см. комментарий forcePaint: без явного кадра канвас может остаться пустым
+        } else pendingWrites.push(d)
+      },
       writeln(d) { this.write((d || '') + '\r\n') },
       refresh() { try { handle && handle.renderer.schedule() } catch {} },
       clear() { this.write('\x1b[2J\x1b[H') },
@@ -184,11 +233,18 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
   }
 }
 
+// Один живой движок на контейнер. Эффект ChatPanel перезапускается (переключение Web/TUI, смена
+// профиля, смена движка), и два инстанса в одном контейнере оставляли видимым пустой канвас.
+const instances = new WeakMap()
+
 export function createTuiEngine(args) {
+  const prev = instances.get(args.el)
+  if (prev) { try { prev.term.dispose() } catch {} ; instances.delete(args.el) }
+  const remember = (e) => { try { instances.set(args.el, e) } catch {} ; return e }
   const kind = preferredEngine()
-  if (kind === 'xterm') return xtermEngine(args)
+  if (kind === 'xterm') return remember(xtermEngine(args))
   try {
-    return rioEngine({
+    return remember(rioEngine({
       ...args,
       onFallback: (why) => {
         // Пользователь просил попробовать rioterm; если он не поднялся — сообщаем и работаем на xterm.
@@ -199,7 +255,7 @@ export function createTuiEngine(args) {
         args.el.dataset.termEngine = 'xterm'
         args.onFallbackReady && args.onFallbackReady(fallback)
       },
-    })
+    }))
   } catch (e) {
     try { console.warn('[tui] rioterm не создался, используем xterm.js:', e) } catch {}
     return xtermEngine(args)
