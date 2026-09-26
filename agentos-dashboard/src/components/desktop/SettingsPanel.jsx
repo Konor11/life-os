@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Icon } from '../Icons'
 import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanelEngines'
+import { preferredEngine, setPreferredEngine } from './tui-engine'
 
 const API = '/api'
 
@@ -8,6 +9,8 @@ export function SettingsPanel() {
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   // per-engine default view (re-read whenever the panel mounts)
+  // Движок отрисовки терминала Chat: xterm.js или rioterm (VT-ядро Rio в WebAssembly).
+  const [termEngine, setTermEngine] = useState(() => preferredEngine())
   const [engineViews, setEngineViews] = useState(() => {
     const m = {}
     for (const e of ENGINES) m[e.id] = getEngineView(e.id, 'web')
@@ -77,6 +80,37 @@ export function SettingsPanel() {
                   )}
                 </div>
               ))}
+            </div>
+
+            <h3 className="text-text font-semibold mt-4 mb-2 flex items-center gap-2"><Icon name="Terminal" size={16} className="text-accent" /> Терминал Chat · движок отрисовки</h3>
+            <div className="flex flex-col gap-2 py-1">
+              {[
+                { id: 'xterm', name: 'xterm.js', note: 'проверенный, стоит по умолчанию' },
+                { id: 'rio', name: 'rioterm (WebAssembly)', note: 'другой движок: VT-ядро Rio; экспериментальный' },
+              ].map(o => (
+                <div key={o.id} className="flex items-center justify-between py-1.5 px-2 bg-bg-elevated rounded-md">
+                  <span className="flex flex-col text-sm text-text">
+                    {o.name}
+                    <span className="text-[10px] text-text-muted">{o.note}</span>
+                  </span>
+                  {termEngine === o.id ? (
+                    <span className="px-2 py-0.5 rounded text-xs bg-accent text-white">активен</span>
+                  ) : (
+                    <button onClick={() => {
+                      setPreferredEngine(o.id)
+                      setTermEngine(o.id)
+                      // движок создаётся один раз при подключении вкладки Chat — нужна перезагрузка
+                      setTimeout(() => { try { window.location.reload() } catch {} }, 350)
+                    }}
+                      className="px-2 py-0.5 rounded text-xs bg-bg-card text-text-muted hover:text-text transition-colors">
+                      включить
+                    </button>
+                  )}
+                </div>
+              ))}
+              <p className="text-[11px] text-text-muted">
+                Панель перезагрузится сама. Движок влияет только на вкладку Chat (TUI); сравнить можно, переключаясь между ними.
+              </p>
             </div>
 
             <h3 className="text-text font-semibold mt-4 mb-2 flex items-center gap-2"><Icon name="Folder" size={16} className="text-accent" /> Данные</h3>

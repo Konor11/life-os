@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createTuiEngine, preferredEngine, setPreferredEngine } from './tui-engine'
+import { createTuiEngine } from './tui-engine'
 import { TermKeypad } from './TermKeypad'
 import { 
   ENGINES, 
@@ -633,18 +633,7 @@ export function ChatPanel({ fullscreen = false }) {
         })}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
-        {/* Движок терминала: RIO — VT-ядро Rio на WebAssembly (вариант B), XTERM — xterm.js.
-            Терминал создаётся один раз при подключении, поэтому переключение перезагружает вкладку. */}
-        {!showWeb && (
-          <button onClick={() => {
-            setPreferredEngine(preferredEngine() === 'rio' ? 'xterm' : 'rio')
-            window.location.reload()
-          }}
-            className="ml-1 px-2 py-1 rounded text-[10px] font-bold uppercase shrink-0 border bg-bg-card border-border text-text-muted hover:text-text transition-colors"
-            title="Движок терминала: RIO (VT-ядро Rio в WebAssembly) или XTERM (xterm.js). Нажатие переключает движок и перезагружает панель.">
-            {preferredEngine()}
-          </button>
-        )}
+        {/* Движок терминала выбирается в Настройках («Терминал Chat · движок отрисовки»). */}
         {/* Web-режим: вход и внешнее открытие. У дашбордов движков своя страница входа;
             логин-пароль вводится прямо здесь, а OAuth (Nous Portal) невозможен внутри
             фрейма — портал запрещает фрейминг (CSP frame-ancestors 'none'), поэтому запуск
