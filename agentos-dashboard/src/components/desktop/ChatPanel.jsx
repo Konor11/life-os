@@ -498,17 +498,23 @@ export function ChatPanel({ fullscreen = false }) {
         <button onClick={() => setKeypadOn(!keypadOn)}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
-        {/* Web-режим: перезагрузка фрейма и открытие UI движка в отдельной вкладке.
-            Вход выполняется прямо во встроенном интерфейсе (у дашбордов движков своя
-            страница входа); ↻ нужен, если вход завершался в другом месте. */}
+        {/* Web-режим: вход и внешнее открытие. У дашбордов движков своя страница входа;
+            логин-пароль вводится прямо здесь, а OAuth (Nous Portal) невозможен внутри
+            фрейма — портал запрещает фрейминг (CSP frame-ancestors 'none'), поэтому запуск
+            входа выносится в отдельную вкладку, после чего ↻ подхватывает сессию. */}
         {showWeb && (webSrcCache[engine] || webUrls[engine]) && (
           <>
             <button onClick={() => setWebReload(n => n + 1)}
               className="ml-1 px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors"
-              title="Перезагрузить встроенный интерфейс">↻</button>
+              title="Перезагрузить встроенный интерфейс (например, после входа в отдельной вкладке)">↻</button>
             <button onClick={() => window.open(webUrls[engine] || webSrcCache[engine], '_blank', 'noopener')}
               className="px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors"
               title="Открыть web-интерфейс движка в новой вкладке">↗</button>
+            {engine === 'hermes' && webUrls.hermes && (
+              <button onClick={() => window.open(`${webUrls.hermes}/auth/login?provider=nous`, '_blank', 'noopener')}
+                className="px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors whitespace-nowrap"
+                title="Вход через Nous Portal в новой вкладке (внутри фрейма портал себя фреймить не даёт); после входа вернись в панель и нажми ↻">🔑 Nous</button>
+            )}
           </>
         )}
         {/* Connection + Agent state indicator */}
