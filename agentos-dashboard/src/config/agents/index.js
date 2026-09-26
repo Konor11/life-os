@@ -241,7 +241,7 @@ export const AGENT_DEFINITIONS = [
       tui: { cmd: 'hermes', args: ['chat', '-p', 'coordinator'] },
       web: { url: 'https://hermes.dktunnel.xyz', port: 9119 }
     },
-    detect: { bin: ['/usr/local/bin/hermes'], install: null, alwaysInstalled: true },
+    detect: { bin: ['/usr/local/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'], install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash' },
     uninstall: null,
     update: [
       "echo '[1/3] Обновление пакета hermes-agent (pip)...'",
@@ -293,7 +293,7 @@ export const AGENT_DEFINITIONS = [
       tui: null,
       web: { url: 'https://n8n.dktunnel.xyz', port: 5678 }
     },
-    detect: { cmd: 'systemctl is-active n8n 2>/dev/null | grep -q active || command -v n8n >/dev/null 2>&1', install: 'npm install -g n8n' },
+    detect: { cmd: 'test -f /etc/systemd/system/n8n.service', install: 'npm install -g n8n' },
     uninstall: 'systemctl stop n8n 2>/dev/null; systemctl disable n8n 2>/dev/null; rm -f /etc/systemd/system/n8n.service; systemctl daemon-reload; npm uninstall -g n8n 2>/dev/null'
   },
   {
@@ -308,7 +308,7 @@ export const AGENT_DEFINITIONS = [
       tui: null,
       web: { url: 'https://coder.dktunnel.xyz', port: 7080 }
     },
-    detect: { cmd: 'systemctl is-active coder 2>/dev/null | grep -q active || command -v coder >/dev/null 2>&1', install: 'curl -fsSL https://coder.com/install.sh | sh' },
+    detect: { cmd: 'test -f /etc/systemd/system/coder.service', install: 'curl -fsSL https://coder.com/install.sh | sh' },
     uninstall: 'systemctl stop coder 2>/dev/null; systemctl disable coder 2>/dev/null; rm -f /etc/systemd/system/coder.service /usr/bin/coder /usr/local/bin/coder; systemctl daemon-reload; docker rm -f coder-db 2>/dev/null; rm -rf /root/coder-tpl /root/coder-dev; rm -f /root/coder.env /root/.coder-admin.env /root/.coder-db.env /root/.coder.token /root/.coder-cli.env'
   },
 

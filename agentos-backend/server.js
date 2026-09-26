@@ -264,8 +264,12 @@ function patchKeyEnv(cfgPath, keyEnvVar) {
 // Each agent: checkCmd (exists in PATH?), binPath, installCmd, desc, needsKeyHint
 const HARNESSES_DEF = [
   {
-    id: 'hermes', name: 'Hermes', alwaysInstalled: true,
-    bin: ['/usr/local/bin/hermes'], install: null,
+    // NOT alwaysInstalled: deploy/install.sh does NOT install Hermes (it only checks that
+    // Caddy/Node exist), so a hardcoded "installed" was a lie on every fresh server.
+    // Detect the real binary; if it's missing, offer the official installer.
+    id: 'hermes', name: 'Hermes',
+    bin: ['/usr/local/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
+    install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash',
     desc: 'Hermes Agent (Nous Research) — один из доступных движков. Пользователь сам выбирает, какой агент использовать.',
     provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
     update: [
@@ -620,7 +624,10 @@ WantedBy=multi-user.target`
 const COMPONENTS_DEF = [
   {
     id: 'n8n', name: 'n8n',
-    detect: `systemctl is-active n8n 2>/dev/null | grep -q active || command -v n8n >/dev/null 2>&1`,
+    // `systemctl is-active X | grep -q active` also matched "inactive" (substring) and
+    // `command -v` matched leftovers — both made a never-installed component read as
+    // "установлен". Truth = the unit our own installer writes/removes.
+    detect: `test -f /etc/systemd/system/n8n.service`,
     desc: 'n8n Workflow Automation — визуальный конструктор воркфлоу (n8n.dktunnel.xyz, порт 5678).',
     install: `
 set -e
@@ -640,7 +647,8 @@ echo '[n8n установлен и запущен]'`,
   },
   {
     id: 'coder', name: 'Coder',
-    detect: `systemctl is-active coder 2>/dev/null | grep -q active || command -v coder >/dev/null 2>&1`,
+    // see n8n note above: same "inactive"-matches-"active" false positive
+    detect: `test -f /etc/systemd/system/coder.service`,
     desc: 'Coder — self-hosted cloud dev (VS Code в браузере, воркспейсы; coder.dktunnel.xyz, порт 7080).',
     install: `
 set -e
