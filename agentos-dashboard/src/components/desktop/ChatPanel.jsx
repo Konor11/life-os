@@ -509,6 +509,15 @@ export function ChatPanel({ fullscreen = false }) {
         // Просим приложение перерисовать кадр (SIGWINCH): сырой реплей буфера после обрыва
         // WS собирал экран из обрывков escape-последовательностей и больше не восстанавливался.
         try { ws.send(JSON.stringify({ type: 'repaint', cols: 120, rows: term.rows })) } catch {}
+        // PTY рождается с rows, посчитанными ДО финальной раскладки (тулбар/клавиатура меняют
+        // высоту контейнера). Если размеры разошлись, Ink рисует свой кадр выше/ниже видимой
+        // области, и нижняя строка статуса остаётся дублем поверх новой. Поэтому после того как
+        // раскладка устоялась, сообщаем фактический размер и заказываем чистый кадр.
+        setTimeout(() => {
+          if (!wsRef.current || wsRef.current.readyState !== 1) return
+          try { wsRef.current.send(JSON.stringify({ type: 'resize', cols: 120, rows: rowsFor() })) } catch {}
+          scheduleCleanRepaint()
+        }, 500)
       }
       ws.onmessage = (ev) => {
         try {
