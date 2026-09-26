@@ -706,7 +706,12 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
   if (wantOauth) {
     lines.push(
       "echo '[oauth] регистрирую dashboard в Nous Portal...'",
-      "hermes dashboard register 2>&1 || echo '[warn] OAuth не зарегистрирован: нужен вход (hermes portal), затем hermes dashboard register'",
+      // The runtime hands the IDP `{HERMES_DASHBOARD_PUBLIC_URL}/auth/callback`. Registering
+      // without --redirect-uri creates a localhost-only client, and the portal then refuses
+      // the public callback with redirect_uri_mismatch — so the public callback MUST be
+      // registered (it also makes register write HERMES_DASHBOARD_PUBLIC_URL itself).
+      `hermes dashboard register --redirect-uri "https://${dom}/auth/callback" --name "Life OS: ${dom}" 2>&1 || echo '[warn] OAuth не зарегистрирован: нужен вход в Nous Portal (hermes setup → Quick Setup), затем повторить установку или hermes dashboard register --redirect-uri https://${dom}/auth/callback'`,
+      "grep -q '^HERMES_DASHBOARD_OAUTH_CLIENT_ID=' /root/.hermes/.env && echo '[oauth] client_id записан в /root/.hermes/.env' || echo '[warn] client_id не записан — OAuth-вход не заработает'",
     )
   }
   lines.push(
