@@ -441,7 +441,10 @@ export function ChatPanel({ fullscreen = false }) {
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
-      if (changed && widthOrFontChanged) {
+      // ширины/кегля достаточно: именно смена ширины вызывает артефакт старого кадра, а
+      // высота (клавиатура) — нет. `changed` тут не годится: при смене кегля число строк
+      // может остаться прежним, и чистый кадр не заказывался.
+      if (widthOrFontChanged) {
         lastRepaintKey = repaintKey()
         scheduleCleanRepaint()
       }
