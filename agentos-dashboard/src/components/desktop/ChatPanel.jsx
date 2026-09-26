@@ -416,6 +416,9 @@ export function ChatPanel({ fullscreen = false }) {
     // на сервере), а не оставляем клиент собирать диффы поверх мусора.
     doResizeRef.current = null
     let repaintTimer = null
+    let scrubTimer = null
+    let lastDataAt = 0
+    const isIdle = () => Date.now() - lastDataAt > 2500   // приложение ничего не пишет → чистка не видна
     // Чистый кадр нужен, когда меняется ширина/кегль (Ink перерисовывает по новой ширине, а
     // стирает по старой). При изменении ТОЛЬКО высоты (экранная клавиатура Android) перерисовку
     // не заказываем: xterm.reset() возвращает фокус скрытому textarea, Android снова поднимает
@@ -425,6 +428,7 @@ export function ChatPanel({ fullscreen = false }) {
     const repaintKey = () => `${term.options.fontSize}x${containerRef.current ? containerRef.current.clientWidth : 0}`
     const scheduleCleanRepaint = () => {
       if (repaintTimer) clearTimeout(repaintTimer)
+      if (scrubTimer) clearTimeout(scrubTimer)
       repaintTimer = setTimeout(() => {
         // не выдёргиваем экран из-под печатающего пользователя
         // clear() вместо reset(): чистит экран и НЕ трогает фокус/скрытый textarea, поэтому
@@ -437,6 +441,16 @@ export function ChatPanel({ fullscreen = false }) {
           wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
         }
       }, 600)   // всплеск мелких изменений высоты → один чистый кадр, а не серия
+      // Вторая чистка — позже и только когда вывод утих. Одной чистки в 600 мс мало: приложение
+      // после смены размера само перерисовывает статусную строку ещё раз, и её прежняя копия
+      // остаётся призраком (в замере — строка вида `k Ury "/help" for commandsa ultra-max ...`).
+      scrubTimer = setTimeout(() => {
+        if (!isIdle()) return
+        try { term.clear() } catch {}
+        if (wsRef.current && wsRef.current.readyState === 1) {
+          wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
+        }
+      }, 5000)
     }
     const doResize = () => {
       const cols = 120
@@ -532,6 +546,7 @@ export function ChatPanel({ fullscreen = false }) {
         try {
           const msg = JSON.parse(ev.data)
           if (msg.type === 'data') {
+            lastDataAt = Date.now()   // приложение пишет → чистку экрана не заказываем
             term.write(msg.data)
             // Detect agent state from terminal output (Herdr-style)
             if (msg.data && typeof msg.data === 'string') {
@@ -576,6 +591,7 @@ export function ChatPanel({ fullscreen = false }) {
       onData.dispose()
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
+      if (scrubTimer) clearTimeout(scrubTimer)
       try { window.visualViewport?.removeEventListener('resize', onViewport) } catch {}
       try { window.visualViewport?.removeEventListener('scroll', onViewport) } catch {}
       // null the refs BEFORE disposing so a late window-resize can't call
