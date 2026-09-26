@@ -395,20 +395,16 @@ export function ChatPanel({ fullscreen = false }) {
       if (muts.some(m => m.attributeName === 'data-theme')) applyTheme()
     })
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-    // IMPORTANT: do NOT shrink cols to the narrow mobile viewport — that breaks the TUI.
-    // Keep 120 cols fixed so Ink renders box-drawing cleanly; the container scrolls sideways.
-    // Fill the container VERTICALLY: cols stay fixed at 120 (Ink box-drawing breaks
-    // otherwise) but rows follow the real container height, so the TUI stretches
-    // to the full screen instead of floating in a 40-row strip.
-    // NOTE: cols фиксированы на 120 (Ink ломает рамки при узкой ширине) — компенсируем
-    // шрифтом и горизонтальным свайпом, а не пересчётом колонок под вьюпорт.
-    const rowsFor = () => {
-      try {
-        const d = fit.proposeDimensions()
-        if (d?.rows && Number.isFinite(d.rows)) return Math.max(20, Math.round(d.rows))
-      } catch {}
-      return 40
+    // Размеры терминала И PTY берём из FitAddon: колонки и строки считаются по контейнеру и кеглю,
+    // поэтому xterm, PTY и само TUI-приложение работают ровно в одном размере — как в обычном
+    // терминале. Форсировать 120 колонок было ошибкой: из-за расхождения размера приложение
+    // рисовало нижнюю панель со смещением (строка статуса склеивалась с подсказкой), а на телефоне
+    // приходилось уменьшать шрифт до 4-5, чтобы увидеть всю ширину.
+    const applyFit = () => {
+      try { fit.fit() } catch {}
+      return { cols: term.cols, rows: term.rows }
     }
+    let lastSentSize = ''
     // Ink-приложения при смене ширины/высоты дописывают новый кадр поверх старого: на экране
     // остаются куски прошлого кадра — два баннера HERMES-AGENT, строки, обрезанные по прежней
     // ширине («вот так бывает» после смены шрифта/размера). Поэтому после реального изменения
@@ -437,7 +433,7 @@ export function ChatPanel({ fullscreen = false }) {
         // строка Chrome съезжает на пару пикселей и обратно).
         try { term.clear() } catch {}
         if (wsRef.current && wsRef.current.readyState === 1) {
-          wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
+          wsRef.current.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows }))
         }
       }, 600)   // всплеск мелких изменений высоты → один чистый кадр, а не серия
       // Вторая чистка — позже. Одной чистки в 600 мс мало: приложение после смены размера само
@@ -452,18 +448,18 @@ export function ChatPanel({ fullscreen = false }) {
       if (Date.now() - lastInputAt < 3000) return
       try { term.clear() } catch {}
       if (wsRef.current && wsRef.current.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
+        wsRef.current.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows }))
       }
     }
     // Призраки копятся от собственных перерисовок приложения (статусная строка тикает каждую
     // секунду), поэтому «тишины» в потоке не бывает — чистим по таймеру, а не по паузе вывода.
     const scrubLoop = setInterval(scrub, 15000)
     const doResize = () => {
-      const cols = 120
-      const rows = rowsFor()
-      const changed = term.cols !== cols || term.rows !== rows
+      const { cols, rows } = applyFit()
+      const changed = lastSentSize !== `${cols}x${rows}`
       const widthOrFontChanged = repaintKey() !== lastRepaintKey
-      try { term.resize(cols, rows) } catch {}
+      lastSentSize = `${cols}x${rows}`
+      publishSize()
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
@@ -476,8 +472,8 @@ export function ChatPanel({ fullscreen = false }) {
         scheduleCleanRepaint()
       }
     }
-    // apply the taller rows immediately after layout, before first paint of data
-    try { term.resize(120, rowsFor()) } catch {}
+    // подгоняем терминал под контейнер сразу после раскладки, до первого вывода
+    try { fit.fit() } catch {}
     // Диагностика для проверок: что реально у xterm и что мы сказали PTY. Если разъедется,
     // Ink начнёт писать 120-колоночные строки в экран другой ширины — обрывки вроде
     // `tery "/help" for commands` и дублированная строка статуса внизу.
@@ -485,24 +481,15 @@ export function ChatPanel({ fullscreen = false }) {
       const c = containerRef.current
       if (!c) return
       c.dataset.termSize = `${term.cols}x${term.rows}`
-      c.dataset.ptySize = `120x${rowsFor()}`
+      c.dataset.ptySize = lastSentSize || `${term.cols}x${term.rows}`
     }
-    // FitAddon может менять размер терминала сам (свой ResizeObserver) — возвращаем
-    // согласованные с PTY 120 колонок, иначе размеры расходятся молча.
-    let syncing = false
+    // xterm может менять размер сам (свой ResizeObserver/FitAddon) — сразу сообщаем новый размер
+    // в PTY, чтобы приложение не осталось с прежним представлением о терминале.
     const keepSizeInSync = term.onResize(({ cols, rows }) => {
+      lastSentSize = `${cols}x${rows}`
       publishSize()
-      if (syncing) return
-      if (cols !== 120 || rows !== rowsFor()) {
-        syncing = true
-        setTimeout(() => {
-          try { term.resize(120, rowsFor()) } catch {}
-          syncing = false
-          publishSize()
-          if (wsRef.current && wsRef.current.readyState === 1) {
-            wsRef.current.send(JSON.stringify({ type: 'resize', cols: 120, rows: rowsFor() }))
-          }
-        }, 0)
+      if (wsRef.current && wsRef.current.readyState === 1) {
+        wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
     })
     // NOTE: no post-spawn resize loop — the PTY boots at the exact rows (via URL
@@ -527,7 +514,7 @@ export function ChatPanel({ fullscreen = false }) {
       setConn('connecting')
       // WSS via same origin (Caddy proxies /ws/* to backend)
       const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const ws = new WebSocket(`${proto}//${location.host}/ws/tui?engine=${engine}&profile=${agent}&cols=120&rows=${term.rows}&theme=${themeDarkRef.current ? 'dark' : 'light'}`)
+      const ws = new WebSocket(`${proto}//${location.host}/ws/tui?engine=${engine}&profile=${agent}&cols=${term.cols}&rows=${term.rows}&theme=${themeDarkRef.current ? 'dark' : 'light'}`)
       wsRef.current = ws
 
       ws.onopen = () => {
@@ -537,14 +524,14 @@ export function ChatPanel({ fullscreen = false }) {
         term.writeln('\x1b[2J\x1b[H')
         // Просим приложение перерисовать кадр (SIGWINCH): сырой реплей буфера после обрыва
         // WS собирал экран из обрывков escape-последовательностей и больше не восстанавливался.
-        try { ws.send(JSON.stringify({ type: 'repaint', cols: 120, rows: term.rows })) } catch {}
+        try { ws.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows })) } catch {}
         // PTY рождается с rows, посчитанными ДО финальной раскладки (тулбар/клавиатура меняют
         // высоту контейнера). Если размеры разошлись, Ink рисует свой кадр выше/ниже видимой
         // области, и нижняя строка статуса остаётся дублем поверх новой. Поэтому после того как
         // раскладка устоялась, сообщаем фактический размер и заказываем чистый кадр.
         setTimeout(() => {
           if (!wsRef.current || wsRef.current.readyState !== 1) return
-          try { wsRef.current.send(JSON.stringify({ type: 'resize', cols: 120, rows: rowsFor() })) } catch {}
+          try { wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })) } catch {}
           scheduleCleanRepaint()
         }, 500)
       }
@@ -754,7 +741,7 @@ export function ChatPanel({ fullscreen = false }) {
               без него flex-элемент растягивается под внутреннюю ширину и прокрутки не будет
               (раньше стоял overflow-hidden при жёстких 900px: правый край было не достать). */}
           <div className="flex-1 w-full min-w-0 overflow-x-auto overflow-y-hidden" style={{ minHeight: '280px' }}>
-            <div style={{ width: `${Math.ceil(120 * fontSize * 0.62) + 8}px`, height: '100%' }}>
+            <div style={{ width: '100%', height: '100%' }}>
               <div ref={containerRef} className="w-full h-full" />
             </div>
           </div>
