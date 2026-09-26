@@ -405,6 +405,18 @@ export function ChatPanel({ fullscreen = false }) {
       return { cols: term.cols, rows: term.rows }
     }
     let lastSentSize = ''
+    // Смена размера идёт сериями: выезд экранной клавиатуры — это десятки кадров анимации, каждый
+    // со своей высотой. Отправлять resize на каждый кадр нельзя: приложение перерисовывает кадр
+    // столько же раз, и нижняя строка остаётся копиями. Склеиваем серию в одно сообщение.
+    let sizeTimer = null
+    const sendSizeSoon = () => {
+      if (sizeTimer) clearTimeout(sizeTimer)
+      sizeTimer = setTimeout(() => {
+        if (!wsRef.current || wsRef.current.readyState !== 1) return
+        wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+        scheduleCleanRepaint()
+      }, 250)
+    }
     // Ink-приложения при смене ширины/высоты дописывают новый кадр поверх старого: на экране
     // остаются куски прошлого кадра — два баннера HERMES-AGENT, строки, обрезанные по прежней
     // ширине («вот так бывает» после смены шрифта/размера). Поэтому после реального изменения
@@ -439,7 +451,7 @@ export function ChatPanel({ fullscreen = false }) {
       // Вторая чистка — позже. Одной чистки в 600 мс мало: приложение после смены размера само
       // перерисовывает статусную строку ещё раз, и её прежняя копия остаётся призраком (в замере
       // — строка вида `k Ury "/help" for commandsa ultra-max 21s ...`).
-      scrubTimer = setTimeout(() => scrub(), 5000)
+      scrubTimer = setTimeout(() => scrub(), 2500)
     }
     // Чистка кадра: clear() + просьба к приложению нарисовать кадр заново (SIGWINCH-нудж).
     // Не делается, пока пользователь печатает, — иначе дёргается строка ввода.
@@ -456,13 +468,10 @@ export function ChatPanel({ fullscreen = false }) {
     const scrubLoop = setInterval(scrub, 15000)
     const doResize = () => {
       const { cols, rows } = applyFit()
-      const changed = lastSentSize !== `${cols}x${rows}`
       const widthOrFontChanged = repaintKey() !== lastRepaintKey
       lastSentSize = `${cols}x${rows}`
       publishSize()
-      if (wsRef.current && wsRef.current.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
-      }
+      sendSizeSoon()
       // Чистый кадр нужен и при смене ширины/кегля, и при смене ВЫСОТЫ: на смене высоты Ink
       // перерисовывает кадр, но старые строки приглашения остаются «призраками» — на скрине
       // пользователя их было четыре подряд под строкой статуса. `widthOrFontChanged` ловит
@@ -490,13 +499,10 @@ export function ChatPanel({ fullscreen = false }) {
       const changed = key !== lastSentSize
       lastSentSize = key
       publishSize()
-      if (wsRef.current && wsRef.current.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
-      }
       // Именно здесь ловится реальная смена размера: fit() сначала меняет term.cols/rows, и к
       // моменту проверки в doResize размер уже совпадает — без этой ветки чистый кадр не
       // заказывался вообще (в замере уходили одни resize без repaint).
-      if (changed) scheduleCleanRepaint()
+      if (changed) sendSizeSoon()
     })
     // NOTE: no post-spawn resize loop — the PTY boots at the exact rows (via URL
     // params) and re-resizing an Ink TUI after spawn makes it redraw skewed.
@@ -591,6 +597,7 @@ export function ChatPanel({ fullscreen = false }) {
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
       if (scrubTimer) clearTimeout(scrubTimer)
+      if (sizeTimer) clearTimeout(sizeTimer)
       clearInterval(scrubLoop)
       try { window.visualViewport?.removeEventListener('resize', onViewport) } catch {}
       try { window.visualViewport?.removeEventListener('scroll', onViewport) } catch {}
