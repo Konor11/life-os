@@ -535,7 +535,9 @@ export function ChatPanel({ fullscreen = false }) {
       }
     }
 
-    connect()
+    // Подключаемся к PTY только когда движок готов (rioterm грузит wasm асинхронно).
+    if (term.whenReady) term.whenReady(() => connect())
+    else connect()
 
     // input -> WS
     const onData = term.onData((data) => {

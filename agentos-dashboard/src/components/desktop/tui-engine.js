@@ -69,6 +69,8 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   term.open(el)
   el.style.background = theme.background
+  // xterm готов сразу: интерфейс ChatPanel одинаков для обоих движков.
+  term.whenReady = (cb) => { try { cb() } catch {} }
   return { term, fit, kind: 'xterm' }
 }
 
@@ -80,11 +82,12 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
   const decoder = new TextDecoder()
   let handle = null, disposed = false, pendingWrites = []
   let size = { cols, rows }
+  let scheduleReady = null
   let opts = { fontSize, theme: rioTheme(theme), scrollback, cols, rows }
 
   const notifyResize = () => {
     if (!handle) return
-    const c = handle.terminal.cols, r = handle.terminal.rows
+    const c = handle.terminal.options.cols, r = handle.terminal.options.rows
     if (c === size.cols && r === size.rows) return
     size = { cols: c, rows: r }
     for (const cb of resizeListeners) { try { cb({ cols: c, rows: r }) } catch {} }
@@ -108,8 +111,9 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
     })
     for (const chunk of pendingWrites) { try { h.terminal.write(chunk) } catch {} }
     pendingWrites = []
-    size = { cols: h.terminal.cols, rows: h.terminal.rows }
+    size = { cols: h.terminal.options.cols, rows: h.terminal.options.rows }
     notifyResize()
+    scheduleReady && scheduleReady()
   }
 
   start().catch((e) => {
@@ -122,10 +126,25 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
     el.__rioStop = stop
   }
 
+  // Готовность движка (см. whenReady ниже): rioterm поднимается после загрузки wasm.
+  const readyCallbacks = []
+  let isReady = false
+  scheduleReady = () => {
+    isReady = true
+    const cbs = readyCallbacks.splice(0)
+    for (const cb of cbs) { try { cb() } catch {} }
+  }
+
   return {
     term: {
-      get cols() { return handle ? handle.terminal.cols : size.cols },
-      get rows() { return handle ? handle.terminal.rows : size.rows },
+      // У rioterm нет свойств cols/rows на Terminal — размеры лежат в options (см. TerminalOptions
+      // в типах пакета). Пока wasm не поднялся, отдаём ожидаемый размер.
+      get cols() { return handle ? handle.terminal.options.cols : size.cols },
+      get rows() { return handle ? handle.terminal.options.rows : size.rows },
+      // Готовность движка: xterm готов сразу, rioterm — после загрузки wasm. ChatPanel вешает
+      // подключение к PTY на это событие, иначе сокет открылся бы с размерами-заглушкой (120x40),
+      // и PTY родился бы не в том размере.
+      whenReady(cb) { if (isReady) { try { cb() } catch {} } else readyCallbacks.push(cb) },
       options: {
         get fontSize() { return opts.fontSize },
         set fontSize(n) { if (n !== opts.fontSize) recreate({ fontSize: n }) },
