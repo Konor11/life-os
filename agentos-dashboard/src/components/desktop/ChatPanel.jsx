@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import '@xterm/xterm/css/xterm.css'
+import { createTuiEngine, preferredEngine, setPreferredEngine } from './tui-engine'
 import { TermKeypad } from './TermKeypad'
-// Static import: dynamic import() created a separate chunk that failed to load
-// on some networks -> xterm silently fell back to the DOM renderer (stripes on
-// fractional-DPR screens). Bundled statically, the WebGL renderer always works.
 import { 
   ENGINES, 
   WEB_ENGINES, 
@@ -343,40 +338,20 @@ export function ChatPanel({ fullscreen = false }) {
     const el = containerRef.current
     if (!el) return
 
-    // init terminal
-    const activeTheme = getXtermTheme()
-    const term = new Terminal({
-      cursorBlink: false,   // мигающий блок-курсор на тёмном экране читается как «постоянно моргает»
-      //                       (мобильные терминалы так и делают); у xterm это ~600 мс вспышка
+    // Терминал создаёт адаптер движка (rioterm/wasm или xterm.js) — см. tui-engine.js.
+    // Наружу он отдаёт поверхность xterm.js, поэтому вся логика ниже не зависит от движка.
+    const { term, fit, kind: termKind } = createTuiEngine({
+      el,
       fontSize: storedFontSize(),
-      lineHeight: 1,
-      fontFamily: 'monospace',
-      theme: activeTheme,
+      theme: getXtermTheme(),
       scrollback: 2000,
       cols: 120,
       rows: 40,
+      // rioterm не поднялся — адаптер сам пересоздаст терминал на xterm и отдаст новый объект
+      onFallbackReady: (fb) => { termRef.current = fb.term; fitRef.current = fb.fit },
     })
-    const fit = new FitAddon()
-    term.loadAddon(fit)
-    // Unicode 11 width tables: opencode/hermes v2 TUIs draw emoji/box glyphs and
-    // compute cell widths with string-width (emoji = 2 cols). Without this addon
-    // xterm computes narrower widths -> menu rows shift and lose letters.
-    try {
-      import('@xterm/addon-unicode11').then(({ Unicode11Addon }) => {
-        term.loadAddon(new Unicode11Addon())
-        term.unicode.activeVersion = '11'
-      }).catch(() => {})
-    } catch {}
-    term.open(el)
-    // Рендерер — только canvas, БЕЗ WebGL-аддона. Официальный дашборд Hermes ровно так и сделал
-    // (NousResearch/hermes-agent PR «remove xterm WebGL renderer from embedded ChatPage; always use
-    // canvas»): на встроенном в страницу терминале WebGL на мобильных даёт потерянный контекст и
-    // мигание, а канвас стабильнее. Плата — тонкие «полосы» между строками при DPR > 1, их гасим
-    // фоном контейнера ниже.
-    // Hairline stripes fix: with lineHeight > 1 the canvas paints gaps between rows
-    // (visible on mobile DPR) — paint the container with the SAME theme background
-    // so gaps blend into the terminal instead of showing the page background.
-    el.style.background = activeTheme.background
+    el.dataset.termEngine = termKind
+    el.style.background = getXtermTheme().background
     // live theme switch (light/dark) -> re-theme the xterm without reconnecting
     const applyTheme = () => {
       try {
@@ -650,6 +625,18 @@ export function ChatPanel({ fullscreen = false }) {
         })}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
+        {/* Движок терминала: RIO — VT-ядро Rio на WebAssembly (вариант B), XTERM — xterm.js.
+            Терминал создаётся один раз при подключении, поэтому переключение перезагружает вкладку. */}
+        {!showWeb && (
+          <button onClick={() => {
+            setPreferredEngine(preferredEngine() === 'rio' ? 'xterm' : 'rio')
+            window.location.reload()
+          }}
+            className="ml-1 px-2 py-1 rounded text-[10px] font-bold uppercase shrink-0 border bg-bg-card border-border text-text-muted hover:text-text transition-colors"
+            title="Движок терминала: RIO (VT-ядро Rio в WebAssembly) или XTERM (xterm.js). Нажатие переключает движок и перезагружает панель.">
+            {preferredEngine()}
+          </button>
+        )}
         {/* Web-режим: вход и внешнее открытие. У дашбордов движков своя страница входа;
             логин-пароль вводится прямо здесь, а OAuth (Nous Portal) невозможен внутри
             фрейма — портал запрещает фрейминг (CSP frame-ancestors 'none'), поэтому запуск
