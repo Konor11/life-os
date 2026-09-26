@@ -413,9 +413,19 @@ export function ChatPanel({ fullscreen = false }) {
     // размера чистим локальный экран и просим приложение нарисовать кадр заново (SIGWINCH-нудж
     // на сервере), а не оставляем клиент собирать диффы поверх мусора.
     let repaintTimer = null
+    // Чистый кадр нужен, когда меняется ширина/кегль (Ink перерисовывает по новой ширине, а
+    // стирает по старой). При изменении ТОЛЬКО высоты (экранная клавиатура Android) перерисовку
+    // не заказываем: xterm.reset() возвращает фокус скрытому textarea, Android снова поднимает
+    // клавиатуру → снова resize, и клавиатура начинает мигать.
+    let lastRepaintKey = ''
+    // берём кегль у самого xterm: fontSize из замыкания эффекта может быть устаревшим
+    const repaintKey = () => `${term.options.fontSize}x${containerRef.current ? containerRef.current.clientWidth : 0}`
     const scheduleCleanRepaint = () => {
       if (repaintTimer) clearTimeout(repaintTimer)
       repaintTimer = setTimeout(() => {
+        // не выдёргиваем экран из-под печатающего пользователя
+        const ae = document.activeElement
+        if (ae && ae !== document.body && ae.closest && ae.closest('.xterm')) return
         try { term.reset() } catch {}
         if (wsRef.current && wsRef.current.readyState === 1) {
           wsRef.current.send(JSON.stringify({ type: 'repaint', cols: 120, rows: rowsFor() }))
@@ -426,11 +436,15 @@ export function ChatPanel({ fullscreen = false }) {
       const cols = 120
       const rows = rowsFor()
       const changed = term.cols !== cols || term.rows !== rows
+      const widthOrFontChanged = repaintKey() !== lastRepaintKey
       try { term.resize(cols, rows) } catch {}
       if (wsRef.current && wsRef.current.readyState === 1) {
         wsRef.current.send(JSON.stringify({ type: 'resize', cols, rows }))
       }
-      if (changed) scheduleCleanRepaint()
+      if (changed && widthOrFontChanged) {
+        lastRepaintKey = repaintKey()
+        scheduleCleanRepaint()
+      }
     }
     // apply the taller rows immediately after layout, before first paint of data
     try { term.resize(120, rowsFor()) } catch {}
