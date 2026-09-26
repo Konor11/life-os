@@ -583,11 +583,12 @@ export function ChatPanel({ fullscreen = false }) {
       doResize()   // меряем строки по контейнеру и чистим экран при смене размера
     }
     window.addEventListener('resize', onResize)
-    // На телефоне адресная строка и экранная клавиатура меняют видимую высоту без события
-    // resize у window — тогда TUI обрезался снизу. visualViewport ловит и это.
-    const onViewport = () => doResize()
-    try { window.visualViewport?.addEventListener('resize', onViewport) } catch {}
-    try { window.visualViewport?.addEventListener('scroll', onViewport) } catch {}
+    // ВАЖНО: на выезд экранной клавиатуры НЕ реагируем. Она меняет только visual viewport, а
+    // раскладка страницы остаётся прежней, поэтому переразмечать терминал по ней не нужно — и
+    // вредно: каждая смена числа строк заставляет TUI-приложение перерисовать кадр, и его нижняя
+    // строка остаётся копией (жалоба «после открытия клавиатуры телефона дублируется нижняя
+    // строчка»). Размер меняем только по фактической раскладке: window.resize, ResizeObserver на
+    // контейнере и смена кегля.
 
     return () => {
       try { themeObserver.disconnect() } catch {}
@@ -599,8 +600,7 @@ export function ChatPanel({ fullscreen = false }) {
       if (scrubTimer) clearTimeout(scrubTimer)
       if (sizeTimer) clearTimeout(sizeTimer)
       clearInterval(scrubLoop)
-      try { window.visualViewport?.removeEventListener('resize', onViewport) } catch {}
-      try { window.visualViewport?.removeEventListener('scroll', onViewport) } catch {}
+      // визуальный вьюпорт больше не слушаем — см. комментарий в начале эффекта
       // null the refs BEFORE disposing so a late window-resize can't call
       // fit() on a disposed terminal (throws "reading 'dimensions'")
       termRef.current = null
