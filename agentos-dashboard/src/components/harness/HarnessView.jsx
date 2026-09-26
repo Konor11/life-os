@@ -4,7 +4,7 @@ import { Icon } from '../Icons'
 const API = '/api'
 
 // One installable row: engines (binaries) and components (systemd services) share it.
-function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate }) {
+function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate, onKey }) {
   const missingKey = item.installed && item.key && !keys.some(k => k.env === item.key)
   const busy = busyId === item.id
   return (
@@ -65,6 +65,20 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
       {logs[item.id] && (
         <pre className="mt-2 bg-bg-elevated border border-border rounded-lg p-2 overflow-auto max-h-[140px] text-[11px] text-text whitespace-pre-wrap break-words">{logs[item.id]}</pre>
       )}
+      {/* Interactive installs (Hermes: `hermes setup` is an arrow-key menu running in a PTY)
+          — the keystrokes are forwarded to the live process. */}
+      {busy && busyOp === 'install' && item.interactive && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+          <span className="text-[11px] text-text-muted mr-1">Управление установкой:</span>
+          {[['up', '↑'], ['down', '↓'], ['left', '←'], ['right', '→'], ['enter', '⏎ Enter'],
+            ['space', 'Пробел'], ['y', 'y'], ['n', 'n'], ['esc', 'Esc']].map(([k, label]) => (
+            <button key={k} onClick={() => onKey(item.id, k)}
+              className="px-2.5 py-1 rounded-md text-xs font-medium border border-border bg-bg-elevated text-text hover:border-accent hover:text-accent transition-colors">
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -78,8 +92,15 @@ export function HarnessView() {
   const [updating, setUpdating] = useState(null)
   const [logs, setLogs] = useState({})
   const [keys, setKeys] = useState([])
-  // OpenCode install options: mode (tui/web/both) + domain for the web UI
-  const [installOpts, setInstallOpts] = useState(null) // { id, name, mode, domain }
+  // Install options modal: mode (tui/web/both) + domain for the web UI, plus the
+  // dashboard auth gate for Hermes (basic / oauth / both).
+  const [installOpts, setInstallOpts] = useState(null) // { id, name, mode, domain, protection }
+  // Default domains follow the Life OS host: lifeos.dktunnel.xyz -> hermes.dktunnel.xyz
+  const baseDomain = (() => {
+    const h = window.location.hostname
+    const p = h.split('.')
+    return p.length > 2 ? p.slice(1).join('.') : h
+  })()
 
   const load = async () => {
     try {
@@ -135,17 +156,31 @@ export function HarnessView() {
   const install = async (id) => {
     const item = allItems.find(x => x.id === id)
     if (item?.needsInstallOptions) {
-      setInstallOpts({ id, name: item.name, mode: 'both', domain: 'oc.dktunnel.xyz' })
+      setInstallOpts({
+        id, name: item.name, mode: 'both', protection: 'basic',
+        domain: `${id === 'hermes' ? 'hermes' : 'oc'}.${baseDomain}`,
+      })
       return
     }
     runInstall(id)
   }
 
+  // Forward a keystroke to a running interactive install (arrow-key menus).
+  const sendKey = async (id, key, text) => {
+    try {
+      const r = await fetch(`${API}/harness/install/keys`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(text != null ? { id, text } : { id, key }),
+      })
+      if (!r.ok) { const d = await r.json().catch(() => ({})); setError(d.error || `keys: ${r.status}`) }
+    } catch (e) { setError(e.message) }
+  }
+
   const confirmInstallOpts = async () => {
     if (!installOpts) return
-    const { id, mode, domain } = installOpts
+    const { id, mode, domain, protection } = installOpts
     setInstallOpts(null)
-    await runInstall(id, { mode, domain })
+    await runInstall(id, { mode, domain, protection })
   }
 
   const uninstall = async (id) => {
@@ -180,7 +215,7 @@ export function HarnessView() {
           </h2>
           {components.map(c => (
             <ItemCard key={c.id} item={c} keys={keys} busyId={busyId} busyOp={busyOp}
-              logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} />
+              logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} onKey={sendKey} />
           ))}
         </>
       )}
@@ -190,7 +225,7 @@ export function HarnessView() {
       </h2>
       {harnesses.map(h => (
         <ItemCard key={h.id} item={h} keys={keys} busyId={busyId} busyOp={busyOp}
-          logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} />
+          logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} onKey={sendKey} />
       ))}
 
       {error && <p className="text-sm text-danger">Ошибка: {error}</p>}
@@ -219,9 +254,29 @@ export function HarnessView() {
                 <label className="text-sm text-text-muted block mb-1">Домен для Web UI:</label>
                 <input value={installOpts.domain}
                   onChange={e => setInstallOpts(p => ({ ...p, domain: e.target.value }))}
-                  placeholder="oc.dktunnel.xyz"
+                  placeholder={installOpts.id === 'hermes' ? 'hermes.example.com' : 'oc.example.com'}
                   className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
-                <p className="text-xs text-text-muted mt-1">Добавится в Caddy → reverse_proxy на opencode (:4096).</p>
+                <p className="text-xs text-text-muted mt-1">
+                  {installOpts.id === 'hermes'
+                    ? 'Добавится в Caddy → reverse_proxy на dashboard Hermes (:9119).'
+                    : 'Добавится в Caddy → reverse_proxy на opencode (:4096).'}
+                </p>
+              </div>
+            )}
+            {installOpts.id === 'hermes' && installOpts.mode !== 'tui' && (
+              <div className="space-y-2">
+                <p className="text-sm text-text-muted">Защита Web UI:</p>
+                {[
+                  { v: 'basic', label: '🔒 Basic Auth', hint: 'логин и пароль Hermes-дэшборда (для доверенной сети)' },
+                  { v: 'oauth', label: '🔑 OAuth (Nous Portal)', hint: 'вход через аккаунт Nous — рекомендовано для публичного домена' },
+                  { v: 'both', label: '🔒🔑 Оба', hint: 'пароль + OAuth' },
+                ].map(o => (
+                  <button key={o.v} onClick={() => setInstallOpts(p => ({ ...p, protection: o.v }))}
+                    className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${installOpts.protection === o.v ? 'border-accent bg-accent/10' : 'border-border hover:bg-bg-elevated'}`}>
+                    <div className="text-sm font-medium text-text">{o.label}</div>
+                    <div className="text-xs text-text-muted">{o.hint}</div>
+                  </button>
+                ))}
               </div>
             )}
             <div className="flex gap-2 justify-end">

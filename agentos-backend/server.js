@@ -9,6 +9,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import { attachTuiServer } from './tui-ws.js'
+import { spawn as ptySpawn } from 'node-pty'
 console.log('>>> [MODULE LOAD] server.js executing')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -270,6 +271,7 @@ const HARNESSES_DEF = [
     id: 'hermes', name: 'Hermes',
     bin: ['/usr/local/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
     install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash',
+    interactive: true,   // installer + `hermes setup` need a TTY (arrow-key menus)
     desc: 'Hermes Agent (Nous Research) — один из доступных движков. Пользователь сам выбирает, какой агент использовать.',
     provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
     update: [
@@ -427,12 +429,155 @@ async function discoverHarnesses() {
       installCmd: installed ? null : h.install,
       uninstallCmd: h.uninstall || null,
       updateCmd: h.update || null,
-      needsInstallOptions: h.id === 'opencode',  // TUI / Web / both + domain
+      // engines with an install-time choice: mode (TUI/Web/both), Web UI domain, auth gate
+      needsInstallOptions: h.id === 'opencode' || h.id === 'hermes',
+      interactive: !!h.interactive,   // UI shows the keystroke pad while installing
       web: h.web || null,
       bin: installed ? null : h.bin.join(' / '),
     })
   }
   return out
+}
+
+// ---- Install helpers (shared by engines and components) --------------------
+
+// Life OS installs Caddy natively (package + /etc/caddy/Caddyfile, `systemctl reload caddy`);
+// the remnawave host proxies through a Caddy *container*. Support both, otherwise
+// component/web domains silently fail to appear on a fresh Life OS server.
+function caddyTarget() {
+  if (existsSync('/etc/caddy/Caddyfile')) {
+    return { file: '/etc/caddy/Caddyfile', reload: 'systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true' }
+  }
+  return { file: '/root/remnawave-admin/Caddyfile', reload: 'docker restart caddy >/dev/null 2>&1 || true' }
+}
+
+// Keystrokes forwarded to interactive installers (`hermes setup` is an arrow-key menu).
+const KEY_SEQ = {
+  up: '\x1b[A', down: '\x1b[B', left: '\x1b[D', right: '\x1b[C',
+  enter: '\r', space: ' ', esc: '\x1b', tab: '\t', backspace: '\x7f', y: 'y', n: 'n',
+}
+
+const HERMES_INSTALL_CMD = 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash'
+
+// Interactive installs need a real TTY: the Hermes installer probes /dev/tty
+// (`has_terminal`) and skips `hermes setup` + `hermes gateway install` when there is
+// none, so a plain pipe yields a half-installed agent. Run it in a PTY instead and
+// let the UI forward keystrokes through /api/harness/install/keys.
+function runLoggedPty(store, id, cmd, doneLabel, timeoutMs = 1800000) {
+  store[id] = { state: 'running', log: '', interactive: true, pty: null }
+  let term
+  try {
+    term = ptySpawn('/bin/bash', ['-lc', cmd], {
+      name: 'xterm-256color', cols: 120, rows: 40, cwd: '/root',
+      env: { ...process.env, TERM: 'xterm-256color', HOME: '/root' },
+    })
+  } catch (e) {
+    store[id].state = 'error'
+    store[id].log += `[ошибка запуска PTY] ${e?.message || e}`
+    return
+  }
+  store[id].pty = term
+  const push = (chunk) => {
+    const s = store[id]; if (!s) return
+    s.log += chunk
+    if (s.log.length > LOG_CAP) s.log = s.log.slice(-LOG_CAP)
+  }
+  term.onData(push)
+  const timer = setTimeout(() => { try { term.kill() } catch {} }, timeoutMs)
+  term.onExit(({ exitCode }) => {
+    clearTimeout(timer)
+    const s = store[id]; if (!s) return
+    s.pty = null; s.interactive = false
+    s.state = exitCode === 0 ? 'done' : 'error'
+    s.log += `\n[${doneLabel}${exitCode === 0 ? '' : ` с ошибкой, код ${exitCode}`}]`
+  })
+}
+
+// Hermes engine install options: TUI only / Web UI only / both, the Web UI domain, and
+// the dashboard auth gate. The dashboard's own providers are configured through env vars
+// read by hermes-dashboard.service: BASIC_AUTH_* (username + password) and the Nous
+// Portal OAuth client id written by `hermes dashboard register`.
+function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic' } = {}) {
+  const lines = [
+    'set -e',
+    "echo '[1/3] Hermes: официальный инсталлятор (интерактивно — отвечай кнопками под логом)'",
+    HERMES_INSTALL_CMD,
+  ]
+  if (mode === 'tui') {
+    lines.push("echo '[готово] Hermes установлен в режиме TUI'")
+    return lines.join('\n')
+  }
+  const dom = String(domain).trim().toLowerCase()
+  const wantBasic = protection === 'basic' || protection === 'both'
+  const wantOauth = protection === 'oauth' || protection === 'both'
+  const gate = wantBasic && wantOauth ? 'Basic Auth + OAuth' : (wantBasic ? 'Basic Auth' : 'OAuth (Nous Portal)')
+  const { file: caddyFile, reload: caddyReload } = caddyTarget()
+
+  lines.push(
+    `echo '[2/3] Web UI: домен ${dom}, защита: ${gate}'`,
+    'ENVF=/root/.hermes/dashboard_auth_env.conf',
+    'mkdir -p /root/.hermes; touch "$ENVF"; chmod 600 "$ENVF"',
+    `grep -q '^HERMES_DASHBOARD_PUBLIC_URL=' "$ENVF" || printf 'HERMES_DASHBOARD_PUBLIC_URL=https://%s\\n' '${dom}' >> "$ENVF"`,
+  )
+  if (wantBasic) {
+    lines.push(
+      'if [ ! -f /root/.hermes-web-auth ]; then',
+      "  printf 'AUTH_USER=%s\\nAUTH_PASS=%s\\nAUTH_SECRET=%s\\n' \"lifeos-$(openssl rand -hex 2)\" \"$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-18)\" \"$(openssl rand -hex 32)\" > /root/.hermes-web-auth",
+      '  chmod 600 /root/.hermes-web-auth',
+      'fi',
+      'set -a; . /root/.hermes-web-auth; set +a',
+      "grep -q '^HERMES_DASHBOARD_BASIC_AUTH_USERNAME=' \"$ENVF\" || printf 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME=%s\\n' \"$AUTH_USER\" >> \"$ENVF\"",
+      "grep -q '^HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=' \"$ENVF\" || printf 'HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=%s\\n' \"$AUTH_PASS\" >> \"$ENVF\"",
+      "grep -q '^HERMES_DASHBOARD_BASIC_AUTH_SECRET=' \"$ENVF\" || printf 'HERMES_DASHBOARD_BASIC_AUTH_SECRET=%s\\n' \"$AUTH_SECRET\" >> \"$ENVF\"",
+      "echo \"[basic] логин: $AUTH_USER, пароль в /root/.hermes-web-auth (вкладка «Ключи»)\"",
+    )
+  }
+  if (wantOauth) {
+    lines.push(
+      "echo '[oauth] регистрирую dashboard в Nous Portal...'",
+      "hermes dashboard register 2>&1 || echo '[warn] OAuth не зарегистрирован: нужен вход (hermes portal), затем hermes dashboard register'",
+    )
+  }
+  lines.push(
+    "echo '[3/3] systemd-сервис dashboard + домен в Caddy'",
+    "cat > /etc/systemd/system/hermes-dashboard.service <<'UNIT'",
+    '[Unit]',
+    'Description=Hermes Dashboard (Life OS component)',
+    'After=network-online.target',
+    'Wants=network-online.target',
+    '',
+    '[Service]',
+    'Type=simple',
+    'User=root',
+    'Environment=HOME=/root',
+    'EnvironmentFile=-/root/.hermes/dashboard_auth_env.conf',
+    "ExecStart=/bin/bash -lc 'exec hermes dashboard --host 0.0.0.0 --port 9119 --no-open'",
+    'Restart=always',
+    'RestartSec=3',
+    '',
+    '[Install]',
+    'WantedBy=multi-user.target',
+    'UNIT',
+    'systemctl daemon-reload',
+    'systemctl enable --now hermes-dashboard',
+    "python3 - <<'PY'",
+    'import re',
+    `p='${caddyFile}'`,
+    `dom='${dom}'`,
+    's=open(p).read()',
+    "if not re.search(r'(?m)^' + re.escape(dom) + r'[ \\t]*\\{', s):",
+    "    if s and not s.endswith(chr(10)): s += chr(10)",
+    "    s += dom + ' {' + chr(10) + '    reverse_proxy 127.0.0.1:9119' + chr(10) + '}' + chr(10)",
+    "    open(p,'w').write(s)",
+    "    print('caddy site added: ' + dom)",
+    'else:',
+    "    print('caddy site already present: ' + dom)",
+    'PY',
+    caddyReload,
+    `echo '${dom}' > /root/.hermes-domain`,
+    `echo '[готово] Hermes${mode === 'both' ? ': TUI + Web UI' : ': Web UI'} — https://${dom}'`,
+  )
+  return lines.join('\n')
 }
 
 // POST /api/harness/install — install one agent (runs installCmd in background)
@@ -473,7 +618,7 @@ function runLogged(store, id, cmd, doneLabel, timeoutMs = 600000) {
 }
 
 app.post('/api/harness/install', async (req, res) => {
-  const { id, mode, domain } = req.body || {}
+  const { id, mode, domain, protection } = req.body || {}
   const def = HARNESSES_DEF.find(h => h.id === id)
   if (!def) return res.status(404).json({ error: 'агент не найден' })
   if (installs[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
@@ -485,6 +630,7 @@ app.post('/api/harness/install', async (req, res) => {
     if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])\.[a-z]{2,}$/i.test(dom)) {
       return res.status(400).json({ error: 'некорректный домен: ' + dom })
     }
+    const { file: caddyFile, reload: caddyReload } = caddyTarget()
     const script = [
       '# install binary (v2 installer)',
       'curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh',
@@ -510,7 +656,7 @@ app.post('/api/harness/install', async (req, res) => {
       '# caddy site block for the chosen domain',
       "python3 - <<'PY'",
       "import re",
-      "p='/root/remnawave-admin/Caddyfile'",
+      `p='${caddyFile}'`,
       "s=open(p).read()",
       `dom='${dom}'`,
       "if not re.search(r'(?m)^'+re.escape(dom)+r'\\s*\\{', s):",
@@ -525,13 +671,47 @@ app.post('/api/harness/install', async (req, res) => {
       "    if bare_n: open(p,'w').write(s2); print('auth header added to', bare_n, 'proxy lines')",
       'PY',
       `echo '${dom}' > /root/.opencode-domain`,
-      'docker restart caddy >/dev/null 2>&1',
+      caddyReload,
     ].join('\n')
     cmd = script
   }
 
-  runLogged(installs, id, cmd, 'установка завершена')
+  // Hermes install options: tui / web / both + Web UI domain + dashboard auth gate
+  if (id === 'hermes') {
+    if (mode !== 'tui') {
+      const dom = String(domain || '').trim().toLowerCase()
+      if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])\.[a-z]{2,}$/i.test(dom)) {
+        return res.status(400).json({ error: 'некорректный домен: ' + dom })
+      }
+      if (!['basic', 'oauth', 'both'].includes(protection || 'basic')) {
+        return res.status(400).json({ error: 'неизвестная защита: ' + protection })
+      }
+    }
+    cmd = buildHermesInstall({ mode: mode || 'tui', domain, protection: protection || 'basic' })
+  }
+
+  // Interactive installers (Hermes) need a TTY — they probe /dev/tty and silently skip
+  // their setup stages without one, leaving a half-installed agent.
+  if (def.interactive) runLoggedPty(installs, id, cmd, 'установка завершена')
+  else runLogged(installs, id, cmd, 'установка завершена')
   res.json({ ok: true, state: 'running' })
+})
+
+// POST /api/harness/install/keys — forward a keystroke to a running interactive install
+// (arrow-key menus in the Hermes installer / setup wizard). Body: { id, key } for a named
+// key or { id, text } for a literal string.
+app.post('/api/harness/install/keys', (req, res) => {
+  const { id, key, text } = req.body || {}
+  const s = installs[id]
+  if (!s?.pty) return res.status(409).json({ error: 'интерактивная установка не запущена' })
+  const seq = typeof text === 'string' ? text : KEY_SEQ[key]
+  if (!seq) return res.status(400).json({ error: 'неизвестная клавиша: ' + key })
+  try {
+    s.pty.write(seq)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) })
+  }
 })
 
 // POST /api/harness/update — update one agent in place (def.update command)
