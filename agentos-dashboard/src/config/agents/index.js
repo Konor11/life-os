@@ -44,7 +44,7 @@ export const AGENT_DEFINITIONS = [
     },
     detect: { bin: ['opencode'], install: 'curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh' },
     uninstall: 'pkill -f "[o]pencode serve" 2>/dev/null; systemctl disable --now opencode-web 2>/dev/null; rm -f /etc/systemd/system/opencode-web.service; systemctl daemon-reload; rm -rf /root/.opencode /root/.config/opencode /root/.local/share/opencode /root/.cache/opencode /root/.opencode.json /tmp/start-web-opencode.sh; npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode /root/.local/bin/opencode 2>/dev/null',
-    installOptions: { mode: 'both', domain: 'oc.dktunnel.xyz' }
+    installOptions: { mode: 'both' }   // домен вводит пользователь (пример — в модалке)
   },
   {
     id: 'amp',
@@ -239,7 +239,7 @@ export const AGENT_DEFINITIONS = [
     category: 'general',
     launch: {
       tui: { cmd: 'hermes', args: ['chat', '-p', 'coordinator'] },
-      web: { url: 'https://hermes.dktunnel.xyz', port: 9119 }
+      web: { port: 9119 }   // origin берётся из /api/harnesses (домен, заданный при установке)
     },
     detect: { bin: ['/usr/local/bin/hermes', '/root/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'], install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash' },
     uninstall: null,
@@ -284,14 +284,14 @@ export const AGENT_DEFINITIONS = [
   {
     id: 'n8n',
     name: 'n8n',
-    description: 'n8n Workflow Automation — visual workflow builder (n8n.dktunnel.xyz, port 5678).',
+    description: 'n8n Workflow Automation — visual workflow builder (свой домен, порт 5678).',
     provider: 'Self-hosted',
     keys: [],
     category: 'infrastructure',
     isComponent: true,
     launch: {
       tui: null,
-      web: { url: 'https://n8n.dktunnel.xyz', port: 5678 }
+      web: { port: 5678 }
     },
     detect: { cmd: 'test -f /etc/systemd/system/n8n.service', install: 'npm install -g n8n' },
     uninstall: 'systemctl stop n8n 2>/dev/null; systemctl disable n8n 2>/dev/null; rm -f /etc/systemd/system/n8n.service; systemctl daemon-reload; npm uninstall -g n8n 2>/dev/null'
@@ -299,14 +299,14 @@ export const AGENT_DEFINITIONS = [
   {
     id: 'coder',
     name: 'Coder',
-    description: 'Coder — self-hosted cloud dev (VS Code in browser, workspaces; coder.dktunnel.xyz, port 7080).',
+    description: 'Coder — self-hosted cloud dev (VS Code in browser, workspaces; свой домен, порт 7080).',
     provider: 'Self-hosted',
     keys: [],
     category: 'infrastructure',
     isComponent: true,
     launch: {
       tui: null,
-      web: { url: 'https://coder.dktunnel.xyz', port: 7080 }
+      web: { port: 7080 }
     },
     detect: { cmd: 'test -f /etc/systemd/system/coder.service', install: 'curl -fsSL https://coder.com/install.sh | sh' },
     uninstall: 'systemctl stop coder 2>/dev/null; systemctl disable coder 2>/dev/null; rm -f /etc/systemd/system/coder.service /usr/bin/coder /usr/local/bin/coder; systemctl daemon-reload; docker rm -f coder-db 2>/dev/null; rm -rf /root/coder-tpl /root/coder-dev; rm -f /root/coder.env /root/.coder-admin.env /root/.coder-db.env /root/.coder.token /root/.coder-cli.env'
@@ -320,7 +320,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'planner'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'planner'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -330,7 +330,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'tasks'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'tasks'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -340,7 +340,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'knowledge'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'knowledge'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -350,7 +350,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'habits'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'habits'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -360,7 +360,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'financial_planner'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'financial_planner'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -370,7 +370,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'health_coach'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'health_coach'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -380,7 +380,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'learning_coach'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'learning_coach'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -390,7 +390,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'crm_agent'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'crm_agent'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -400,7 +400,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'automation_engineer'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'automation_engineer'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -410,7 +410,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'calendar_manager'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'calendar_manager'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   },
   {
@@ -420,7 +420,7 @@ export const AGENT_DEFINITIONS = [
     provider: 'OpenRouter',
     keys: ['OPENROUTER_API_KEY'],
     category: 'lifeos',
-    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'project_manager'] }, web: { url: 'https://hermes.dktunnel.xyz' } },
+    launch: { tui: { cmd: 'hermes', args: ['chat', '-p', 'project_manager'] }, web: {} },
     detect: { bin: ['/usr/local/bin/hermes'] }
   }
 ]

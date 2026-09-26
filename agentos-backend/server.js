@@ -200,7 +200,7 @@ function agentExtraTokens(id) {
       if (!t) return []
       const masked = t.length > 10 ? t.slice(0, 6) + '…' + t.slice(-4) : '•••'
       return [{ env: 'OPENCLAW_GATEWAY_TOKEN', agentToken: true, value: t, masked, length: t.length,
-                 source: p, desc: 'Токен Control UI OpenClaw (вход в openclaw.dktunnel.xyz)' }]
+                 source: p, desc: 'Токен Control UI OpenClaw (вход в Control UI)' }]
     } catch { return [] }
   }
   if (id === 'hermes') {
@@ -228,19 +228,18 @@ function agentExtraTokens(id) {
   }
   if (id === 'coder') {
     try {
-      // Coder admin credentials (owner). Email is fixed; password/user live in the
-      // admin env file written at deploy. These are the login for coder.dktunnel.xyz.
+      // Coder admin credentials (owner) from the env file written at install time — the
+      // email/domen are chosen per install, so nothing is hardcoded here.
       const p = '/root/.coder-admin.env'
       if (!existsSync(p)) return []
       const envTxt = readFileSync(p, 'utf8')
       const get = (k) => { const m = envTxt.match(new RegExp(`^${k}=(.*)$`, 'm')); return m ? m[1].replace(/\r?$/,'') : null }
-      const pw = get('ADMIN_PW') || '', user = get('ADMIN_USER') || 'coderadmin'
-      const out = [
-        { env: 'CODER_EMAIL', agentToken: true, value: 'coder@dktunnel.xyz', masked: 'coder@dktunnel.xyz', length: 19,
-                 source: 'deploy', desc: 'Email входа в Coder (coder@dktunnel.xyz)' },
-      ]
+      const pw = get('ADMIN_PW') || '', user = get('ADMIN_USER') || 'coderadmin', email = get('ADMIN_EMAIL') || ''
+      const out = []
+      if (email) out.push({ env: 'CODER_EMAIL', agentToken: true, value: email, masked: email, length: email.length,
+                 source: p, desc: 'Email входа в Coder' })
       if (user) out.push({ env: 'CODER_USERNAME', agentToken: true, value: user, masked: user, length: user.length,
-                 source: p, desc: 'Логин Coder (coder.dktunnel.xyz)' })
+                 source: p, desc: 'Логин Coder (Web UI)' })
       if (pw) { const m = pw.length > 10 ? pw.slice(0, 4) + '…' + pw.slice(-3) : '•••'
         out.push({ env: 'CODER_PASSWORD', agentToken: true, value: pw, masked: m, length: pw.length,
                  source: p, desc: 'Пароль администратора Coder (owner)' })
@@ -321,11 +320,12 @@ const HARNESSES_DEF = [
         "systemctl disable --now opencode-web 2>/dev/null && echo '  сервис остановлен и убран из автозагрузки' || echo '  сервис не установлен'",
         "rm -f /etc/systemd/system/opencode-web.service; systemctl daemon-reload 2>/dev/null; echo '  unit-файл удалён'",
         "echo '[3/6] Удаление домена из Caddy...'",
-        "DOM=$(cat /root/.opencode-domain 2>/dev/null || echo oc.dktunnel.xyz)",
-        "python3 -c \"import re;p='/root/remnawave-admin/Caddyfile';s=open(p).read();dom='$DOM';n=len(re.findall(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?',s));s=re.sub(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?','',s);open(p,'w').write(s);print(f'  блок {dom} удалён' if n else '  блок не найден (уже чисто)')\"",
+        "DOM=$(cat /root/.opencode-domain 2>/dev/null || true)",
+        "if [ -z \"$DOM\" ]; then echo '  домен не записан — из Caddy убирать нечего'; fi",
+        "if [ -n \"$DOM\" ]; then python3 -c \"import re;p='__CADDY_FILE__';s=open(p).read();dom='$DOM';n=len(re.findall(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?',s));s=re.sub(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?','',s);open(p,'w').write(s);print(f'  блок {dom} удалён' if n else '  блок не найден (уже чисто)')\"; fi",
         "rm -f /root/.opencode-domain",
         "echo '[4/6] Перезапуск caddy...'",
-        "docker restart caddy >/dev/null 2>&1 && echo '  caddy перезапущен'",
+        "__CADDY_RELOAD__",
         "echo '[5/6] Удаление файлов opencode...'",
         "rm -rf /root/.opencode /root/.config/opencode /root/.local/share/opencode /root/.cache/opencode /root/.opencode.json /tmp/start-web-opencode.sh; echo '  /root/.opencode, конфиги, кэш — удалены'",
         "npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode /root/.local/bin/opencode 2>/dev/null",
@@ -384,6 +384,14 @@ try {
   console.log(`>>> [STARTUP] Loaded ${ORCA_AGENTS.length} Orca agents for harness merge`)
 } catch (e) {
   console.error('>>> [STARTUP] Failed to load Orca agents:', e)
+}
+
+// OpenCode's removal touches the Caddy site its install added: resolve the live Caddy
+// layout at startup rather than baking in one deployment's path and container name.
+{
+  const { file: caddyFile, reload: caddyReload } = caddyTarget()
+  const oc = HARNESSES_DEF.find(h => h.id === 'opencode')
+  if (oc?.uninstall) oc.uninstall = oc.uninstall.replace('__CADDY_FILE__', caddyFile).replace('__CADDY_RELOAD__', caddyReload)
 }
 
 // Convert Orca agents to HARNESSES_DEF format and merge (avoid duplicates)
@@ -467,8 +475,9 @@ async function discoverHarnesses() {
       // Web UI domain chosen at install time (the chat's Web tab embeds it in an iframe,
       // so it must come from here instead of a baked-in subdomain).
       webUrl: h.id === 'hermes'
-        ? (installed && existsSync('/etc/systemd/system/hermes-dashboard.service') ? readWebDomain('/root/.hermes-domain') : null)
-        : h.id === 'opencode' ? (installed ? readWebDomain('/root/.opencode-domain') : null) : readWebDomain(h.webDomainFile || ''),
+        // the dashboard only exists when the install also created its unit
+        ? webOriginFor('hermes', { installed: installed && existsSync('/etc/systemd/system/hermes-dashboard.service'), file: '/root/.hermes-domain' })
+        : webOriginFor(h.id, { installed }),
       web: h.web || null,
       bin: installed ? null : h.bin.join(' / '),
     })
@@ -486,6 +495,57 @@ function caddyTarget() {
     return { file: '/etc/caddy/Caddyfile', reload: 'systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true' }
   }
   return { file: '/root/remnawave-admin/Caddyfile', reload: 'docker restart caddy >/dev/null 2>&1 || true' }
+}
+
+// Life OS base domain, as recorded by deploy/install.sh in the generated Caddyfile.
+function lifeosBaseDomain() {
+  for (const f of ['/etc/caddy/Caddyfile', '/root/remnawave-admin/Caddyfile']) {
+    try {
+      const m = readFileSync(f, 'utf8').match(/base domain:\s*(\S+)/)
+      if (m) return m[1].toLowerCase()
+    } catch {}
+  }
+  return ''
+}
+
+// Web UI origin of a component/engine: the domain its installer recorded, else <id>.<base>.
+// Nothing is baked in — an old deployment's subdomain (n8n.dktunnel.xyz) pointed every
+// install at a foreign host.
+function webOriginFor(id, { installed = false, file = '' } = {}) {
+  const rec = readWebDomain(file || `/root/.${id}-domain`)
+  if (rec) return rec
+  const base = lifeosBaseDomain()
+  return installed && base ? `https://${id}.${base}` : null
+}
+
+// Shell prelude for components that need a public domain: resolve it (recorded value wins,
+// else <id>.<Life OS base>), persist it and publish a Caddy site block for its port.
+function componentDomainPrelude(id, port) {
+  const { file: caddyFile, reload: caddyReload } = caddyTarget()
+  return [
+    `DOM="$(cat /root/.${id}-domain 2>/dev/null || true)"`,
+    `if [ -z "$DOM" ]; then B="$(grep -oP 'base domain:\\s*\\K\\S+' ${caddyFile} 2>/dev/null | head -1)"; [ -n "$B" ] && DOM="${id}.$B"; fi`,
+    `if [ -n "$DOM" ]; then echo "$DOM" > /root/.${id}-domain; else echo '[warn] домен не определён — впиши вручную в /root/.${id}-domain'; fi`,
+    "python3 - \"$DOM\" <<'PY'",
+    'import sys',
+    `p = '${caddyFile}'`,
+    `port = ${port}`,
+    'dom = (sys.argv[1] or "").strip()',
+    'if not dom:',
+    "    print('caddy: домен не задан — сайт не добавлен'); raise SystemExit",
+    'try:',
+    '    s = open(p).read()',
+    'except OSError:',
+    "    print('caddy: файл не найден: ' + p); raise SystemExit",
+    "if any(l.strip().split(' ')[0] == dom and l.strip().endswith('{') for l in s.splitlines() if l.strip()):",
+    "    print('caddy site already present: ' + dom); raise SystemExit",
+    'if s and not s.endswith(chr(10)): s += chr(10)',
+    "s += dom + ' {' + chr(10) + '    reverse_proxy 127.0.0.1:' + str(port) + chr(10) + '}' + chr(10)",
+    "open(p, 'w').write(s)",
+    "print('caddy site added: ' + dom)",
+    'PY',
+    caddyReload,
+  ]
 }
 
 // Keystrokes forwarded to interactive installers (`hermes setup` is an arrow-key menu).
@@ -917,7 +977,7 @@ app.post('/api/harness/install', async (req, res) => {
   let cmd = def.install
   // OpenCode install options: tui / web / both + custom domain for the web UI
   if (id === 'opencode' && (mode === 'web' || mode === 'both')) {
-    const dom = String(domain || 'oc.dktunnel.xyz').trim().toLowerCase()
+    const dom = String(domain || '').trim().toLowerCase()
     if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])\.[a-z]{2,}$/i.test(dom)) {
       return res.status(400).json({ error: 'некорректный домен: ' + dom })
     }
@@ -1080,7 +1140,7 @@ Environment=N8N_PORT=5678
 Environment=N8N_PROTOCOL=http
 EnvironmentFile=/root/.n8n.env
 Environment=N8N_SECURE_COOKIE=false
-Environment=WEBHOOK_URL=https://n8n.dktunnel.xyz/
+Environment=WEBHOOK_URL=http://127.0.0.1:5678/
 WorkingDirectory=/root
 ExecStart=/usr/local/bin/n8n start
 Restart=always
@@ -1116,9 +1176,11 @@ const COMPONENTS_DEF = [
     // `command -v` matched leftovers — both made a never-installed component read as
     // "установлен". Truth = the unit our own installer writes/removes.
     detect: `test -f /etc/systemd/system/n8n.service`,
-    desc: 'n8n Workflow Automation — визуальный конструктор воркфлоу (n8n.dktunnel.xyz, порт 5678).',
+    desc: 'n8n Workflow Automation — визуальный конструктор воркфлоу (свой домен, порт 5678).',
+    webPort: 5678,
     install: `
 set -e
+${componentDomainPrelude('n8n', 5678).join('\n')}
 command -v n8n >/dev/null 2>&1 || npm install -g n8n
 if [ ! -f /root/.n8n.env ]; then
   echo "N8N_ENCRYPTION_KEY=$(openssl rand -hex 24)" > /root/.n8n.env
@@ -1127,9 +1189,10 @@ fi
 cat > /etc/systemd/system/n8n.service <<'UNIT'
 ${N8N_SERVICE}
 UNIT
+[ -n "$DOM" ] && sed -i "s|^Environment=WEBHOOK_URL=.*|Environment=WEBHOOK_URL=https://$DOM/|" /etc/systemd/system/n8n.service
 systemctl daemon-reload
 systemctl enable --now n8n
-echo '[n8n установлен и запущен]'`,
+echo "[n8n установлен и запущен]${'$'}{DOM:+ — https://\$DOM}"`,
     uninstall: `systemctl stop n8n 2>/dev/null; systemctl disable n8n 2>/dev/null; rm -f /etc/systemd/system/n8n.service; systemctl daemon-reload; npm uninstall -g n8n 2>/dev/null; echo '[n8n удалён] (данные ~/.n8n сохранены)'`,
     timeout: 900000,
   },
@@ -1137,9 +1200,11 @@ echo '[n8n установлен и запущен]'`,
     id: 'coder', name: 'Coder',
     // see n8n note above: same "inactive"-matches-"active" false positive
     detect: `test -f /etc/systemd/system/coder.service`,
-    desc: 'Coder — self-hosted cloud dev (VS Code в браузере, воркспейсы; coder.dktunnel.xyz, порт 7080).',
+    desc: 'Coder — self-hosted cloud dev (VS Code в браузере, воркспейсы; свой домен, порт 7080).',
+    webPort: 7080,
     install: `
 set -e
+${componentDomainPrelude('coder', 7080).join('\n')}
 command -v coder >/dev/null 2>&1 || curl -fsSL https://coder.com/install.sh | sh
 if [ ! -f /root/.coder-db.env ]; then
   echo "POSTGRES_PASSWORD=$(openssl rand -hex 16)" > /root/.coder-db.env
@@ -1152,7 +1217,7 @@ docker ps -a --format '{{.Names}}' | grep -qx coder-db || \\
 if [ ! -f /root/coder.env ]; then
   cat > /root/coder.env <<ENVEOF
 CODER_PG_CONNECTION_URL=postgres://coder:\${PGPW}@127.0.0.1:5433/coder?sslmode=disable
-CODER_ACCESS_URL=https://coder.dktunnel.xyz
+CODER_ACCESS_URL=https://$DOM
 CODER_ADDRESS=0.0.0.0:7080
 CODER_TELEMETRY_ENABLE=false
 ENVEOF
@@ -1167,11 +1232,11 @@ if [ ! -f /root/.coder-admin.env ]; then
   PW="Code-$(openssl rand -hex 8)-Aa1"
   curl -sf -X POST http://127.0.0.1:7080/api/v2/users/first \\
     -H 'Content-Type: application/json' \\
-    -d "{\\"username\\":\\"coderadmin\\",\\"email\\":\\"coder@dktunnel.xyz\\",\\"password\\":\\"$PW\\"}" \\
+    -d "{\\\"username\\\":\\\"coderadmin\\\",\\\"email\\\":\\\"coder@$DOM\\\",\\\"password\\\":\\\"$PW\\\"}" \\
     || echo '[warn] first user not created (maybe exists)'
-  printf 'ADMIN_USER=coderadmin\\nADMIN_EMAIL=coder@dktunnel.xyz\\nADMIN_PW=%s\\n' "$PW" > /root/.coder-admin.env
+  printf 'ADMIN_USER=coderadmin\\nADMIN_EMAIL=coder@%s\\nADMIN_PW=%s\\n' "$DOM" "$PW" > /root/.coder-admin.env
 fi
-echo '[Coder установлен и запущен] Логин: coder@dktunnel.xyz, пароль в /root/.coder-admin.env (вкладка Ключи → Coder)'`,
+echo "[Coder установлен и запущен] Логин: coder@$DOM, пароль в /root/.coder-admin.env (вкладка Ключи → Coder)"`,
     uninstall: `systemctl stop coder 2>/dev/null; systemctl disable coder 2>/dev/null; rm -f /etc/systemd/system/coder.service /usr/bin/coder /usr/local/bin/coder; systemctl daemon-reload; docker rm -f coder-db 2>/dev/null; rm -rf /root/coder-tpl /root/coder-dev; rm -f /root/coder.env /root/.coder-admin.env /root/.coder-db.env /root/.coder.token /root/.coder-cli.env; echo '[Coder удалён]'`,
     timeout: 900000,
   },
@@ -1184,7 +1249,11 @@ async function discoverComponents() {
     // a successful detect therefore means "installed".
     let installed = false
     try { await execS(c.detect, { shell: '/bin/bash' }); installed = true } catch { installed = false }
-    out.push({ id: c.id, name: c.name, installed, desc: c.desc, kind: 'component' })
+    out.push({
+      id: c.id, name: c.name, installed, desc: c.desc, kind: 'component',
+      webPort: c.webPort || null,
+      webUrl: c.webPort ? webOriginFor(c.id, { installed }) : null,
+    })
   }
   return out
 }

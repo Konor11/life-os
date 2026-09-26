@@ -141,7 +141,7 @@ export function ChatPanel({ fullscreen = false }) {
     }
     // opencode web UI: its SPA follows prefers-color-scheme (system), NOT the
     // Life OS theme. localStorage on THIS origin can't reach the iframe's origin
-    // (oc.dktunnel.xyz) — instead we set the CSS `color-scheme` property on the
+    // (its own domain) — instead we set the CSS `color-scheme` property on the
     // iframe element itself, which propagates the preferred scheme into the
     // embedded document (see render below).
     if (id === 'opencode') {
@@ -194,6 +194,13 @@ export function ChatPanel({ fullscreen = false }) {
             }
           } catch (e) { console.log('OC-SESSION-ERR', String(e && e?.toString ? e.toString() : e)) }
         }
+        // Engines whose Web UI lives on its own domain: without a recorded domain there
+        // is nothing to embed — say so instead of pointing the frame at the wrong host.
+        if ((id === 'deepseek' && !deepseekWebBase) || (id === 'openclaw' && !openclawWebBase)
+            || (id === 'opencode' && !opencodeWebBase)) {
+          setWebState('nodomain')
+          return
+        }
         // Cache the iframe src for this engine so future switches are instant.
         const src = id === 'opencode'
           ? (ocSessionId
@@ -241,20 +248,21 @@ export function ChatPanel({ fullscreen = false }) {
   // OpenCode v2 web (>=2.0.14) routes: /server/:serverKey/session/:id, where
   // serverKey is base64 of the server URL. The origin is the domain entered at install
   // time (falls back to the historical default when the install recorded none).
-  const opencodeWebBase = webUrls.opencode || 'https://oc.dktunnel.xyz'
+  const opencodeWebBase = webUrls.opencode || ''
   const opencodeServerKey = (() => {
     try {
       const bin = new TextEncoder().encode(opencodeWebBase + '/')
       return btoa(String.fromCharCode(...bin)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
     } catch { return '' }
   })()
-  // dsh (DeepSeek) is the same style v2 SPA: its JS calls ROOT-absolute paths that
-  // must reach its own backend, so it needs its own private subdomain root too.
-  const deepseekWebBase = 'https://ds.dktunnel.xyz'
-  // OpenClaw Control UI must load from its own subdomain root: the Gateway enforces
-  // browser-origin allowlist (gateway.controlUi.allowedOrigins) and serves SPA + WS
-  // over the gateway port, so it cannot be prefixed under os.dktunnel.xyz.
-  const openclawWebBase = 'https://openclaw.dktunnel.xyz'
+  // dsh (DeepSeek) is the same style v2 SPA: its JS calls ROOT-absolute paths that must
+  // reach its own backend, so it needs its own domain root too — taken from the API
+  // (the domain recorded at install time), never a baked-in subdomain.
+  const deepseekWebBase = webUrls.deepseek || ''
+  // OpenClaw Control UI must load from its own domain root: the Gateway enforces a
+  // browser-origin allowlist and serves SPA + WS over the gateway port, so it cannot be
+  // prefixed under the Life OS domain.
+  const openclawWebBase = webUrls.openclaw || ''
 
   const changeFont = (delta) => {
     setFontSize(prev => {
