@@ -525,6 +525,48 @@ function parentDomain(dom) {
   return parts.length > 2 ? parts.slice(1).join('.') : parts.join('.')
 }
 
+// The Life OS page frames engine/component web UIs, and its CSP (deploy/install.sh) lists
+// the Life OS host plus the <id>.<parent> family. A domain outside that family — a custom
+// engine domain — is silently blocked by the browser and the frame stays blank, with no
+// error anywhere in the panel, so every installer that publishes a site also allows its own
+// domain in connect-src/frame-src.
+function cspAllowSnippet(domExpr = '"$DOM"') {
+  const { file: caddyFile } = caddyTarget()
+  return [
+    `python3 - ${domExpr} <<'PY'`,
+    'import sys',
+    `p = '${caddyFile}'`,
+    'dom = (sys.argv[1] or "").strip()',
+    'if not dom:',
+    '    raise SystemExit',
+    'try:',
+    '    s = open(p).read()',
+    'except OSError:',
+    '    raise SystemExit',
+    "origin = 'https://' + dom",
+    "lines = s.split('\\n')",
+    'changed = False',
+    'for i, line in enumerate(lines):',
+    "    if 'Content-Security-Policy' not in line or origin in line:",
+    '        continue',
+    '    head, _, rest = line.partition(chr(34))',
+    '    policy, _, tail = rest.rpartition(chr(34))',
+    "    parts = policy.split(';')",
+    '    for j, d in enumerate(parts):',
+    '        t = d.strip()',
+    "        if t.startswith('connect-src') or t.startswith('frame-src'):",
+    "            parts[j] = t + ' ' + origin",
+    '            changed = True',
+    '    lines[i] = head + chr(34) + "; ".join(parts) + chr(34) + tail',
+    'if changed:',
+    "    open(p, 'w').write('\\n'.join(lines))",
+    "    print('csp: разрешён фрейм ' + origin)",
+    'else:',
+    "    print('csp: ' + origin + ' уже разрешён (или CSP в конфиге нет)')",
+    'PY',
+  ]
+}
+
 // Shell prelude for components that need a public domain: resolve it (recorded value wins,
 // else <id>.<Life OS base>), persist it and publish a Caddy site block for its port.
 function componentDomainPrelude(id, port) {
@@ -552,6 +594,7 @@ function componentDomainPrelude(id, port) {
     "open(p, 'w').write(s)",
     "print('caddy site added: ' + dom)",
     'PY',
+    ...cspAllowSnippet(),
     caddyReload,
   ]
 }
@@ -836,6 +879,7 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
     'else:',
     "    print('caddy site already present: ' + dom)",
     'PY',
+    ...cspAllowSnippet(`'${dom}'`),
     caddyReload,
     `echo '${dom}' > /root/.hermes-domain`,
     `echo '[готово] Hermes${mode === 'both' ? ': TUI + Web UI' : ': Web UI'} — https://${dom}'`,
@@ -1029,6 +1073,7 @@ app.post('/api/harness/install', async (req, res) => {
       `    s2,bare_n=bare.subn('\\1reverse_proxy 127.0.0.1:4096 {\\n\\1    header_up Authorization "Basic ${OC_BASIC}"\\n\\1}', s)`,
       "    if bare_n: open(p,'w').write(s2); print('auth header added to', bare_n, 'proxy lines')",
       'PY',
+      ...cspAllowSnippet(`'${dom}'`),
       `echo '${dom}' > /root/.opencode-domain`,
       caddyReload,
     ].join('\n')
