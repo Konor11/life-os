@@ -103,13 +103,9 @@ export function HarnessView() {
   const [keys, setKeys] = useState([])
   // Install options modal: mode (tui/web/both) + domain for the web UI, plus the
   // dashboard auth gate for Hermes (basic / oauth / both).
+  // The domain is deliberately EMPTY: it is the user's own domain, so the field only
+  // carries an example placeholder instead of pre-filling the Life OS host's domain.
   const [installOpts, setInstallOpts] = useState(null) // { id, name, mode, domain, protection }
-  // Default domains follow the Life OS host: lifeos.dktunnel.xyz -> hermes.dktunnel.xyz
-  const baseDomain = (() => {
-    const h = window.location.hostname
-    const p = h.split('.')
-    return p.length > 2 ? p.slice(1).join('.') : h
-  })()
 
   const load = async () => {
     try {
@@ -165,10 +161,7 @@ export function HarnessView() {
   const install = async (id) => {
     const item = allItems.find(x => x.id === id)
     if (item?.needsInstallOptions) {
-      setInstallOpts({
-        id, name: item.name, mode: 'both', protection: 'basic',
-        domain: `${id === 'hermes' ? 'hermes' : 'oc'}.${baseDomain}`,
-      })
+      setInstallOpts({ id, name: item.name, mode: 'both', protection: 'basic', domain: '' })
       return
     }
     runInstall(id)
@@ -263,7 +256,7 @@ export function HarnessView() {
                 <label className="text-sm text-text-muted block mb-1">Домен для Web UI:</label>
                 <input value={installOpts.domain}
                   onChange={e => setInstallOpts(p => ({ ...p, domain: e.target.value }))}
-                  placeholder={installOpts.id === 'hermes' ? 'hermes.example.com' : 'oc.example.com'}
+                  placeholder={installOpts.id === 'hermes' ? 'например, hermes.example.com' : 'например, oc.example.com'}
                   className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
                 <p className="text-xs text-text-muted mt-1">
                   {installOpts.id === 'hermes'
