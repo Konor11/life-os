@@ -325,7 +325,27 @@ const HARNESSES_DEF = [
         "echo '[3/6] Удаление домена из Caddy...'",
         "DOM=$(cat /root/.opencode-domain 2>/dev/null || true)",
         "if [ -z \"$DOM\" ]; then echo '  домен не записан — из Caddy убирать нечего'; fi",
-        "if [ -n \"$DOM\" ]; then python3 -c \"import re;p='__CADDY_FILE__';s=open(p).read();dom='$DOM';n=len(re.findall(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?',s));s=re.sub(r'(?m)^'+re.escape(dom)+r'[ \\\\t]*\\\\{[^}]*\\\\}[ \\\\t]*\\\\n?','',s);open(p,'w').write(s);print(f'  блок {dom} удалён' if n else '  блок не найден (уже чисто)')\"; fi",
+        // Удаляем блок домена со счётом вложенных скобок. Регулярка `{[^}]*}` обрывалась на первой
+        // закрывающей скобке, оставляла висячую «}» — caddy падал и ложились ВСЕ домены сразу.
+        "cat > /tmp/caddy-rm.py <<'PY'\n" +
+        "import sys\n" +
+        "path, dom = sys.argv[1], sys.argv[2]\n" +
+        "lines = open(path).read().split('\\n')\n" +
+        "out, i, removed = [], 0, 0\n" +
+        "while i < len(lines):\n" +
+        "    if '{' in lines[i] and lines[i].strip().startswith(dom):\n" +
+        "        depth = 0\n" +
+        "        while i < len(lines):\n" +
+        "            depth += lines[i].count('{') - lines[i].count('}')\n" +
+        "            i += 1\n" +
+        "            if depth <= 0: break\n" +
+        "        removed += 1\n" +
+        "        continue\n" +
+        "    out.append(lines[i]); i += 1\n" +
+        "open(path, 'w').write('\\n'.join(out).rstrip('\\n') + '\\n')\n" +
+        "print('  блок ' + dom + ' удалён' if removed else '  блок не найден (уже чисто)')\n" +
+        "PY\n" +
+        "python3 /tmp/caddy-rm.py '__CADDY_FILE__' \"$DOM\"; rm -f /tmp/caddy-rm.py",
         "rm -f /root/.opencode-domain",
         "echo '[4/6] Перезапуск caddy...'",
         "__CADDY_RELOAD__",
@@ -495,7 +515,14 @@ async function discoverHarnesses() {
 // component/web domains silently fail to appear on a fresh Life OS server.
 function caddyTarget() {
   if (existsSync('/etc/caddy/Caddyfile')) {
-    return { file: '/etc/caddy/Caddyfile', reload: 'systemctl reload caddy 2>/dev/null || systemctl restart caddy 2>/dev/null || true' }
+    // Перед перезагрузкой проверяем конфиг: раньше одна опечатка в Caddyfile (установка и удаление
+    // opencode) роняла caddy вместе со ВСЕМИ доменами. Теперь при невалидном конфиге caddy не
+    // трогаем вообще — он продолжает работать со старым, а в лог уходит понятная ошибка.
+    const caddyReloadSafe = `if caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1; then `
+      + `(systemctl is-active --quiet caddy && systemctl reload caddy || (systemctl reset-failed caddy 2>/dev/null; systemctl restart caddy)) `
+      + `&& echo 'caddy перезагружен с новым конфигом' || echo 'ВНИМАНИЕ: caddy не перезапустился'; `
+      + `else echo 'ОШИБКА: конфиг caddy невалиден — caddy НЕ тронут, сайты работают на прежнем конфиге'; fi`
+    return { file: '/etc/caddy/Caddyfile', reload: caddyReloadSafe }
   }
   return { file: '/root/remnawave-admin/Caddyfile', reload: 'docker restart caddy >/dev/null 2>&1 || true' }
 }
