@@ -447,7 +447,9 @@ export function ChatPanel({ fullscreen = false }) {
         }
       } catch {}
     }
+    const dbg = (m) => { try { (window.__tdbg = window.__tdbg || []).push(m) } catch {} }
     const onTouchStart = (ev) => {
+      dbg('start touches=' + ev.touches.length)
       stopFlick()
       if (ev.touches.length !== 1) return
       touching = true
@@ -462,6 +464,7 @@ export function ChatPanel({ fullscreen = false }) {
       const steps = rows - touchRows
       if (!steps) return
       touchRows = rows
+      dbg('move steps=' + steps + ' rows=' + rows)
       const now = performance.now()
       const dt = Math.max(1, now - lastMoveAt)
       lastMoveAt = now
@@ -478,6 +481,7 @@ export function ChatPanel({ fullscreen = false }) {
       // пройденному пути: если палец прошёл больше 4 строк, добавляем затухающий «довод».
       let v = flickPerTick, ticks = 0
       const dist = Math.abs(touchRows)
+      dbg('end dist=' + dist + ' v=' + v.toFixed(2))
       if (dist >= 3) v = Math.sign(touchRows) * Math.max(Math.abs(v), Math.min(4, 1 + dist / 4))
       if (Math.abs(v) < 0.6) { flickPerTick = 0; return }
       // Шаг между отчётами — 70 мс, не 16: приложение глотает слишком частые отчёты колеса
@@ -485,6 +489,7 @@ export function ChatPanel({ fullscreen = false }) {
       flickTimer = setInterval(() => {
         v *= 0.8
         ticks += 1
+        dbg('tick v=' + v.toFixed(2))
         wheelReport(v > 0 ? Math.max(1, Math.round(v)) : Math.min(-1, Math.round(v)))
         if (Math.abs(v) < 0.5 || ticks >= 8) { stopFlick(); flickPerTick = 0 }
       }, 70)
