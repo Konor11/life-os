@@ -4,7 +4,7 @@ import { exec } from 'child_process'
 import http from 'http'
 import url from 'url'
 import { promisify } from 'util'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs'
 
 const execS = promisify(exec)
 const HOME_BINS = ['/root/.opencode/bin', '/root/.codex/bin', '/root/.claude/local/bin',
@@ -212,6 +212,24 @@ export function attachTuiServer(app, server) {
 
     const { pty } = s
 
+    // Запись сырого потока приложения в терминал — включается только переменной LIFEOS_TUI_REC.
+    // Нужна, чтобы разобрать дефект отрисовки по байтам: что именно приложение пишет в строку
+    // статуса и очищает ли хвост предыдущей. Без переменной поведение прежнее, файлов не создаём.
+    const REC = process.env.LIFEOS_TUI_REC
+    if (REC && !s.recStarted) {
+      s.recStarted = true
+      try {
+        appendFileSync(REC, JSON.stringify({ t: Date.now(), ev: 'open', engine, profile, cols: pty.cols, rows: pty.rows }) + '\n')
+      } catch {}
+      pty.onData((d) => {
+        try { appendFileSync(REC, JSON.stringify({ t: Date.now(), ev: 'data', b64: Buffer.from(d, 'utf8').toString('base64') }) + '\n') } catch {}
+      })
+    }
+    const rec = (ev, extra) => {
+      if (!REC) return
+      try { appendFileSync(REC, JSON.stringify({ t: Date.now(), ev, ...extra }) + '\n') } catch {}
+    }
+
     // PTY -> websocket (+ ring buffer for replay)
     pty.onData((data) => {
       s.buffer.push(data)
@@ -237,16 +255,18 @@ export function attachTuiServer(app, server) {
     ws.on('message', (raw) => {
       try {
         const msg = JSON.parse(raw)
-        if (msg.type === 'input' && msg.data) pty.write(msg.data)
+        if (msg.type === 'input' && msg.data) { rec('input', { data: msg.data }); pty.write(msg.data) }
         else if (msg.type === 'theme' && msg.theme) { syncOpencodeTheme(msg.theme); }
         else if (msg.type === 'resize' && msg.cols && msg.rows) {
           // Пропускаем повтор того же размера: node-pty пошлёт SIGWINCH, приложение перерисует
           // кадр целиком. Именно повторные одинаковые resize (серии от раскладки) давали мигание.
           const c = parseInt(msg.cols, 10), r = parseInt(msg.rows, 10)
+          rec('resize', { cols: c, rows: r, applied: Boolean(c && r && (c !== pty.cols || r !== pty.rows)) })
           if (c && r && (c !== pty.cols || r !== pty.rows)) { try { pty.resize(c, r) } catch {} }
         }
         else if (msg.type === 'repaint') {
           // force: клиент сам решает, что ему нужен полный кадр (у него пустой экран).
+          rec('repaint', { force: true, cols: msg.cols, rows: msg.rows })
           nudgeRepaint(s, msg.cols || qcols, msg.rows || qrows, true)
         }
       } catch {
