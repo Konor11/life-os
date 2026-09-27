@@ -323,6 +323,10 @@ function ghosttyEngine(args) {
       fontSize, fontFamily: 'monospace', cursorBlink: false, theme,
       devicePixelRatio: window.devicePixelRatio || 1,
     })
+    // Контейнер обязан быть фокусируемым: обработчик ввода ghostty слушает клавиши на нём, а на
+    // Android клавиатура выезжает только когда фокус попал на фокусируемый элемент (см. focusOnTap
+    // в ChatPanel). Без tabIndex тап не даёт фокуса и клавиатура молчит.
+    try { el.tabIndex = 0 } catch {}
     input = new mod.InputHandler(ghostty, el, (d) => {
       for (const cb of dataListeners) { try { cb(d) } catch {} }
     }, () => {})
