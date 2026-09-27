@@ -90,9 +90,67 @@ const active = new Map()    // ws -> session
 
 function sessionKey(engine, profile) { return `${engine}:${profile}` }
 
+// ---- Персистентность сессии через tmux (принцип AgentDeck/Ptylon) ----
+// Было: PTY движка жил ВНУТРИ процесса панели, поэтому закрытая вкладка убивала агента через
+// KEEPALIVE (30 с), а перезапуск панели — сразу. Стало: движок живёт в tmux-сессии на отдельном
+// сокете (-L lifeos) со своим конфигом, а в нашем PTY работает только КЛИЕНТ tmux. Отсюда:
+//  * закрыл вкладку или перезапустил панель — агент продолжает работать;
+//  * повторное подключение: tmux рисует экран целиком, поэтому сырой реплей (и его обрывки
+//    посреди escape-последовательности) больше не нужен;
+//  * размер окна задан вручную (window-size manual): SIGWINCH приходит приложению только когда мы
+//    сами попросили ресайз, а не от каждого дёрганья клиента (клавиатура, адресная строка).
+const TMUX_SOCKET = 'lifeos'
+const TMUX_CONF = '/root/.lifeos-tmux.conf'
+const TMUX_KEEPALIVE_MS = (parseInt(process.env.TUI_TMUX_KEEPALIVE_SEC, 10) || 43200) * 1000
+let tmuxPath = null
+
+const tmuxReady = (async () => {
+  try {
+    writeFileSync(TMUX_CONF, [
+      '# Life OS: терминал панели. Перезаписывается бэкендом при старте.',
+      'set -g default-terminal "tmux-256color"',
+      'set -g status off',             // статус-бар tmux съел бы строку у TUI со своим статусом
+      'set -g window-size manual',     // размером управляем мы, а не клиент
+      'set -g history-limit 20000',
+      'set -g mouse off',              // отчёты колеса должны доходить до приложения (жест листания)
+      'set -g escape-time 10',
+      'set -g focus-events on',
+      'set -g destroy-unattached off', // отключённый клиент НЕ должен убивать сессию
+    ].join('\n') + '\n')
+  } catch {}
+  try {
+    const r = await execS('command -v tmux', { shell: '/bin/bash' })
+    const p = (r?.stdout || '').trim()
+    if (p.startsWith('/')) tmuxPath = p
+  } catch {}
+  console.log(`[tui] tmux: ${tmuxPath ? tmuxPath + ' — сессии переживают закрытие вкладки и перезапуск панели' : 'НЕ найден, сессии умрут вместе с панелью'}`)
+})()
+
+function tmuxSessionName(engine, profile) {
+  const suffix = profile && profile !== 'default' ? '-' + profile : ''
+  return ('lifeos-' + engine + suffix).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 60)
+}
+
+async function tmuxRun(args) {
+  if (!tmuxPath) return { ok: false, out: '' }
+  try {
+    const r = await execS(`"${tmuxPath}" -L ${TMUX_SOCKET} -f ${TMUX_CONF} ${args}`, { shell: '/bin/bash' })
+    return { ok: true, out: (r?.stdout || '') }
+  } catch (e) {
+    return { ok: false, out: `${e?.stdout || ''}${e?.stderr || ''}` }
+  }
+}
+
+async function tmuxAlive(name) {
+  if (!tmuxPath || !name) return false
+  const r = await tmuxRun(`has-session -t ${name} 2>/dev/null`)
+  return r.ok
+}
+
 function killSession(s) {
   if (s.timer) { clearTimeout(s.timer); s.timer = null }
   try { s.pty.kill() } catch {}
+  if (s.tmux) tmuxRun(`kill-session -t ${s.tmux} 2>/dev/null`)
 }
 
 // Ink-интерфейсы перерисовывают кадр целиком по SIGWINCH. При переподключении клиент
@@ -154,13 +212,63 @@ export function attachTuiServer(app, server) {
       }
     }
 
+    await tmuxReady
     const key = sessionKey(engine, profile)
     let s = sessions.get(key)
     // размеры из URL: PTY должен родиться/перерисоваться ровно в размере xterm
     const qcols = Math.min(300, Math.max(20, parseInt(u.query.cols, 10) || 120))
     const qrows = Math.min(300, Math.max(10, parseInt(u.query.rows, 10) || 40))
 
-    if (s && s.pty) {
+    // HERMES_PTY_HOST=dashboard — официальный признак «TUI зеркалят в веб-терминал» (его же ставит
+    // hermes_cli/pty_bridge.py). Без него приложение считает, что перед ним обычный терминал, и
+    // рисует кадр диффом, оставляя на экране строки, которые больше не перерисовывает: после /help
+    // внизу остаётся старая статусная строка рядом с новой.
+    const ptyEnv = { ...process.env, TERM: 'xterm-256color', HERMES_PTY_HOST: 'dashboard',
+      OPENROUTER_API_KEY: OPENROUTER_KEY,
+      PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
+    delete ptyEnv.HERMES_TUI_GATEWAY_URL
+    delete ptyEnv.HERMES_TUI_SIDECAR_URL
+
+    if (tmuxPath) {
+      // Переподключение к живой сессии и запуск новой — одна и та же команда `new-session -A`.
+      // `destroy-unattached off` в конфиге означает, что отключение клиента сессию не убивает.
+      let built
+      try {
+        built = eng.build(profile)
+      } catch (e) {
+        ws.send(JSON.stringify({ type: 'exit', code: 1, error: e?.message || String(e) }))
+        ws.close()
+        return
+      }
+      syncOpencodeTheme(u.query.theme)
+      const tname = tmuxSessionName(engine, profile)
+      const existed = await tmuxAlive(tname)
+      let pty
+      try {
+        pty = spawn(tmuxPath,
+          ['-L', TMUX_SOCKET, '-f', TMUX_CONF, 'new-session', '-A', '-s', tname,
+            '-x', String(qcols), '-y', String(qrows), built.cmd, ...built.args],
+          { name: 'xterm-256color', cols: qcols, rows: qrows, cwd: built.cwd || '/root', env: ptyEnv })
+      } catch (e) {
+        console.error(`[tui] tmux spawn failed engine=${engine}: ${e.message}`)
+        ws.send(JSON.stringify({ type: 'exit', code: 1, error: e.message }))
+        ws.close()
+        return
+      }
+      if (!s) { s = { engine, profile, buffer: [], timer: null, ws: null } }
+      if (s.timer) { clearTimeout(s.timer); s.timer = null }
+      s.pty = pty; s.ws = ws; s.tmux = tname; s.buffer = []
+      sessions.set(key, s)
+      active.set(ws, s)
+      if (existed) {
+        // Клиент подключился к живой сессии: разово подгоняем окно под его размер (приложение
+        // перерисует кадр), дальше экран уже целиком нарисован tmux.
+        tmuxRun(`resize-window -t ${tname} -x ${qcols} -y ${qrows} 2>/dev/null`)
+        console.log(`[tui] tmux re-attach t=${tname} ${qcols}x${qrows}`)
+      } else {
+        console.log(`[tui] tmux new session t=${tname} ${qcols}x${qrows}`)
+      }
+    } else if (s && s.pty) {
       // Fast path: re-attach to a live session (no cold spawn).
       syncOpencodeTheme(u.query.theme)
       if (s.timer) { clearTimeout(s.timer); s.timer = null }
@@ -178,15 +286,7 @@ export function attachTuiServer(app, server) {
         console.log(`[tui] re-attached engine=${engine} profile=${profile} — no replay (client repaints)`)
       }
     } else {
-      // HERMES_PTY_HOST=dashboard — официальный признак «TUI зеркалят в веб-терминал» (его же ставит
-      // hermes_cli/pty_bridge.py). Без него приложение считает, что перед ним обычный терминал, и
-      // рисует кадр диффом, оставляя на экране строки, которые больше не перерисовывает: после /help
-      // внизу остаётся старая статусная строка рядом с новой.
-      const ptyEnv = { ...process.env, TERM: 'xterm-256color', HERMES_PTY_HOST: 'dashboard',
-        OPENROUTER_API_KEY: OPENROUTER_KEY,
-        PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
-      delete ptyEnv.HERMES_TUI_GATEWAY_URL
-      delete ptyEnv.HERMES_TUI_SIDECAR_URL
+      // Окружение (ptyEnv) построено выше, чтобы им пользовались обе ветки: tmux и прямой spawn.
 
       // eng.build() throws with a readable reason when the engine is not installed.
       let built
@@ -229,7 +329,16 @@ export function attachTuiServer(app, server) {
         try { s.ws.send(JSON.stringify({ type: 'data', data })) } catch {}
       }
     })
-    pty.onExit(({ exitCode }) => {
+    pty.onExit(async ({ exitCode }) => {
+      // С tmux выход клиента ≠ выход агента: клиент отключается, а сессия с движком продолжает
+      // жить — в этом весь смысл. Приложение действительно закончилось, только если сессии нет.
+      if (s.tmux && await tmuxAlive(s.tmux)) {
+        if (s.pty === pty) s.pty = null
+        if (s.ws === ws) s.ws = null
+        active.delete(ws)
+        console.log(`[tui] tmux client detached engine=${engine} (сессия жива)`)
+        return
+      }
       sessions.delete(key)
       if (s.ws && s.ws.readyState === s.ws.OPEN) {
         try { s.ws.send(JSON.stringify({ type: 'exit', code: exitCode })) } catch {}
@@ -249,10 +358,15 @@ export function attachTuiServer(app, server) {
           // кадр целиком. Именно повторные одинаковые resize (серии от раскладки) давали мигание.
           const c = parseInt(msg.cols, 10), r = parseInt(msg.rows, 10)
           if (c && r && (c !== pty.cols || r !== pty.rows)) { try { pty.resize(c, r) } catch {} }
+          // Размер окна tmux задан вручную, поэтому приложение получает SIGWINCH только отсюда —
+          // ровно тогда, когда размер изменил пользователь (поворот экрана, крупный кегль).
+          if (s.tmux && c && r) tmuxRun(`resize-window -t ${s.tmux} -x ${c} -y ${r} 2>/dev/null`)
         }
         else if (msg.type === 'repaint') {
+          // С tmux полный кадр при подключении клиента рисует сам tmux — просим его обновить экран.
+          if (s.tmux) tmuxRun(`refresh-client -t ${s.tmux} 2>/dev/null`)
           // force: клиент сам решает, что ему нужен полный кадр (у него пустой экран).
-          nudgeRepaint(s, msg.cols || qcols, msg.rows || qrows, true)
+          else nudgeRepaint(s, msg.cols || qcols, msg.rows || qrows, true)
         }
       } catch {
         // not JSON — treat as raw input
@@ -263,6 +377,20 @@ export function attachTuiServer(app, server) {
     ws.on('close', () => {
       if (active.get(ws) === s) active.delete(ws)
       if (s.ws === ws) s.ws = null
+      if (s.tmux) {
+        // Гасим ТОЛЬКО клиента: агент в tmux продолжает работать. Саму сессию закрываем по
+        // длинному таймауту (по умолчанию 12 ч), чтобы брошенные сессии не копились вечно.
+        try { pty.kill() } catch {}
+        if (!s.timer) {
+          s.timer = setTimeout(() => {
+            console.log(`[tui] tmux session expired t=${s.tmux}`)
+            sessions.delete(key)
+            killSession(s)
+          }, TMUX_KEEPALIVE_MS)
+        }
+        console.log(`[tui] ws closed engine=${engine} — tmux-сессия жива (до закрытия ${Math.round(TMUX_KEEPALIVE_MS / 3600000)} ч)`)
+        return
+      }
       // keep the PTY alive for a grace period so the next connect is instant
       if (sessions.get(key) === s && !s.timer) {
         s.timer = setTimeout(() => {
