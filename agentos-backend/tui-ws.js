@@ -179,6 +179,13 @@ export function attachTuiServer(app, server) {
       }
     } else {
       const ptyEnv = { ...process.env, TERM: 'xterm-256color', OPENROUTER_API_KEY: OPENROUTER_KEY,
+        // TUI рождается под xterm.js в браузере за WebSocket — ровно та же схема, что у официального
+        // `hermes dashboard` (hermes_cli/pty_bridge.py). Без этой переменной приложение считает, что
+        // работает в настоящем терминале, и его собственные ветки «лечения» раскладки идут не тем
+        // путём: после смены размера (выехала клавиатура) в последней строке остаётся хвост прежнего
+        // кадра — приложение пишет только изменившиеся клетки, а физический терминал хранит старый
+        // текст. С переменной включается dashboard-режим (hermes-ink/termio/host.ts).
+        HERMES_PTY_HOST: 'dashboard',
         PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
       delete ptyEnv.HERMES_TUI_GATEWAY_URL
       delete ptyEnv.HERMES_TUI_SIDECAR_URL
