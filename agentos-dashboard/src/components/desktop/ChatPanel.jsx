@@ -393,32 +393,42 @@ export function ChatPanel({ fullscreen = false }) {
       try { fit.fit() } catch {}
       return { cols: term.cols, rows: term.rows }
     }
-    // Прокрутка буфера пальцем. Hermes-TUI включает мышиный протокол, поэтому жест уходит приложению
-    // как отчёт мыши, а скроллбек xterm не двигается — листать TUI было невозможно. Двигаем буфер сами:
-    // считаем, сколько строк прошёл палец, и выставляем viewport xterm. Внизу жест ничего не ломает:
-    // тап остаётся тапом (движения нет — preventDefault не вызывается), а дойдя до конца, вид
-    // возвращается к живому хвосту вывода.
-    let touchY = 0, touchLine = 0, touching = false
+    // Прокрутка TUI пальцем. Своего скроллбека у этой картинки НЕТ: TUI работает в alt-screen
+    // (scrollHeight == clientHeight, строк в истории ноль), поэтому листать буфер терминала
+    // невозможно в принципе. Зато приложение листает СВОЁ содержимое по отчётам колеса мыши —
+    // проверено: после wheel-событий первая видимая строка менялась с /kanban на /init.
+    // Поэтому движение пальца переводим в отчёты колеса SGR (64 — вверх, 65 — вниз): одна строка
+    // пальца = один отчёт. Тап остаётся тапом (нет движения — ничего не отправляем).
+    let touchY = 0, touchRows = 0, touching = false
     const rowHeight = () => {
       const r = containerRef.current && containerRef.current.querySelector('.xterm-rows > div')
       const h = r && r.getBoundingClientRect().height
       return h || ((term.options.fontSize || 14) * 1.2)
     }
+    const wheelReport = (deltaRows) => {
+      if (!deltaRows) return
+      const btn = deltaRows > 0 ? 64 : 65   // палец вниз => смотрим выше (колесо вверх)
+      const seq = `\x1b[<${btn};1;1M`.repeat(Math.min(Math.abs(deltaRows), 6))
+      try {
+        if (wsRef.current && wsRef.current.readyState === 1) {
+          wsRef.current.send(JSON.stringify({ type: 'input', data: seq }))
+        }
+      } catch {}
+    }
     const onTouchStart = (ev) => {
       if (ev.touches.length !== 1) return
       touching = true
       touchY = ev.touches[0].clientY
-      touchLine = term.buffer.active.viewportY
+      touchRows = 0
     }
     const onTouchMove = (ev) => {
       if (!touching || ev.touches.length !== 1) return
-      const rowsMoved = Math.round((ev.touches[0].clientY - touchY) / rowHeight())
-      if (!rowsMoved) return
-      const target = Math.max(0, Math.min(term.buffer.active.baseY, touchLine - rowsMoved))
-      if (target !== term.buffer.active.viewportY) {
-        try { term.scrollToLine(target) } catch {}
-        ev.preventDefault()   // жест наш: приложению отчётов мыши не отправляем
-      }
+      const rows = Math.round((ev.touches[0].clientY - touchY) / rowHeight())
+      const steps = rows - touchRows
+      if (!steps) return
+      touchRows = rows
+      wheelReport(steps)
+      ev.preventDefault()
     }
     const onTouchEnd = () => { touching = false }
     const termEl = containerRef.current
