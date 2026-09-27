@@ -110,7 +110,10 @@ const tmuxReady = (async () => {
       '# Life OS: терминал панели. Перезаписывается бэкендом при старте.',
       'set -g default-terminal "tmux-256color"',
       'set -g status off',             // статус-бар tmux съел бы строку у TUI со своим статусом
-      'set -g window-size manual',     // размером управляем мы, а не клиент
+      // ВАЖНО: window-size здесь НЕ задаём. В tmux 3.6 (Debian) любая запись window-size —
+      // и глобально в конфиге, и точечно `set-option -t` — роняет сервер tmux («server exited
+      // unexpectedly»), и TUI перестаёт запускаться вовсе. Размер окна tmux ведёт сам по клиенту
+      // (штатное поведение), а мы управляем размером через pty клиента.
       'set -g history-limit 20000',
       'set -g mouse off',              // отчёты колеса должны доходить до приложения (жест листания)
       'set -g escape-time 10',
@@ -123,7 +126,18 @@ const tmuxReady = (async () => {
     const p = (r?.stdout || '').trim()
     if (p.startsWith('/')) tmuxPath = p
   } catch {}
-  console.log(`[tui] tmux: ${tmuxPath ? tmuxPath + ' — сессии переживают закрытие вкладки и перезапуск панели' : 'НЕ найден, сессии умрут вместе с панелью'}`)
+  // Самопроверка: битый tmux (или битый конфиг) не должен ломать TUI. Проверяем, что сессия
+  // реально создаётся, и только тогда включаем персистентность.
+  if (tmuxPath) {
+    const probe = await tmuxRun('new-session -d -s __lifeos_selftest "sleep 2"')
+    if (!probe.ok) {
+      console.error(`[tui] tmux не работает: ${(probe.out || '').trim().split('\n')[0]} — продолжаю без персистентности`)
+      tmuxPath = null
+    } else {
+      await tmuxRun('kill-session -t __lifeos_selftest')
+    }
+  }
+  console.log(`[tui] tmux: ${tmuxPath ? tmuxPath + ' — сессии переживают закрытие вкладки и перезапуск панели' : 'выключен, сессии умрут вместе с панелью'}`)
 })()
 
 function tmuxSessionName(engine, profile) {
@@ -261,9 +275,8 @@ export function attachTuiServer(app, server) {
       sessions.set(key, s)
       active.set(ws, s)
       if (existed) {
-        // Клиент подключился к живой сессии: разово подгоняем окно под его размер (приложение
-        // перерисует кадр), дальше экран уже целиком нарисован tmux.
-        tmuxRun(`resize-window -t ${tname} -x ${qcols} -y ${qrows} 2>/dev/null`)
+        // Клиент подключился к живой сессии: tmux сам подгонит окно под размер клиента и нарисует
+        // экран целиком (поэтому сырой реплей не нужен).
         console.log(`[tui] tmux re-attach t=${tname} ${qcols}x${qrows}`)
       } else {
         console.log(`[tui] tmux new session t=${tname} ${qcols}x${qrows}`)
@@ -358,9 +371,6 @@ export function attachTuiServer(app, server) {
           // кадр целиком. Именно повторные одинаковые resize (серии от раскладки) давали мигание.
           const c = parseInt(msg.cols, 10), r = parseInt(msg.rows, 10)
           if (c && r && (c !== pty.cols || r !== pty.rows)) { try { pty.resize(c, r) } catch {} }
-          // Размер окна tmux задан вручную, поэтому приложение получает SIGWINCH только отсюда —
-          // ровно тогда, когда размер изменил пользователь (поворот экрана, крупный кегль).
-          if (s.tmux && c && r) tmuxRun(`resize-window -t ${s.tmux} -x ${c} -y ${r} 2>/dev/null`)
         }
         else if (msg.type === 'repaint') {
           // С tmux полный кадр при подключении клиента рисует сам tmux — просим его обновить экран.
