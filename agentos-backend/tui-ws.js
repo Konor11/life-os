@@ -189,6 +189,37 @@ async function tmuxAlive(name) {
   return r.ok
 }
 
+// Вставка большого текста одним куском. У PTY-сокетов бывает лимит кадра (в чужих проектах —
+// 65536 байт, сверх лимита соединение рвётся кодом 1009), да и приложению мегабайтная запись разом
+// ничего хорошего не делает. Режем ПО БАЙТАМ, но границу двигаем по code point'ам: разорвать
+// многобайтовый UTF-8 в середине нельзя.
+const WRITE_CHUNK_BYTES = 60 * 1024
+
+export function chunkByBytes(str, budget = WRITE_CHUNK_BYTES) {
+  const out = []
+  let cur = '', size = 0
+  for (const ch of String(str)) {
+    const b = Buffer.byteLength(ch)
+    if (size + b > budget && cur) { out.push(cur); cur = ''; size = 0 }
+    cur += ch; size += b
+  }
+  if (cur) out.push(cur)
+  return out
+}
+
+function writeToPty(pty, data) {
+  const s = String(data)
+  if (Buffer.byteLength(s) <= WRITE_CHUNK_BYTES) { try { pty.write(s) } catch {} ; return }
+  const parts = chunkByBytes(s)
+  let i = 0
+  const next = () => {
+    if (i >= parts.length) return
+    try { pty.write(parts[i++]) } catch {}
+    setTimeout(next, 10)
+  }
+  next()
+}
+
 function killSession(s) {
   if (s.timer) { clearTimeout(s.timer); s.timer = null }
   try { s.pty.kill() } catch {}
@@ -389,16 +420,27 @@ export function attachTuiServer(app, server) {
     })
 
     // websocket -> PTY
-    ws.on('message', (raw) => {
+    ws.on('message', async (raw) => {
       try {
         const msg = JSON.parse(raw)
-        if (msg.type === 'input' && msg.data) pty.write(msg.data)
+        if (msg.type === 'input' && msg.data) writeToPty(pty, msg.data)
         else if (msg.type === 'theme' && msg.theme) { syncOpencodeTheme(msg.theme); }
         else if (msg.type === 'resize' && msg.cols && msg.rows) {
           // Пропускаем повтор того же размера: node-pty пошлёт SIGWINCH, приложение перерисует
           // кадр целиком. Именно повторные одинаковые resize (серии от раскладки) давали мигание.
           const c = parseInt(msg.cols, 10), r = parseInt(msg.rows, 10)
           if (c && r && (c !== pty.cols || r !== pty.rows)) { try { pty.resize(c, r) } catch {} }
+        }
+        else if (msg.type === 'restart') {
+          // Полный перезапуск движка из панели. С tmux сессия живёт долго, поэтому зависший агент
+          // иначе сбрасывается только из консоли: убиваем сессию (её клиент выйдет сам), забываем
+          // запись и просим панель подключиться заново.
+          console.log(`[tui] restart requested engine=${engine} profile=${profile}`)
+          if (s.tmux) await tmuxRun(`kill-session -t ${s.tmux} 2>/dev/null`)
+          if (s.timer) { clearTimeout(s.timer); s.timer = null }
+          sessions.delete(key)
+          try { ws.send(JSON.stringify({ type: 'restarting' })) } catch {}
+          try { pty.kill() } catch {}
         }
         else if (msg.type === 'repaint') {
           // С tmux полный кадр при подключении клиента рисует сам tmux — просим его обновить экран.

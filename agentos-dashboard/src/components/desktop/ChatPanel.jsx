@@ -11,6 +11,82 @@ import {
 import { AGENT_STATES, AGENT_STATE_LABELS, AGENT_STATE_COLORS, AGENT_STATE_BG, detectAgentState } from '../../config/agentStates'
 import { getAgentsByCategory, getAgentById } from '../../config/agents'
 
+// Лента сообщений из истории движка (адаптер: agentos-backend/transcript.py, пока умеет Hermes).
+// Это не парсинг экрана TUI: обычный список DOM — значит работает родная прокрутка страницы, нет
+// ни alt-screen, ни потерянного скроллбека, ни обрывков кадров. Приём взят у AgentDeck, где
+// транспорт терминала агент-агностик, а читаемость даёт адаптер, знающий формат истории движка.
+function TranscriptView({ agent, themeDark }) {
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState('')
+  const [auto, setAuto] = useState(true)
+  const boxRef = useRef(null)
+  const nearBottomRef = useRef(true)
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/chat/transcript?profile=${encodeURIComponent(agent || 'default')}&limit=200`)
+      const j = await r.json()
+      if (j && j.ok) { setData(j); setErr('') } else { setErr((j && j.error) || 'история недоступна') }
+    } catch (e) { setErr(String(e?.message || e)) }
+  }, [agent])
+
+  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (!auto) return
+    const t = setInterval(load, 3000)
+    return () => clearInterval(t)
+  }, [auto, load])
+
+  // Держим прокрутку у конца только если пользователь сам не уехал вверх — иначе чтение истории
+  // прыгало бы на каждой подгрузке.
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el || !nearBottomRef.current) return
+    el.scrollTop = el.scrollHeight
+  }, [data])
+
+  const msgs = (data && data.messages) || []
+  const btn = 'px-2 py-0.5 rounded border border-border bg-bg-card text-text-muted hover:text-text transition-colors'
+  return (
+    <div className="flex-1 flex flex-col min-h-0" style={{ minHeight: '280px' }}>
+      <div className="flex items-center gap-2 px-3 py-1.5 text-xs text-text-muted border-b border-border">
+        <span className="truncate">
+          Лента: история движка{data && data.session ? ` · ${data.session}` : ''}
+        </span>
+        <button onClick={load} className={btn} title="Прочитать историю заново">обновить</button>
+        <button onClick={() => setAuto(v => !v)} className={btn} title="Автообновление раз в 3 секунды">
+          {auto ? '⟳ авто' : '⟳ пауза'}
+        </button>
+        {err && <span className="text-red-400 truncate">{err}</span>}
+      </div>
+      <div
+        ref={boxRef}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+        }}
+        className="flex-1 overflow-y-auto p-3 space-y-3"
+        style={{ background: themeDark ? '#0b0e14' : '#ffffff' }}
+      >
+        {msgs.length === 0 && (
+          <div className="text-sm text-text-muted">
+            История пуста. Напиши движку в терминале — сообщения появятся здесь.
+          </div>
+        )}
+        {msgs.map((m) => (
+          <div key={m.id} className="rounded-lg border border-border px-3 py-2"
+            style={{ background: themeDark ? '#111827' : '#f8fafc' }}>
+            <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1">
+              {m.role === 'user' ? 'вы' : (m.tool ? `инструмент: ${m.tool}` : 'агент')}
+            </div>
+            <div className="text-sm whitespace-pre-wrap break-words">{m.text}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // Размер шрифта терминала: на телефоне 120-колоночный TUI в экран не влезает, поэтому
 // мелкий шрифт нужен (7 было мало — просили меньше), и он должен переживать перезагрузку
 // страницы, а не сбрасываться на 11.
@@ -667,14 +743,31 @@ export function ChatPanel({ fullscreen = false }) {
             }
           }
           else if (msg.type === 'exit') { setConn('exited'); term.writeln(`\r\n\x1b[31m[TUI exited code ${msg.code}]\x1b[0m`) }
+          else if (msg.type === 'restarting') { restarting = true; setConn('starting'); try { ws.close() } catch {} }
         } catch { term.write(String(ev.data)) }
       }
       ws.onclose = () => {
+        if (restarting) {
+          // Это мы сами попросили перезапуск — не показываем «disconnect», а подключаемся заново.
+          restarting = false
+          setConn('starting')
+          setTimeout(() => { try { connect() } catch {} }, 600)
+          return
+        }
         if (!showWebRef.current) setConn('disconnected')
       }
       ws.onerror = () => {
         if (!showWebRef.current) setConn('error')
       }
+    }
+
+    // Перезапуск сессии движка по кнопке: шлём {type:'restart'} и после ответа подключаемся заново.
+    let restarting = false
+    restartRef.current = () => {
+      try {
+        if (wsRef.current && wsRef.current.readyState === 1) wsRef.current.send(JSON.stringify({ type: 'restart' }))
+        else connect()
+      } catch { try { connect() } catch {} }
     }
 
     // Подключаемся к PTY, когда терминал готов (у xterm.js — сразу).
@@ -736,6 +829,16 @@ export function ChatPanel({ fullscreen = false }) {
     // эффект перезапускался и рвал сокет в первый же момент после загрузки страницы.
   }, [agent, engine, showWeb, fullscreen])
 
+  // Перезапуск сессии движка из панели: сессия живёт в tmux долго, поэтому зависший интерфейс
+  // иначе сбрасывается только из консоли. Кнопка шлёт {type:'restart'}, бэкенд убивает сессию,
+  // панель подключается заново.
+  const restartRef = useRef(null)
+  // Вид чата: терминал (как раньше) или лента сообщений из истории движка.
+  const [chatView, setChatView] = useState(() => {
+    try { return localStorage.getItem('lifeos.chat.view') || 'tui' } catch { return 'tui' }
+  })
+  const setView = (v) => { setChatView(v); try { localStorage.setItem('lifeos.chat.view', v) } catch {} }
+
   return (
     <div className="flex flex-col h-full w-full rounded-xl overflow-hidden border" style={{ minHeight: '320px', background: themeDark ? '#0b0e14' : '#ffffff', borderColor: themeDark ? '#0b0e14' : 'rgb(var(--term-border))' }}>
       {/* Engine selector */}
@@ -783,6 +886,18 @@ export function ChatPanel({ fullscreen = false }) {
         })}
           className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${keypadOn ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
           title="Показать/скрыть клавиатуру">⌨</button>
+        {/* Терминал или лента из истории движка. Лента — обычная прокрутка, без alt-screen и
+            мёртвого скроллбека; пока только у Hermes (для него есть адаптер истории). */}
+        {engine === 'hermes' && (
+          <button onClick={() => setView(chatView === 'tui' ? 'chat' : 'tui')}
+            className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${chatView === 'chat' ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
+            title="Переключить вид: терминал или лента сообщений из истории движка">
+            {chatView === 'tui' ? '📜 Лента' : '💻 Терминал'}
+          </button>
+        )}
+        <button onClick={() => restartRef.current?.()}
+          className="ml-1 px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors"
+          title="Перезапустить сессию движка (сбросить зависший интерфейс)">🔄</button>
         {/* Движок терминала выбирается в Настройках («Терминал Chat · движок отрисовки»). */}
         {/* Web-режим: вход и внешнее открытие. У дашбордов движков своя страница входа;
             логин-пароль вводится прямо здесь, а OAuth (Nous Portal) невозможен внутри
@@ -874,7 +989,8 @@ export function ChatPanel({ fullscreen = false }) {
           title={`${id} web`}
         />
       ))}
-      {!showWeb && (
+      {!showWeb && chatView === 'chat' && <TranscriptView agent={agent} themeDark={themeDark} />}
+      {!showWeb && chatView === 'tui' && (
         <>
           {/* Ширина полосы прокрутки = 120 колонок при текущем шрифте: мелкий шрифт реально
               вмещает TUI в экран, крупный доступен горизонтальным свайпом. min-w-0 обязателен —

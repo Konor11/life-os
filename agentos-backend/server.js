@@ -1362,6 +1362,27 @@ async function discoverComponents() {
   return out
 }
 
+// ---- Лента чата: история движка структурой, а не экраном терминала ----
+// Приём из AgentDeck: транспорт терминала агент-агностик, а «понимание» даёт адаптер, который
+// знает, где движок хранит историю (agentos-backend/transcript.py, пока умеет Hermes → state.db).
+// Такому представлению не страшны ни alt-screen, ни мёртвый скроллбек, ни обрывки кадров.
+app.get('/api/chat/transcript', async (req, res) => {
+  const profile = String(req.query.profile || 'default')
+  const limit = Math.min(500, Math.max(10, parseInt(req.query.limit, 10) || 80))
+  const session = String(req.query.session || '')
+  const py = process.env.LIFEOS_PYTHON || '/usr/bin/python3'
+  const args = [path.join(__dirname, 'transcript.py'), '--profile', profile, '--limit', String(limit)]
+  if (session) args.push('--session', session)
+  try {
+    const out = await new Promise((resolve) => {
+      execFile(py, args, { timeout: 15000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => resolve(stdout || ''))
+    })
+    res.json(JSON.parse(out || '{}'))
+  } catch (e) {
+    res.json({ ok: false, error: e?.message || String(e) })
+  }
+})
+
 app.get('/api/components', async (_, res) => res.json({ components: await discoverComponents() }))
 
 app.post('/api/components/install', (req, res) => {
