@@ -370,7 +370,17 @@ export function ChatPanel({ fullscreen = false }) {
     // терминале. Форсировать 120 колонок было ошибкой: из-за расхождения размера приложение
     // рисовало нижнюю панель со смещением (строка статуса склеивалась с подсказкой), а на телефоне
     // приходилось уменьшать шрифт до 4-5, чтобы увидеть всю ширину.
+    // Смена ТОЛЬКО высоты (выезд/скрытие экранной клавиатуры, адресная строка Chrome) больше не
+    // пересобирает сетку терминала и не уходит в PTY: после такой смены приложение оставляло в
+    // нижней строке хвост прежнего кадра (его diff пишет лишь изменившиеся клетки), и вылечить это
+    // из клиента нечем. На смене высоты подрезаем вид: сетка остаётся прежней, а контейнер
+    // показывает её нижнюю часть — строка ввода всегда видна (см. разметку .items-end ниже).
     const applyFit = () => {
+      let proposed = null
+      try { proposed = fit.proposeDimensions ? fit.proposeDimensions() : null } catch {}
+      if (proposed && proposed.cols === term.cols && proposed.rows !== term.rows) {
+        return { cols: term.cols, rows: term.rows }
+      }
       try { fit.fit() } catch {}
       return { cols: term.cols, rows: term.rows }
     }
@@ -384,6 +394,7 @@ export function ChatPanel({ fullscreen = false }) {
       if (d) { try { term.write(d) } catch {} }
     }
     let lastSentSize = ''
+    let lastSentCols = 0
     // Смена размера идёт сериями: выезд экранной клавиатуры — это десятки кадров анимации, каждый
     // со своей высотой. Отправлять resize на каждый кадр нельзя: приложение перерисовывает кадр
     // столько же раз, и нижняя строка остаётся копиями. Склеиваем серию в одно сообщение.
@@ -446,14 +457,17 @@ export function ChatPanel({ fullscreen = false }) {
       // Размер ДО подгонки: applyFit() внутри вызывает fit(), который сам поднимает onResize и
       // обновляет lastSentSize, поэтому сравнивать надо с прежним значением, иначе «changed»
       // всегда ложно и чистый кадр после смены раскладки не заказывается.
-      const before = lastSentSize
       const { cols, rows } = applyFit()
       const key = `${cols}x${rows}`
-      const changed = key !== before
+      // changed = смена ШИРИНЫ. Высота игнорируется: смена только высоты — это клавиатура, и именно
+      // после неё приложение оставляло хвост прежнего кадра. Сетку и PTY не трогаем.
+      const changed = cols !== lastSentCols
       const widthOrFontChanged = repaintKey() !== lastRepaintKey
+      const before = lastSentSize
       lastSentSize = key
+      if (cols !== lastSentCols) lastSentCols = cols
       publishSize()
-      sendSizeSoon()
+      if (changed) sendSizeSoon()
       // Чистый кадр нужен и при смене ширины/кегля, и при смене ВЫСОТЫ: на смене высоты Ink
       // перерисовывает кадр, но старые строки приглашения остаются «призраками» — на скрине
       // пользователя их было четыре подряд под строкой статуса. `widthOrFontChanged` ловит
@@ -478,8 +492,9 @@ export function ChatPanel({ fullscreen = false }) {
     // в PTY, чтобы приложение не осталось с прежним представлением о терминале.
     const keepSizeInSync = term.onResize(({ cols, rows }) => {
       const key = `${cols}x${rows}`
-      const changed = key !== lastSentSize
+      const changed = cols !== lastSentCols
       lastSentSize = key
+      if (changed) lastSentCols = cols
       publishSize()
       // Именно здесь ловится реальная смена размера: fit() сначала меняет term.cols/rows, и к
       // моменту проверки в doResize размер уже совпадает — без этой ветки чистый кадр не
@@ -759,9 +774,9 @@ export function ChatPanel({ fullscreen = false }) {
               вмещает TUI в экран, крупный доступен горизонтальным свайпом. min-w-0 обязателен —
               без него flex-элемент растягивается под внутреннюю ширину и прокрутки не будет
               (раньше стоял overflow-hidden при жёстких 900px: правый край было не достать). */}
-          <div className="flex-1 w-full min-w-0 overflow-x-auto overflow-y-hidden" style={{ minHeight: '280px' }}>
+          <div className="flex-1 w-full min-w-0 overflow-hidden flex items-end" style={{ minHeight: '280px' }}>
             <div style={{ width: '100%', height: '100%' }}>
-              <div ref={containerRef} className="w-full h-full" />
+              <div ref={containerRef} className="w-full" />
             </div>
           </div>
           {/* on-screen keypad only for touch/narrow screens — laptops have a real keyboard */}
