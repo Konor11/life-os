@@ -1068,7 +1068,14 @@ app.post('/api/harness/install', async (req, res) => {
       '# install binary (v2 installer)',
       'curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh',
       '# systemd web service',
-      "cat > /etc/systemd/system/opencode-web.service <<'UNIT'",
+      // Пароль создаём ДО юнита и подставляем прямо в unit (heredoc без кавычек). Прежний вариант
+      // дописывал переменную через sed, и из-за экранирования она не появлялась вовсе: opencode
+      // генерировал свой случайный пароль, все /api/* отдавали 401, а Web-UI движка показывал
+      // «Something went wrong». Проверено вручную: с OPENCODE_PASSWORD Basic base64(opencode:пароль)
+      // даёт 200 и через caddy тоже.
+      '[ -f /root/.opencode-web-pass ] || (openssl rand -hex 16 > /root/.opencode-web-pass && chmod 600 /root/.opencode-web-pass)',
+      'pw=$(cat /root/.opencode-web-pass)',
+      "cat > /etc/systemd/system/opencode-web.service <<UNIT",
       '[Unit]',
       'Description=OpenCode Web UI (opencode serve)',
       'After=network.target',
@@ -1079,6 +1086,7 @@ app.post('/api/harness/install', async (req, res) => {
       'RestartSec=3',
       'User=root',
       'Environment=HOME=/root',
+      'Environment=OPENCODE_PASSWORD=$pw',
       '',
       '[Install]',
       'WantedBy=multi-user.target',
