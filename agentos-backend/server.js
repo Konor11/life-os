@@ -21,8 +21,11 @@ const execS = promisify(exec)
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || ''
 // Fixed password for the opencode v2 web server (it auths everything by default;
 // Caddy injects the matching Authorization header so browsers never see a 401).
-const OC_WEB_PASS = (() => { try { return readFileSync('/root/.opencode-web-pass', 'utf8').trim() } catch { return '' } })()
-const OC_BASIC = OC_WEB_PASS ? Buffer.from('opencode:' + OC_WEB_PASS).toString('base64') : ''
+// Читаем пароль ЛЕНИВО (в момент запроса, а не при старте бэкенда): файл пароля создаёт сам
+// инсталлер opencode в том же запросе, поэтому на свежей установке константы успевали стать
+// пустыми — и в Caddyfile уезжал пустой Authorization.
+const ocWebPass = () => { try { return readFileSync('/root/.opencode-web-pass', 'utf8').trim() } catch { return '' } }
+const ocBasic = () => { const p = ocWebPass(); return p ? Buffer.from('opencode:' + p).toString('base64') : '' }
 const HERMES = '/usr/local/lib/hermes-agent/venv/bin/python'
 const HERMES_ENTRY = '/usr/local/lib/hermes-agent/hermes'
 
@@ -1064,13 +1067,13 @@ app.post('/api/harness/install', async (req, res) => {
       `dom='${dom}'`,
       "if not re.search(r'(?m)^'+re.escape(dom)+r'\\s*\\{', s):",
       "    if s and not s.endswith('\\n'): s += '\\n'",
-      "    s += dom + ' {\\n    reverse_proxy 127.0.0.1:4096 {\\n        header_up Authorization \\\\\"Basic " + OC_BASIC + "\\\\\"\\n    }\\n}\\n'",
+      `    s += dom + ' {\\n    reverse_proxy 127.0.0.1:4096 {\\n        header_up Authorization "Basic ${ocBasic()}"\\n    }\\n}\\n'`,
       "    open(p,'w').write(s)",
       "    print('caddy site added')",
       'else:',
       "    print('caddy site already present')",
       "    bare=re.compile(r'(?m)^(\\s*)reverse_proxy 127\\.0\\.0\\.1:4096\\s*$')",
-      `    s2,bare_n=bare.subn('\\1reverse_proxy 127.0.0.1:4096 {\\n\\1    header_up Authorization "Basic ${OC_BASIC}"\\n\\1}', s)`,
+      `    s2,bare_n=bare.subn('\\1reverse_proxy 127.0.0.1:4096 {\\n\\1    header_up Authorization "Basic ${ocBasic()}"\\n\\1}', s)`,
       "    if bare_n: open(p,'w').write(s2); print('auth header added to', bare_n, 'proxy lines')",
       'PY',
       ...cspAllowSnippet(`'${dom}'`),
@@ -1413,7 +1416,7 @@ async function ensureRunning(id) {
   // opencode v2 requires a server password (service.json / OPENCODE_PASSWORD env).
   // A fixed password lets Caddy inject the Authorization header, so the browser
   // never sees a 401 (which would pop a native basic-auth dialog over the SPA).
-  const ocPassEnv = def.id === 'opencode' && OC_WEB_PASS ? `export OPENCODE_PASSWORD=${OC_WEB_PASS}\n` : ''
+  const ocPassEnv = def.id === 'opencode' && ocWebPass() ? `export OPENCODE_PASSWORD=${ocWebPass()}\n` : ''
   writeFileSync(scriptPath, `#!/bin/bash\n${ocPassEnv}${fullCmd} >> /tmp/lifeos-web-${id}.log 2>&1\n`, { mode: 0o755 })
   await execS(`setsid ${scriptPath} & echo $! > /tmp/lifeos-web-${id}.pid`, { timeout: 8000, shell: '/bin/bash' })
   try { record.pid = parseInt(readFileSync(`/tmp/lifeos-web-${id}.pid`, 'utf8')) } catch {}
