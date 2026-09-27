@@ -294,17 +294,25 @@ const HARNESSES_DEF = [
     // Caddy/Node exist), so a hardcoded "installed" was a lie on every fresh server.
     // Detect the real binary; if it's missing, offer the official installer.
     id: 'hermes', name: 'Hermes',
-    bin: ['/usr/local/bin/hermes', '/root/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
+    bin: ['/root/.local/bin/hermes', '/usr/local/bin/hermes', '/root/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
     install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash',
     interactive: true,   // installer + `hermes setup` need a TTY (arrow-key menus)
     desc: 'Hermes Agent (Nous Research) — один из доступных движков. Пользователь сам выбирает, какой агент использовать.',
     provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
+    // Официальный путь обновления — `hermes update` (git-установка: pull + переустановка зависимостей
+    // + перезапуск своих служб). Флаг --yes делает его неинтерактивным, поэтому кнопка работает без TTY.
+    // Лончер ищем по всем известным путям: на сервере это /root/.local/bin/hermes (его же запускает
+    // hermes-dashboard), в других сборках — /usr/local/bin или .hermes/bin внутри дерева исходников.
     update: [
-      "echo '[1/3] Обновление пакета hermes-agent (pip)...'",
-      "/usr/local/lib/hermes-agent/venv/bin/pip install --upgrade hermes-agent 2>&1",
-      "echo '[2/3] Проверка версии...'",
-      "/usr/local/lib/hermes-agent/venv/bin/pip show hermes-agent 2>/dev/null | grep -i '^Version' || true",
-      "echo '[3/3] Готово. Примечание: официальная команда `hermes update` может требовать интерактивного ввода — после pip перезапусти TUI-сессии Hermes.'",
+      "echo '[1/2] Обновление через официальную команду: hermes update --yes'",
+      'HB="$(command -v hermes || true)"',
+      '[ -x "$HB" ] || HB=/root/.local/bin/hermes',
+      '[ -x "$HB" ] || HB=/usr/local/bin/hermes',
+      '[ -x "$HB" ] || HB=/root/.hermes/hermes-agent/.hermes/bin/hermes',
+      '[ -x "$HB" ] || HB=/usr/local/lib/hermes-agent/venv/bin/hermes',
+      'if [ -x "$HB" ]; then "$HB" update --yes 2>&1; else echo "[ошибка] лончер hermes не найден — обновление не выполнено"; fi',
+      "echo '[2/2] Версия после обновления:'",
+      '"$HB" --version 2>&1 | head -3',
     ].join('; '),
   },
   {

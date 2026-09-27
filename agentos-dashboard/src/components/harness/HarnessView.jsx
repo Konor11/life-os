@@ -6,7 +6,6 @@ const API = '/api'
 // One installable row: engines (binaries) and components (systemd services) share it.
 function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, onUpdate, onKey, onSetup }) {
   const [textInput, setTextInput] = useState('')
-  const missingKey = item.installed && item.key && !keys.some(k => k.env === item.key)
   const busy = busyId === item.id
   return (
     <div className="glass rounded-xl p-4 border"
@@ -25,11 +24,6 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
         {item.installed ? (
           <>
             <span className="px-2 py-1 rounded text-xs bg-bg-elevated border border-border text-text-muted">готов к работе</span>
-            {missingKey && (
-              <span className="px-2 py-1 rounded text-xs bg-danger/15 border border-border text-danger">
-                ⚠ нет ключа {item.key} — добавь в разделе «Ключи»
-              </span>
-            )}
             {item.updateCmd && (
               <button onClick={() => onUpdate(item.id)} disabled={!!busyId}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'update' ? 'opacity-60' : ''}`}>
