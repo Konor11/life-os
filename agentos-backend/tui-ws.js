@@ -126,6 +126,15 @@ const tmuxReady = (async () => {
     const p = (r?.stdout || '').trim()
     if (p.startsWith('/')) tmuxPath = p
   } catch {}
+  // Сервер tmux держит отдельный юнит lifeos-tui: если поднимать его из процесса панели, он
+  // остаётся в cgroup службы и systemctl restart lifeos убивает ВСЕ сессии агентов вместе с ним
+  // (проверено: после перезапуска панели маркер в терминале исчезал). Поэтому сервер поднимает юнит.
+  if (tmuxPath) {
+    const ls = await tmuxRun('list-sessions')
+    if (!ls.ok) {
+      try { await execS('systemctl start lifeos-tui', { shell: '/bin/bash' }); await new Promise(r => setTimeout(r, 1200)) } catch {}
+    }
+  }
   // Самопроверка: битый tmux (или битый конфиг) не должен ломать TUI. Проверяем, что сессия
   // реально создаётся, и только тогда включаем персистентность.
   if (tmuxPath) {
