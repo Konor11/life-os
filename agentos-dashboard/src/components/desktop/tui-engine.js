@@ -252,6 +252,7 @@ function ghosttyEngine(args) {
   const dataListeners = new Set()
   const resizeListeners = new Set()
   let t = null, renderer = null, input = null, disposed = false, ready = false
+  let sink = null
   let pendingWrites = []
   let size = { cols, rows }
   const readyCbs = []
@@ -323,13 +324,40 @@ function ghosttyEngine(args) {
       fontSize, fontFamily: 'monospace', cursorBlink: false, theme,
       devicePixelRatio: window.devicePixelRatio || 1,
     })
-    // Контейнер обязан быть фокусируемым: обработчик ввода ghostty слушает клавиши на нём, а на
-    // Android клавиатура выезжает только когда фокус попал на фокусируемый элемент (см. focusOnTap
-    // в ChatPanel). Без tabIndex тап не даёт фокуса и клавиатура молчит.
+    // Ввод: свой приёмник — скрытый textarea (как .xterm-helper-textarea у xterm.js). Штатный
+    // InputHandler слушает клавиши на контейнере, но Android отдаёт ввод через IME/input-события,
+    // а не keydown: фокус на div клавиатуру не поднимает, и ввод теряется. textarea держит фокус и
+    // IME, печатаемый текст берём из его input, служебные клавиши — из keydown.
+    const emit = (d) => { for (const cb of dataListeners) { try { cb(d) } catch {} } }
+    sink = document.createElement('textarea')
+    sink.setAttribute('autocapitalize', 'off')
+    sink.setAttribute('autocorrect', 'off')
+    sink.setAttribute('spellcheck', 'false')
+    sink.setAttribute('aria-label', 'terminal input')
+    sink.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;resize:none;outline:none'
+    el.appendChild(sink)
     try { el.tabIndex = 0 } catch {}
-    input = new mod.InputHandler(ghostty, el, (d) => {
-      for (const cb of dataListeners) { try { cb(d) } catch {} }
-    }, () => {})
+    const SPECIAL = {
+      Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b',
+      ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D',
+      Home: '\x1b[H', End: '\x1b[F', Delete: '\x1b[3~', PageUp: '\x1b[5~', PageDown: '\x1b[6~',
+    }
+    sink.addEventListener('input', () => {
+      const v = sink.value
+      sink.value = ''
+      if (v) emit(v)
+    })
+    sink.addEventListener('keydown', (ev) => {
+      const k = ev.key
+      if (ev.ctrlKey && k && k.length === 1) {
+        const c = k.toLowerCase()
+        if (c >= 'a' && c <= 'z') { emit(String.fromCharCode(c.charCodeAt(0) - 96)) ; ev.preventDefault() }
+        return
+      }
+      if (SPECIAL[k]) { emit(SPECIAL[k]); ev.preventDefault() }
+    })
+    // Тап по терминалу поднимает клавиатуру: фокус обязан уйти в textarea внутри обработчика жеста.
+    el.addEventListener('pointerup', () => { try { sink.focus() } catch {} })
     el.dataset.termEngine = 'ghostty'
     el.__ghostty = { t, renderer }
     for (const chunk of pendingWrites) { try { t.write(chunk) } catch {} }
@@ -363,7 +391,7 @@ function ghosttyEngine(args) {
       refresh() { paint(true) },
       clear() { this.write('\x1b[2J\x1b[H') },
       reset() { this.write('\x1b[2J\x1b[H') },
-      focus() { try { el.focus() } catch {} },
+      focus() { try { (sink || el).focus() } catch {} },
       open() {}, loadAddon() {},
       dispose() {
         disposed = true
