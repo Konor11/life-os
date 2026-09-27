@@ -348,6 +348,31 @@ export function ChatPanel({ fullscreen = false }) {
     }
   }
 
+  // Прокрутка TUI. Сколько строк пользователь «уехал» вверх, считает обработчик касаний в эффекте
+  // терминала; пока это число больше нуля, показываем плавающую кнопку «вниз».
+  // Приём взят из Paperclip (`ui/src/components/ScrollToBottom.tsx`,
+  // `ui/src/components/task-chat/scroll-navigation.tsx`): возврат к живому хвосту делает ЯВНАЯ
+  // кнопка/событие, а не пересчёт по высоте содержимого — в alt-screen высоту содержимого вообще
+  // не измерить (scrollHeight == clientHeight), а у них тот же принцип: якорь — логическая строка,
+  // а не пиксели.
+  const [scrolledUp, setScrolledUp] = useState(false)
+  const upRowsRef = useRef(0)
+
+  const jumpToBottom = () => {
+    upRowsRef.current = 0
+    setScrolledUp(false)
+    // Отправляем серию отчётов «колесо вниз»: приложение само доедет до конца, а сколько именно
+    // строк оно листает за отчёт, нам знать не нужно (это его внутренняя логика).
+    let n = 0
+    const tick = () => {
+      if (n >= 40) return
+      n += 1
+      sendExternal('\x1b[<65;1;1M')
+      window.setTimeout(tick, 14)
+    }
+    tick()
+  }
+
   // Connect WS + attach xterm (skip for engines with a built-in web UI)
   useEffect(() => {
     showWebRef.current = showWeb
@@ -400,6 +425,8 @@ export function ChatPanel({ fullscreen = false }) {
     // Поэтому движение пальца переводим в отчёты колеса SGR (64 — вверх, 65 — вниз): одна строка
     // пальца = один отчёт. Тап остаётся тапом (нет движения — ничего не отправляем).
     let touchY = 0, touchRows = 0, touching = false
+    let flickTimer = null, flickPerTick = 0, lastMoveAt = 0
+    const stopFlick = () => { if (flickTimer) { clearInterval(flickTimer); flickTimer = null } }
     const rowHeight = () => {
       const r = containerRef.current && containerRef.current.querySelector('.xterm-rows > div')
       const h = r && r.getBoundingClientRect().height
@@ -409,6 +436,11 @@ export function ChatPanel({ fullscreen = false }) {
       if (!deltaRows) return
       const btn = deltaRows > 0 ? 64 : 65   // палец вниз => смотрим выше (колесо вверх)
       const seq = `\x1b[<${btn};1;1M`.repeat(Math.min(Math.abs(deltaRows), 6))
+      // Счёт «уехали вверх» — по направлению жеста, без арифметики по высоте содержимого: её у
+      // alt-screen нет. Ноль возвращает либо кнопка «вниз», либо жест обратно вниз.
+      if (deltaRows > 0) upRowsRef.current += Math.abs(deltaRows)
+      else upRowsRef.current = Math.max(0, upRowsRef.current - Math.abs(deltaRows))
+      setScrolledUp(upRowsRef.current > 0)
       try {
         if (wsRef.current && wsRef.current.readyState === 1) {
           wsRef.current.send(JSON.stringify({ type: 'input', data: seq }))
@@ -416,10 +448,13 @@ export function ChatPanel({ fullscreen = false }) {
       } catch {}
     }
     const onTouchStart = (ev) => {
+      stopFlick()
       if (ev.touches.length !== 1) return
       touching = true
       touchY = ev.touches[0].clientY
       touchRows = 0
+      flickPerTick = 0
+      lastMoveAt = performance.now()
     }
     const onTouchMove = (ev) => {
       if (!touching || ev.touches.length !== 1) return
@@ -427,10 +462,25 @@ export function ChatPanel({ fullscreen = false }) {
       const steps = rows - touchRows
       if (!steps) return
       touchRows = rows
+      const now = performance.now()
+      const dt = Math.max(1, now - lastMoveAt)
+      lastMoveAt = now
+      // скорость в строках на кадр (16 мс) — из неё получится инерция после отпускания
+      flickPerTick = Math.max(-6, Math.min(6, (steps / dt) * 16))
       wheelReport(steps)
       ev.preventDefault()
     }
-    const onTouchEnd = () => { touching = false }
+    const onTouchEnd = () => {
+      touching = false
+      // Инерция: палец отпущен, но список продолжает ехать с затуханием — как в мобильных лентах.
+      if (Math.abs(flickPerTick) < 0.6) { flickPerTick = 0; return }
+      let v = flickPerTick
+      flickTimer = setInterval(() => {
+        v *= 0.85
+        wheelReport(v > 0 ? Math.max(1, Math.round(v)) : Math.min(-1, Math.round(v)))
+        if (Math.abs(v) < 0.5) { stopFlick(); flickPerTick = 0 }
+      }, 16)
+    }
     const termEl = containerRef.current
     if (termEl) {
       termEl.addEventListener('touchstart', onTouchStart, { passive: true })
@@ -646,6 +696,7 @@ export function ChatPanel({ fullscreen = false }) {
       try { keepSizeInSync.dispose() } catch {}
       if (ro) { try { ro.disconnect() } catch {} }
       onData.dispose()
+      stopFlick()
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
       if (sizeTimer) clearTimeout(sizeTimer)
@@ -812,10 +863,20 @@ export function ChatPanel({ fullscreen = false }) {
               вмещает TUI в экран, крупный доступен горизонтальным свайпом. min-w-0 обязателен —
               без него flex-элемент растягивается под внутреннюю ширину и прокрутки не будет
               (раньше стоял overflow-hidden при жёстких 900px: правый край было не достать). */}
-          <div className="flex-1 w-full min-w-0 overflow-x-auto overflow-y-hidden" style={{ minHeight: '280px' }}>
-            <div style={{ width: '100%', height: '100%' }}>
-              <div ref={containerRef} className="w-full h-full" />
+          <div className="relative flex-1 min-h-0 flex flex-col">
+            <div className="flex-1 w-full min-w-0 overflow-x-auto overflow-y-hidden" style={{ minHeight: '280px' }}>
+              <div style={{ width: '100%', height: '100%' }}>
+                <div ref={containerRef} className="w-full h-full" />
+              </div>
             </div>
+            {/* Листание вверх: у alt-screen нет полосы прокрутки, поэтому единственная подсказка,
+                что мы выше живого хвоста, — эта кнопка (приём Paperclip: явный возврат вместо
+                арифметики по высоте). */}
+            {scrolledUp && (
+              <button onClick={jumpToBottom} title="Вниз, к живому хвосту вывода"
+                className="absolute right-2 bottom-2 z-10 w-9 h-9 rounded-full border border-border shadow-lg flex items-center justify-center text-lg bg-bg-card text-text-muted hover:text-text"
+                style={{ opacity: 0.9 }}>↓</button>
+            )}
           </div>
           {/* on-screen keypad only for touch/narrow screens — laptops have a real keyboard */}
           {keypadOn && (
