@@ -338,7 +338,7 @@ export function ChatPanel({ fullscreen = false }) {
     const el = containerRef.current
     if (!el) return
 
-    // Терминал создаёт адаптер движка (rioterm/wasm или xterm.js) — см. tui-engine.js.
+    // Терминал создаёт адаптер (xterm.js) — см. tui-engine.js.
     // Наружу он отдаёт поверхность xterm.js, поэтому вся логика ниже не зависит от движка.
     const { term, fit, kind: termKind } = createTuiEngine({
       el,
@@ -347,7 +347,6 @@ export function ChatPanel({ fullscreen = false }) {
       scrollback: 2000,
       cols: 120,
       rows: 40,
-      // rioterm не поднялся — адаптер сам пересоздаст терминал на xterm и отдаст новый объект
       onFallbackReady: (fb) => { termRef.current = fb.term; fitRef.current = fb.fit },
     })
     el.dataset.termEngine = termKind
@@ -370,17 +369,7 @@ export function ChatPanel({ fullscreen = false }) {
     // терминале. Форсировать 120 колонок было ошибкой: из-за расхождения размера приложение
     // рисовало нижнюю панель со смещением (строка статуса склеивалась с подсказкой), а на телефоне
     // приходилось уменьшать шрифт до 4-5, чтобы увидеть всю ширину.
-    // Смена ТОЛЬКО высоты (выезд/скрытие экранной клавиатуры, адресная строка Chrome) больше не
-    // пересобирает сетку терминала и не уходит в PTY: после такой смены приложение оставляло в
-    // нижней строке хвост прежнего кадра (его diff пишет лишь изменившиеся клетки), и вылечить это
-    // из клиента нечем. На смене высоты подрезаем вид: сетка остаётся прежней, а контейнер
-    // показывает её нижнюю часть — строка ввода всегда видна (см. разметку .items-end ниже).
     const applyFit = () => {
-      let proposed = null
-      try { proposed = fit.proposeDimensions ? fit.proposeDimensions() : null } catch {}
-      if (proposed && proposed.cols === term.cols && proposed.rows !== term.rows) {
-        return { cols: term.cols, rows: term.rows }
-      }
       try { fit.fit() } catch {}
       return { cols: term.cols, rows: term.rows }
     }
@@ -394,7 +383,6 @@ export function ChatPanel({ fullscreen = false }) {
       if (d) { try { term.write(d) } catch {} }
     }
     let lastSentSize = ''
-    let lastSentCols = 0
     // Смена размера идёт сериями: выезд экранной клавиатуры — это десятки кадров анимации, каждый
     // со своей высотой. Отправлять resize на каждый кадр нельзя: приложение перерисовывает кадр
     // столько же раз, и нижняя строка остаётся копиями. Склеиваем серию в одно сообщение.
@@ -430,44 +418,20 @@ export function ChatPanel({ fullscreen = false }) {
     const scheduleCleanRepaint = () => {
       if (repaintTimer) clearTimeout(repaintTimer)
       // Всплеск мелких изменений высоты (адресная строка Chrome, тулбар) → одна перерисовка.
-      // refreshScreen() перерисовывает буфер на клиенте, но НЕ заставляет приложение переписать
-      // клетки, которые его diff считает верными: после смены раскладки там остаётся хвост прежнего
-      // кадра (на скрине — «…| 41s | voiceoff» под живой строкой статуса). Поэтому после смены
-      // размера просим полный кадр у приложения и подчищаем то, что осталось ниже его кадра.
-      repaintTimer = setTimeout(() => {
-        refreshScreen()
-        const ws = wsRef.current
-        if (ws && ws.readyState === 1) {
-          try { ws.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows })) } catch {}
-        }
-        // Приложение паркует курсор на своей последней строке (ESC[<rows>;1H). Всё, что ниже, — не
-        // его: если курсор стоит выше последней строки, стираем остаток, чтобы «призрак» не висел.
-        setTimeout(() => {
-          try {
-            const cy = term.buffer && term.buffer.active ? term.buffer.active.cursorY : -1
-            if (cy >= 0 && cy < term.rows - 1) {
-              term.write('\x1b[' + (cy + 2) + ';1H\x1b[J')
-              refreshScreen()
-            }
-          } catch {}
-        }, 900)
-      }, 700)
+      repaintTimer = setTimeout(refreshScreen, 600)
     }
     const doResize = () => {
       // Размер ДО подгонки: applyFit() внутри вызывает fit(), который сам поднимает onResize и
       // обновляет lastSentSize, поэтому сравнивать надо с прежним значением, иначе «changed»
       // всегда ложно и чистый кадр после смены раскладки не заказывается.
+      const before = lastSentSize
       const { cols, rows } = applyFit()
       const key = `${cols}x${rows}`
-      // changed = смена ШИРИНЫ. Высота игнорируется: смена только высоты — это клавиатура, и именно
-      // после неё приложение оставляло хвост прежнего кадра. Сетку и PTY не трогаем.
-      const changed = cols !== lastSentCols
+      const changed = key !== before
       const widthOrFontChanged = repaintKey() !== lastRepaintKey
-      const before = lastSentSize
       lastSentSize = key
-      if (cols !== lastSentCols) lastSentCols = cols
       publishSize()
-      if (changed) sendSizeSoon()
+      sendSizeSoon()
       // Чистый кадр нужен и при смене ширины/кегля, и при смене ВЫСОТЫ: на смене высоты Ink
       // перерисовывает кадр, но старые строки приглашения остаются «призраками» — на скрине
       // пользователя их было четыре подряд под строкой статуса. `widthOrFontChanged` ловит
@@ -492,9 +456,8 @@ export function ChatPanel({ fullscreen = false }) {
     // в PTY, чтобы приложение не осталось с прежним представлением о терминале.
     const keepSizeInSync = term.onResize(({ cols, rows }) => {
       const key = `${cols}x${rows}`
-      const changed = cols !== lastSentCols
+      const changed = key !== lastSentSize
       lastSentSize = key
-      if (changed) lastSentCols = cols
       publishSize()
       // Именно здесь ловится реальная смена размера: fit() сначала меняет term.cols/rows, и к
       // моменту проверки в doResize размер уже совпадает — без этой ветки чистый кадр не
@@ -571,7 +534,7 @@ export function ChatPanel({ fullscreen = false }) {
       }
     }
 
-    // Подключаемся к PTY только когда движок готов (rioterm грузит wasm асинхронно).
+    // Подключаемся к PTY, когда терминал готов (у xterm.js — сразу).
     if (term.whenReady) term.whenReady(() => connect())
     else connect()
 
@@ -588,13 +551,6 @@ export function ChatPanel({ fullscreen = false }) {
       doResize()   // меряем строки по контейнеру и чистим экран при смене размера
     }
     window.addEventListener('resize', onResize)
-    // Тап по терминалу = явный фокус на скрытом поле ввода xterm. Без этого на Android клавиатура
-    // не выезжает: TUI держит включённым протокол мыши (DEC 1000/1002/1003/1006), и тапы уходят
-    // приложению отчётами мыши, а поле ввода фокус не получает. Фокус обязан происходить внутри
-    // обработчика жеста — иначе Chrome клавиатуру не показывает.
-    const focusOnTap = () => { try { term.focus() } catch {} }
-    const tapHost = containerRef.current
-    if (tapHost) tapHost.addEventListener('pointerup', focusOnTap, { passive: true })
     // ВАЖНО: на выезд экранной клавиатуры НЕ реагируем. Она меняет только visual viewport, а
     // раскладка страницы остаётся прежней, поэтому переразмечать терминал по ней не нужно — и
     // вредно: каждая смена числа строк заставляет TUI-приложение перерисовать кадр, и его нижняя
@@ -608,7 +564,6 @@ export function ChatPanel({ fullscreen = false }) {
       if (ro) { try { ro.disconnect() } catch {} }
       onData.dispose()
       window.removeEventListener('resize', onResize)
-      if (tapHost) tapHost.removeEventListener('pointerup', focusOnTap)
       if (repaintTimer) clearTimeout(repaintTimer)
       if (sizeTimer) clearTimeout(sizeTimer)
       // таймерной чистки кадра больше нет: она давала видимую вспышку каждые 15 с
@@ -774,9 +729,9 @@ export function ChatPanel({ fullscreen = false }) {
               вмещает TUI в экран, крупный доступен горизонтальным свайпом. min-w-0 обязателен —
               без него flex-элемент растягивается под внутреннюю ширину и прокрутки не будет
               (раньше стоял overflow-hidden при жёстких 900px: правый край было не достать). */}
-          <div className="flex-1 w-full min-w-0 overflow-hidden flex items-end" style={{ minHeight: '280px' }}>
+          <div className="flex-1 w-full min-w-0 overflow-x-auto overflow-y-hidden" style={{ minHeight: '280px' }}>
             <div style={{ width: '100%', height: '100%' }}>
-              <div ref={containerRef} className="w-full" />
+              <div ref={containerRef} className="w-full h-full" />
             </div>
           </div>
           {/* on-screen keypad only for touch/narrow screens — laptops have a real keyboard */}
