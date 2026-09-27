@@ -141,17 +141,30 @@ export function ChatPanel({ fullscreen = false }) {
   // (портал Nous не позволяет фреймить себя), после чего cookie уже в общем jar браузера —
   // достаточно перезагрузить фрейм здесь.
   const [webReload, setWebReload] = useState(0)
+  // Список движков вместе с их web-адресами. Запрос повторяем: если он упал (caddy перезапускался и
+  // сайт на секунду отдал ошибку), webUrls оставался пустым НАВСЕГДА — и панель решала, что «при
+  // установке движка не был указан домен», хотя домен записан и открывается. Именно это видел
+  // пользователь после перезапуска caddy: домен он вписал, а вкладка Web просила переустановку.
+  const loadWebUrls = async () => {
+    for (let i = 0; i < 4; i++) {
+      try {
+        const d = await (await fetch('/api/harnesses')).json()
+        const urls = {}
+        for (const h of d.harnesses || []) if (h.webUrl) urls[h.id] = h.webUrl
+        if (Object.keys(urls).length) { setWebUrls(urls); return urls }
+      } catch {}
+      await new Promise(r => setTimeout(r, 600 * (i + 1)))
+    }
+    return {}
+  }
   useEffect(() => {
     let alive = true
-    fetch('/api/harnesses').then(r => r.json()).then(d => {
+    loadWebUrls().then(urls => {
       if (!alive) return
-      const urls = {}
-      for (const h of d.harnesses || []) if (h.webUrl) urls[h.id] = h.webUrl
-      setWebUrls(urls)
       // Hermes' dashboard is a plain virtual web UI — pre-fill its iframe. opencode
       // builds a session URL first, so it must NOT be pre-filled here.
-      setWebSrcCache(prev => (prev.hermes || !urls.hermes) ? prev : { ...prev, hermes: urls.hermes })
-    }).catch(() => {})
+      if (urls.hermes) setWebSrcCache(prev => (prev.hermes ? prev : { ...prev, hermes: urls.hermes }))
+    })
     return () => { alive = false }
   }, [])
   // Engines whose web UI needs no start call (Hermes' dashboard) get their src pre-filled by
@@ -235,20 +248,27 @@ export function ChatPanel({ fullscreen = false }) {
         }
         // Engines whose Web UI lives on its own domain: without a recorded domain there
         // is nothing to embed — say so instead of pointing the frame at the wrong host.
-        if ((id === 'deepseek' && !deepseekWebBase) || (id === 'openclaw' && !openclawWebBase)
-            || (id === 'opencode' && !opencodeWebBase)) {
+        // Если список движков не догрузился, спрашиваем бэкенд ещё раз, прежде чем говорить
+        // пользователю, что домен «не был указан при установке».
+        const needBase = (id === 'opencode' || id === 'deepseek' || id === 'openclaw') && !webUrls[id]
+        const bases = needBase ? await loadWebUrls() : webUrls
+        const ocBase = bases.opencode || opencodeWebBase
+        const dsBase = bases.deepseek || deepseekWebBase
+        const olBase = bases.openclaw || openclawWebBase
+        if ((id === 'deepseek' && !dsBase) || (id === 'openclaw' && !olBase)
+            || (id === 'opencode' && !ocBase)) {
           setWebState('nodomain')
           return
         }
         // Cache the iframe src for this engine so future switches are instant.
         const src = id === 'opencode'
           ? (ocSessionId
-              ? `${opencodeWebBase}/server/${opencodeServerKey}/session/${ocSessionId}`
-              : `${opencodeWebBase}/server/${opencodeServerKey}`)
+              ? `${ocBase}/server/${opencodeServerKey}/session/${ocSessionId}`
+              : `${ocBase}/server/${opencodeServerKey}`)
           : id === 'deepseek'
-            ? `${deepseekWebBase}/${d?.token ? `?token=${d.token}` : ''}`
+            ? `${dsBase}/${d?.token ? `?token=${d.token}` : ''}`
             : id === 'openclaw'
-              ? openclawWebBase
+              ? olBase
               : `/agent/${id}/${d?.token ? `?token=${d.token}` : ''}`
         setWebSrcCache(prev => ({ ...prev, [id]: src }))
         setWebState('running')
