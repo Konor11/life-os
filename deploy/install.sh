@@ -213,6 +213,44 @@ chmod +x "$DIR/deploy/lifeos-stack.sh" "$DIR/agentos-backend/start_backend.sh"
 systemctl daemon-reload
 systemctl enable --now lifeos.service
 
+# Сервер tmux держит ОТДЕЛЬНЫЙ юнит. Внутри cgroup панели он умирал бы при каждом
+# `systemctl restart lifeos` — вместе со всеми живыми сессиями агентов. Отдельный юнит и есть
+# персистентность TUI: закрыл вкладку или перезапустил панель — агент продолжает работать.
+# ВАЖНО: window-size в конфиге НЕ задаём — в tmux 3.6 (Debian) любая запись этой опции роняет
+# сервер tmux, и TUI перестаёт запускаться вовсе (проверено).
+if ! command -v tmux >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y tmux >/dev/null 2>&1 || true
+fi
+
+cat > /root/.lifeos-tmux.conf <<'TMUXCONF'
+# Life OS: терминал панели. Бэкенд перезаписывает этот файл при старте.
+set -g default-terminal "tmux-256color"
+set -g status off
+set -g history-limit 20000
+set -g mouse off
+set -g escape-time 10
+set -g focus-events on
+set -g destroy-unattached off
+TMUXCONF
+
+cat > /etc/systemd/system/lifeos-tui.service <<UNIT
+[Unit]
+Description=Life OS: tmux-сервер для TUI-сессий агентов (переживает перезапуск панели)
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/tmux -L lifeos -f /root/.lifeos-tmux.conf new-session -d -s __keeper "sleep infinity"
+ExecStop=-/usr/bin/tmux -L lifeos kill-server
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+if command -v tmux >/dev/null 2>&1; then systemctl enable --now lifeos-tui.service >/dev/null 2>&1 || true; fi
+
 # ---------------------------------------------------------------- health ----
 echo "==> [5/6] health check"
 ok=0

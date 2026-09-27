@@ -146,6 +146,25 @@ const tmuxReady = (async () => {
       await tmuxRun('kill-session -t __lifeos_selftest')
     }
   }
+  // Подчистка брошенных сессий: панель могла перезапуститься, и её таймеры потерялись, а сессии
+  // tmux живут дальше. Смотрим время последней активности и закрываем те, что простояли дольше лимита.
+  if (tmuxPath) {
+    try {
+      const list = await tmuxRun("list-sessions -F '#{session_name} #{session_activity}'")
+      if (list.ok) {
+        const now = Math.floor(Date.now() / 1000)
+        for (const line of list.out.trim().split('\n')) {
+          const parts = line.trim().split(/\s+/)
+          const name = parts[0], act = parseInt(parts[1], 10)
+          if (!name || name === '__keeper' || !name.startsWith('lifeos-') || !act) continue
+          if (now - act > TMUX_KEEPALIVE_MS / 1000) {
+            console.log(`[tui] закрываю брошенную tmux-сессию ${name}`)
+            await tmuxRun(`kill-session -t ${name}`)
+          }
+        }
+      }
+    } catch {}
+  }
   console.log(`[tui] tmux: ${tmuxPath ? tmuxPath + ' — сессии переживают закрытие вкладки и перезапуск панели' : 'выключен, сессии умрут вместе с панелью'}`)
 })()
 
