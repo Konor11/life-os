@@ -474,12 +474,15 @@ export function ChatPanel({ fullscreen = false }) {
       touching = false
       // Инерция: палец отпущен, но список продолжает ехать с затуханием — как в мобильных лентах.
       if (Math.abs(flickPerTick) < 0.6) { flickPerTick = 0; return }
-      let v = flickPerTick
+      // Шаг между отчётами — 70 мс, не 16: приложение глотает слишком частые отчёты колеса
+      // (проверено: 5 отчётов с шагом 200 мс листают, а очередь с шагом 16 мс не двигает ничего).
+      let v = flickPerTick, ticks = 0
       flickTimer = setInterval(() => {
-        v *= 0.85
+        v *= 0.8
+        ticks += 1
         wheelReport(v > 0 ? Math.max(1, Math.round(v)) : Math.min(-1, Math.round(v)))
-        if (Math.abs(v) < 0.5) { stopFlick(); flickPerTick = 0 }
-      }, 16)
+        if (Math.abs(v) < 0.5 || ticks >= 8) { stopFlick(); flickPerTick = 0 }
+      }, 70)
     }
     const termEl = containerRef.current
     if (termEl) {
