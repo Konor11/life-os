@@ -990,8 +990,11 @@ export function ChatPanel({ fullscreen = false }) {
         />
       ))}
       {!showWeb && chatView === 'chat' && <TranscriptView agent={agent} themeDark={themeDark} />}
-      {!showWeb && chatView === 'tui' && (
-        <>
+      {/* Терминал НЕ размонтируем при переключении вида: размонтирование забирало DOM-узел xterm,
+          сам терминал и его WS оставались жить, и возврат в терминал показывал пустоту. Скрываем
+          так же, как уже сделано для web-интерфейсов движков ниже. */}
+      {!showWeb && (
+        <div className="flex-1 min-h-0 flex flex-col" style={{ display: chatView === 'tui' ? 'flex' : 'none' }}>
           {/* Ширина полосы прокрутки = 120 колонок при текущем шрифте: мелкий шрифт реально
               вмещает TUI в экран, крупный доступен горизонтальным свайпом. min-w-0 обязателен —
               без него flex-элемент растягивается под внутреннюю ширину и прокрутки не будет
@@ -1017,7 +1020,7 @@ export function ChatPanel({ fullscreen = false }) {
               <TermKeypad onSend={sendExternal} />
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   )
