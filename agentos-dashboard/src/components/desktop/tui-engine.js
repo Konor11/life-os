@@ -357,7 +357,13 @@ function ghosttyEngine(args) {
       if (SPECIAL[k]) { emit(SPECIAL[k]); ev.preventDefault() }
     })
     // Тап по терминалу поднимает клавиатуру: фокус обязан уйти в textarea внутри обработчика жеста.
-    el.addEventListener('pointerup', () => { try { sink.focus() } catch {} })
+    // Обработчиков три и все через setTimeout(0): Chromium при тапе фокусирует сам контейнер
+    // (у него tabIndex=0) синтетическим mousedown, который приходит ПОСЛЕ pointerup, и одиночный
+    // pointerup-обработчик проигрывал — фокус оставался на div и клавиатура не выезжала.
+    const grabFocus = () => setTimeout(() => { try { sink.focus() } catch {} }, 0)
+    el.addEventListener('pointerdown', grabFocus, { passive: true })
+    el.addEventListener('pointerup', grabFocus, { passive: true })
+    el.addEventListener('click', grabFocus, { passive: true })
     el.dataset.termEngine = 'ghostty'
     el.__ghostty = { t, renderer }
     for (const chunk of pendingWrites) { try { t.write(chunk) } catch {} }
