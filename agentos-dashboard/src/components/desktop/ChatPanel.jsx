@@ -473,10 +473,14 @@ export function ChatPanel({ fullscreen = false }) {
     const onTouchEnd = () => {
       touching = false
       // Инерция: палец отпущен, но список продолжает ехать с затуханием — как в мобильных лентах.
-      if (Math.abs(flickPerTick) < 0.6) { flickPerTick = 0; return }
+      // Скорость жеста в отладке недостоверна: Chromium склеивает синтетические touchmove, и после
+      // быстрого свайпа в сокет уходил всего один отчёт. Поэтому инерцию включаем ещё и по
+      // пройденному пути: если палец прошёл больше 4 строк, добавляем затухающий «довод».
+      let v = flickPerTick, ticks = 0
+      if (Math.abs(touchRows) >= 4) v = Math.sign(touchRows) * Math.max(Math.abs(v), 3)
+      if (Math.abs(v) < 0.6) { flickPerTick = 0; return }
       // Шаг между отчётами — 70 мс, не 16: приложение глотает слишком частые отчёты колеса
       // (проверено: 5 отчётов с шагом 200 мс листают, а очередь с шагом 16 мс не двигает ничего).
-      let v = flickPerTick, ticks = 0
       flickTimer = setInterval(() => {
         v *= 0.8
         ticks += 1
