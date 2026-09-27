@@ -1516,17 +1516,15 @@ async function waitForToken(id, maxWaitMs = 10000) {
   while (Date.now() - start < maxWaitMs) {
     try {
       const log = readFileSync(`/tmp/lifeos-web-${id}.log`, 'utf8')
-      console.log('[DEBUG waitForToken] log length:', log.length)
       const m = [...log.matchAll(/[?&]token=([A-Za-z0-9_\-]+)/g)]
-      if (m.length) {
-        const tok = m[m.length - 1][1]
-        console.log('[DEBUG waitForToken] found token:', tok)
-        return tok
-      }
-    } catch (e) { console.log('[DEBUG waitForToken] error:', e.message) }
+      if (m.length) return m[m.length - 1][1]
+    } catch {
+      // Лога ещё нет — движок только стартует, это норма, ждём молча. Раньше здесь на КАЖДОЙ
+      // итерации (раз в 100 мс) писались две строки в journald, включая «error: ENOENT»: журнал
+      // забивался сотнями записей в секунду и зря жёг CPU/диск.
+    }
     await new Promise(r => setTimeout(r, 100))
   }
-  console.log('[DEBUG waitForToken] timeout, no token found')
   return null
 }
 
