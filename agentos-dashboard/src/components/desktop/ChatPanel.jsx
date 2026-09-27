@@ -393,6 +393,41 @@ export function ChatPanel({ fullscreen = false }) {
       try { fit.fit() } catch {}
       return { cols: term.cols, rows: term.rows }
     }
+    // Прокрутка буфера пальцем. Hermes-TUI включает мышиный протокол, поэтому жест уходит приложению
+    // как отчёт мыши, а скроллбек xterm не двигается — листать TUI было невозможно. Двигаем буфер сами:
+    // считаем, сколько строк прошёл палец, и выставляем viewport xterm. Внизу жест ничего не ломает:
+    // тап остаётся тапом (движения нет — preventDefault не вызывается), а дойдя до конца, вид
+    // возвращается к живому хвосту вывода.
+    let touchY = 0, touchLine = 0, touching = false
+    const rowHeight = () => {
+      const r = containerRef.current && containerRef.current.querySelector('.xterm-rows > div')
+      const h = r && r.getBoundingClientRect().height
+      return h || ((term.options.fontSize || 14) * 1.2)
+    }
+    const onTouchStart = (ev) => {
+      if (ev.touches.length !== 1) return
+      touching = true
+      touchY = ev.touches[0].clientY
+      touchLine = term.buffer.active.viewportY
+    }
+    const onTouchMove = (ev) => {
+      if (!touching || ev.touches.length !== 1) return
+      const rowsMoved = Math.round((ev.touches[0].clientY - touchY) / rowHeight())
+      if (!rowsMoved) return
+      const target = Math.max(0, Math.min(term.buffer.active.baseY, touchLine - rowsMoved))
+      if (target !== term.buffer.active.viewportY) {
+        try { term.scrollToLine(target) } catch {}
+        ev.preventDefault()   // жест наш: приложению отчётов мыши не отправляем
+      }
+    }
+    const onTouchEnd = () => { touching = false }
+    const termEl = containerRef.current
+    if (termEl) {
+      termEl.addEventListener('touchstart', onTouchStart, { passive: true })
+      termEl.addEventListener('touchmove', onTouchMove, { passive: false })
+      termEl.addEventListener('touchend', onTouchEnd, { passive: true })
+      termEl.addEventListener('touchcancel', onTouchEnd, { passive: true })
+    }
     let pendingWrite = ''
     let flushRaf = 0
     let gotData = false
@@ -591,6 +626,12 @@ export function ChatPanel({ fullscreen = false }) {
     // контейнере и смена кегля.
 
     return () => {
+      if (termEl) {
+        termEl.removeEventListener('touchstart', onTouchStart)
+        termEl.removeEventListener('touchmove', onTouchMove)
+        termEl.removeEventListener('touchend', onTouchEnd)
+        termEl.removeEventListener('touchcancel', onTouchEnd)
+      }
       try { themeObserver.disconnect() } catch {}
       try { keepSizeInSync.dispose() } catch {}
       if (ro) { try { ro.disconnect() } catch {} }
