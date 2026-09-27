@@ -28,9 +28,9 @@ export const TERM_KEY = 'lifeos.chat.term'
 export function preferredEngine() {
   try {
     const q = new URLSearchParams(window.location.search).get('term')
-    if (q === 'xterm' || q === 'rio') return q
+    if (q === 'xterm' || q === 'rio' || q === 'ghostty') return q
     const s = window.localStorage.getItem(TERM_KEY)
-    if (s === 'xterm' || s === 'rio') return s
+    if (s === 'xterm' || s === 'rio' || s === 'ghostty') return s
   } catch { /* приватный режим и т.п. */ }
   // По умолчанию — xterm.js. rioterm (вариант B) работает и включён одной кнопкой в тулбаре
   // (или ?term=rio), но у него воспроизводится пустой канвас: движок поднимается, размеры и
@@ -240,6 +240,112 @@ function rioEngine({ el, fontSize, theme, scrollback, cols, rows, onFallback }) 
   }
 }
 
+// ghostty — VT-ядро Ghostty (libghostty-vt) через WebAssembly, npm `ghostty-web`. Библиотека ниже
+// уровнем, чем xterm.js: сам эмулятор (GhosttyTerminal), канвас-рендерер и обработчик ввода
+// собираются руками. Наружу — та же поверхность xterm.js, что у rioterm, и тот же путь отката.
+// Отличие от rioterm: этот же терминал отвечает на запросы терминала (XTVERSION, цвет фона),
+// которые Hermes-TUI сейчас шлёт в пустоту, — из-за молчания терминала он и путается с режимами.
+function ghosttyEngine(args) {
+  const { el, scrollback, cols, rows, onFallback } = args
+  let fontSize = args.fontSize
+  let theme = args.theme
+  const dataListeners = new Set()
+  const resizeListeners = new Set()
+  let t = null, renderer = null, input = null, disposed = false, ready = false
+  let pendingWrites = []
+  let size = { cols, rows }
+  const readyCbs = []
+
+  const fire = () => { ready = true; for (const cb of readyCbs.splice(0)) { try { cb() } catch {} } }
+  const notifyResize = () => {
+    if (!t) return
+    const c = t.cols, r = t.rows
+    if (c === size.cols && r === size.rows) return
+    size = { cols: c, rows: r }
+    for (const cb of resizeListeners) { try { cb({ cols: c, rows: r }) } catch {} }
+  }
+  const paint = (force) => {
+    if (!t || !renderer || disposed) return
+    let full = force === true
+    try {
+      const d = t.update()
+      full = full || d === 'full' || t.needsFullRedraw()
+    } catch {}
+    try { renderer.render(t, full) } catch {}
+    try { t.markClean() } catch {}
+  }
+  const refit = () => {
+    if (!t || !renderer) return
+    try { renderer.remeasureFont() } catch {}
+    try { renderer.resize(t.cols, t.rows) } catch {}
+    paint(true)
+  }
+
+  ;(async () => {
+    const mod = await import('ghostty-web')
+    try { if (mod.init) await mod.init() } catch {}
+    const ghostty = await mod.Ghostty.load()
+    if (disposed) return
+    try { el.innerHTML = '' } catch {}
+    const canvas = document.createElement('canvas')
+    canvas.style.display = 'block'
+    el.appendChild(canvas)
+    t = ghostty.createTerminal(size.cols, size.rows, { scrollbackLimit: scrollback || 2000 })
+    renderer = new mod.CanvasRenderer(canvas, {
+      fontSize, fontFamily: 'monospace', cursorBlink: false, theme,
+      devicePixelRatio: window.devicePixelRatio || 1,
+    })
+    input = new mod.InputHandler(ghostty, el, (d) => {
+      for (const cb of dataListeners) { try { cb(d) } catch {} }
+    }, () => {})
+    el.dataset.termEngine = 'ghostty'
+    el.__ghostty = { t, renderer }
+    for (const chunk of pendingWrites) { try { t.write(chunk) } catch {} }
+    pendingWrites = []
+    fire()
+    notifyResize()
+    refit()
+    // Канвас у таких движков может остаться незакрашенным, если контейнер не был разложен в момент
+    // создания (у rioterm это ловилось): просим кадр ещё несколько раз по мере раскладки.
+    for (const d of [60, 300, 1000, 2500]) setTimeout(() => { if (!disposed) refit() }, d)
+  })().catch((e) => {
+    if (!disposed) { try { onFallback && onFallback(String((e && e.message) || e)) } catch {} }
+  })
+
+  return {
+    term: {
+      get cols() { return t ? t.cols : size.cols },
+      get rows() { return t ? t.rows : size.rows },
+      whenReady(cb) { if (ready) { try { cb() } catch {} } else readyCbs.push(cb) },
+      options: {
+        get fontSize() { return fontSize },
+        set fontSize(n) { fontSize = n; refit() },
+        get theme() { return theme },
+        set theme(th) { theme = th; if (renderer) { try { renderer.theme = th } catch {} } refit() },
+      },
+      write(d) { if (t) { try { t.write(d) } catch {} ; paint(false) } else pendingWrites.push(d) },
+      writeln(d) { this.write((d || '') + '\r\n') },
+      refresh() { paint(true) },
+      clear() { this.write('\x1b[2J\x1b[H') },
+      reset() { this.write('\x1b[2J\x1b[H') },
+      focus() { try { el.focus() } catch {} },
+      open() {}, loadAddon() {},
+      dispose() {
+        disposed = true
+        try { input && input.dispose && input.dispose() } catch {}
+        try { t && t.free && t.free() } catch {}
+        try { renderer && renderer.dispose && renderer.dispose() } catch {}
+        t = null; renderer = null; input = null
+      },
+      onData(fn) { dataListeners.add(fn); return { dispose: () => dataListeners.delete(fn) } },
+      onResize(fn) { resizeListeners.add(fn); return { dispose: () => resizeListeners.delete(fn) } },
+      getSelection() { return '' },
+    },
+    fit: { fit() {}, proposeDimensions() { return { cols: size.cols, rows: size.rows } } },
+    kind: 'ghostty',
+  }
+}
+
 // Один живой движок на контейнер. Эффект ChatPanel перезапускается (переключение Web/TUI, смена
 // профиля, смена движка), и два инстанса в одном контейнере оставляли видимым пустой канвас.
 const instances = new WeakMap()
@@ -250,6 +356,19 @@ export function createTuiEngine(args) {
   const remember = (e) => { try { instances.set(args.el, e) } catch {} ; return e }
   const kind = preferredEngine()
   if (kind === 'xterm') return remember(xtermEngine(args))
+  if (kind === 'ghostty') {
+    return remember(ghosttyEngine({
+      ...args,
+      onFallback: (why) => {
+        try { console.warn('[tui] ghostty недоступен, переходим на xterm.js:', why) } catch {}
+        setPreferredEngine('xterm')
+        try { args.el.innerHTML = '' } catch {}
+        const fallback = xtermEngine(args)
+        args.el.dataset.termEngine = 'xterm'
+        args.onFallbackReady && args.onFallbackReady(fallback)
+      },
+    }))
+  }
   try {
     return remember(rioEngine({
       ...args,

@@ -87,6 +87,7 @@ export function SettingsPanel() {
               {[
                 { id: 'xterm', name: 'xterm.js', note: 'проверенный, стоит по умолчанию' },
                 { id: 'rio', name: 'rioterm (WebAssembly)', note: 'другой движок: VT-ядро Rio; экспериментальный' },
+                { id: 'ghostty', name: 'ghostty (WebAssembly)', note: 'VT-ядро Ghostty; отвечает на запросы терминала' },
               ].map(o => (
                 <div key={o.id} className="flex items-center justify-between py-1.5 px-2 bg-bg-elevated rounded-md">
                   <span className="flex flex-col text-sm text-text">
