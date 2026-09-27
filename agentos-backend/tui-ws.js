@@ -186,6 +186,10 @@ export function attachTuiServer(app, server) {
         // кадра — приложение пишет только изменившиеся клетки, а физический терминал хранит старый
         // текст. С переменной включается dashboard-режим (hermes-ink/termio/host.ts).
         HERMES_PTY_HOST: 'dashboard',
+        // Мобильный браузер: протокол мыши перехватывает тапы, скрытое поле ввода не получает фокус
+        // и экранная клавиатура не выезжает. В самом Hermes для Termux мышь выключена ровно поэтому;
+        // HERMES_TUI_MOUSE_TRACKING — «силовой» переключатель (ui-tui/src/config/env.ts).
+        HERMES_TUI_MOUSE_TRACKING: '0',
         PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
       delete ptyEnv.HERMES_TUI_GATEWAY_URL
       delete ptyEnv.HERMES_TUI_SIDECAR_URL

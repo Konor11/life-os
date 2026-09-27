@@ -419,7 +419,28 @@ export function ChatPanel({ fullscreen = false }) {
     const scheduleCleanRepaint = () => {
       if (repaintTimer) clearTimeout(repaintTimer)
       // Всплеск мелких изменений высоты (адресная строка Chrome, тулбар) → одна перерисовка.
-      repaintTimer = setTimeout(refreshScreen, 600)
+      // refreshScreen() перерисовывает буфер на клиенте, но НЕ заставляет приложение переписать
+      // клетки, которые его diff считает верными: после смены раскладки там остаётся хвост прежнего
+      // кадра (на скрине — «…| 41s | voiceoff» под живой строкой статуса). Поэтому после смены
+      // размера просим полный кадр у приложения и подчищаем то, что осталось ниже его кадра.
+      repaintTimer = setTimeout(() => {
+        refreshScreen()
+        const ws = wsRef.current
+        if (ws && ws.readyState === 1) {
+          try { ws.send(JSON.stringify({ type: 'repaint', cols: term.cols, rows: term.rows })) } catch {}
+        }
+        // Приложение паркует курсор на своей последней строке (ESC[<rows>;1H). Всё, что ниже, — не
+        // его: если курсор стоит выше последней строки, стираем остаток, чтобы «призрак» не висел.
+        setTimeout(() => {
+          try {
+            const cy = term.buffer && term.buffer.active ? term.buffer.active.cursorY : -1
+            if (cy >= 0 && cy < term.rows - 1) {
+              term.write('\x1b[' + (cy + 2) + ';1H\x1b[J')
+              refreshScreen()
+            }
+          } catch {}
+        }, 900)
+      }, 700)
     }
     const doResize = () => {
       // Размер ДО подгонки: applyFit() внутри вызывает fit(), который сам поднимает onResize и
