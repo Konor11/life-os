@@ -342,10 +342,25 @@ function ghosttyEngine(args) {
       ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D',
       Home: '\x1b[H', End: '\x1b[F', Delete: '\x1b[3~', PageUp: '\x1b[5~', PageDown: '\x1b[6~',
     }
-    sink.addEventListener('input', () => {
-      const v = sink.value
+    // Ввод IME (Gboard с русской раскладкой и автозаменой). Прежняя версия отдавала ВСЁ содержимое
+    // поля и сразу его очищала: Gboard переиспользовал своё предиктивное состояние и один символ
+    // уходил 2-3 раза (в записи потока видно 'ж','ж' с разницей 1 мс, 'р','р','р' — так не печатают,
+    // отсюда и «мусор» вроде длжжррроо в приглашении). Поэтому: отдаём только вставленный фрагмент
+    // (event.data), а во время композиции IME вообще молчим — текст заберём по compositionend.
+    let composing = false
+    sink.addEventListener('compositionstart', () => { composing = true })
+    sink.addEventListener('compositionend', (ev) => {
+      composing = false
+      const d = ev.data || sink.value
       sink.value = ''
-      if (v) emit(v)
+      if (d) emit(d)
+    })
+    sink.addEventListener('input', (ev) => {
+      if (composing || ev.isComposing) return
+      const d = ev.data
+      if (d) emit(d)
+      else { const v = sink.value; if (v) emit(v) }
+      sink.value = ''
     })
     sink.addEventListener('keydown', (ev) => {
       const k = ev.key
