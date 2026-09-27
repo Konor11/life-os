@@ -573,6 +573,13 @@ export function ChatPanel({ fullscreen = false }) {
       doResize()   // меряем строки по контейнеру и чистим экран при смене размера
     }
     window.addEventListener('resize', onResize)
+    // Тап по терминалу = явный фокус на скрытом поле ввода xterm. Без этого на Android клавиатура
+    // не выезжает: TUI держит включённым протокол мыши (DEC 1000/1002/1003/1006), и тапы уходят
+    // приложению отчётами мыши, а поле ввода фокус не получает. Фокус обязан происходить внутри
+    // обработчика жеста — иначе Chrome клавиатуру не показывает.
+    const focusOnTap = () => { try { term.focus() } catch {} }
+    const tapHost = containerRef.current
+    if (tapHost) tapHost.addEventListener('pointerup', focusOnTap, { passive: true })
     // ВАЖНО: на выезд экранной клавиатуры НЕ реагируем. Она меняет только visual viewport, а
     // раскладка страницы остаётся прежней, поэтому переразмечать терминал по ней не нужно — и
     // вредно: каждая смена числа строк заставляет TUI-приложение перерисовать кадр, и его нижняя
@@ -586,6 +593,7 @@ export function ChatPanel({ fullscreen = false }) {
       if (ro) { try { ro.disconnect() } catch {} }
       onData.dispose()
       window.removeEventListener('resize', onResize)
+      if (tapHost) tapHost.removeEventListener('pointerup', focusOnTap)
       if (repaintTimer) clearTimeout(repaintTimer)
       if (sizeTimer) clearTimeout(sizeTimer)
       // таймерной чистки кадра больше нет: она давала видимую вспышку каждые 15 с
