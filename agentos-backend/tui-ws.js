@@ -178,7 +178,12 @@ export function attachTuiServer(app, server) {
         console.log(`[tui] re-attached engine=${engine} profile=${profile} — no replay (client repaints)`)
       }
     } else {
-      const ptyEnv = { ...process.env, TERM: 'xterm-256color', OPENROUTER_API_KEY: OPENROUTER_KEY,
+      // HERMES_PTY_HOST=dashboard — официальный признак «TUI зеркалят в веб-терминал» (его же ставит
+      // hermes_cli/pty_bridge.py). Без него приложение считает, что перед ним обычный терминал, и
+      // рисует кадр диффом, оставляя на экране строки, которые больше не перерисовывает: после /help
+      // внизу остаётся старая статусная строка рядом с новой.
+      const ptyEnv = { ...process.env, TERM: 'xterm-256color', HERMES_PTY_HOST: 'dashboard',
+        OPENROUTER_API_KEY: OPENROUTER_KEY,
         PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
       delete ptyEnv.HERMES_TUI_GATEWAY_URL
       delete ptyEnv.HERMES_TUI_SIDECAR_URL
