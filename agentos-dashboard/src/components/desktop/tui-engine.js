@@ -283,8 +283,10 @@ function ghosttyEngine(args) {
 
   ;(async () => {
     const mod = await import('ghostty-web')
-    try { if (mod.init) await mod.init() } catch {}
-    const ghostty = await mod.Ghostty.load()
+    // Ядро грузим со своего домена: ghostty-web по умолчанию тянет wasm инлайновым data:-URL, а его
+    // режет наш CSP (connect-src). Файл лежит в public/ghostty-vt.wasm и отдаётся с того же origin.
+    let ghostty = null
+    try { ghostty = await mod.Ghostty.load('/ghostty-vt.wasm') } catch (e1) { ghostty = await mod.Ghostty.load() }
     if (disposed) return
     try { el.innerHTML = '' } catch {}
     const canvas = document.createElement('canvas')
