@@ -274,11 +274,37 @@ function ghosttyEngine(args) {
     try { renderer.render(t, full) } catch {}
     try { t.markClean() } catch {}
   }
+  // Размер сетки считаем по контейнеру и метрикам шрифта: у ghostty нет FitAddon, как у xterm.js.
+  const measureCell = () => {
+    const c = document.createElement('canvas')
+    const g = c.getContext('2d')
+    g.font = fontSize + 'px monospace'
+    return { w: Math.max(1, Math.round(g.measureText('M').width)), h: Math.max(1, Math.round(fontSize)) }
+  }
+  const propose = () => {
+    const m = measureCell()
+    return {
+      cols: Math.max(20, Math.floor((el.clientWidth || m.w * 80) / m.w)),
+      rows: Math.max(5, Math.floor((el.clientHeight || m.h * 24) / m.h)),
+    }
+  }
+  const applyFit = () => {
+    if (!t || !renderer || disposed) return
+    const p = propose()
+    if (p.cols !== t.cols || p.rows !== t.rows) {
+      try { t.resize(p.cols, p.rows) } catch {}
+      try { renderer.resize(p.cols, p.rows) } catch {}
+      size = { cols: p.cols, rows: p.rows }
+      notifyResize()
+    } else {
+      try { renderer.resize(t.cols, t.rows) } catch {}
+    }
+    paint(true)
+  }
   const refit = () => {
     if (!t || !renderer) return
     try { renderer.remeasureFont() } catch {}
-    try { renderer.resize(t.cols, t.rows) } catch {}
-    paint(true)
+    applyFit()
   }
 
   ;(async () => {
@@ -304,9 +330,12 @@ function ghosttyEngine(args) {
     el.__ghostty = { t, renderer }
     for (const chunk of pendingWrites) { try { t.write(chunk) } catch {} }
     pendingWrites = []
-    fire()
-    notifyResize()
+    // Сначала подгоняем сетку под контейнер и только потом объявляем готовность: ChatPanel
+    // подключает PTY на whenReady, и с размером-заглушкой (120x40) приложение родилось бы не в том
+    // размере — ровно та ошибка, из-за которой раньше склеивалась нижняя панель.
     refit()
+    notifyResize()
+    fire()
     // Канвас у таких движков может остаться незакрашенным, если контейнер не был разложен в момент
     // создания (у rioterm это ловилось): просим кадр ещё несколько раз по мере раскладки.
     for (const d of [60, 300, 1000, 2500]) setTimeout(() => { if (!disposed) refit() }, d)
@@ -343,7 +372,10 @@ function ghosttyEngine(args) {
       onResize(fn) { resizeListeners.add(fn); return { dispose: () => resizeListeners.delete(fn) } },
       getSelection() { return '' },
     },
-    fit: { fit() {}, proposeDimensions() { return { cols: size.cols, rows: size.rows } } },
+    fit: {
+      fit() { applyFit() },
+      proposeDimensions() { return t ? propose() : { cols: size.cols, rows: size.rows } },
+    },
     kind: 'ghostty',
   }
 }
