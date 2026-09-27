@@ -425,8 +425,9 @@ export function ChatPanel({ fullscreen = false }) {
     // Поэтому движение пальца переводим в отчёты колеса SGR (64 — вверх, 65 — вниз): одна строка
     // пальца = один отчёт. Тап остаётся тапом (нет движения — ничего не отправляем).
     let touchY = 0, touchRows = 0, touching = false
-    let flickTimer = null, flickPerTick = 0, lastMoveAt = 0
+    let flickTimer = null, flickPerTick = 0, lastMoveAt = 0, idleTimer = null
     const stopFlick = () => { if (flickTimer) { clearInterval(flickTimer); flickTimer = null } }
+    const clearIdle = () => { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null } }
     const rowHeight = () => {
       const r = containerRef.current && containerRef.current.querySelector('.xterm-rows > div')
       const h = r && r.getBoundingClientRect().height
@@ -471,9 +472,16 @@ export function ChatPanel({ fullscreen = false }) {
       // скорость в строках на кадр (16 мс) — из неё получится инерция после отпускания
       flickPerTick = Math.max(-6, Math.min(6, (steps / dt) * 16))
       wheelReport(steps)
+      // `touchend` приходит не всегда: если палец ушёл с элемента или жест прервали, браузер молчит
+      // (проверено в отладке: до обработчика дошли только start/move). Поэтому конец жеста
+      // определяем ещё и по паузе в движениях — 120 мс без событий считаем отпусканием.
+      clearIdle()
+      idleTimer = setTimeout(() => onTouchEnd(), 120)
       ev.preventDefault()
     }
     const onTouchEnd = () => {
+      clearIdle()
+      if (!touching) return
       touching = false
       // Инерция: палец отпущен, но список продолжает ехать с затуханием — как в мобильных лентах.
       // Скорость жеста в отладке недостоверна: Chromium склеивает синтетические touchmove, и после
@@ -710,6 +718,7 @@ export function ChatPanel({ fullscreen = false }) {
       if (ro) { try { ro.disconnect() } catch {} }
       onData.dispose()
       stopFlick()
+      clearIdle()
       window.removeEventListener('resize', onResize)
       if (repaintTimer) clearTimeout(repaintTimer)
       if (sizeTimer) clearTimeout(sizeTimer)
