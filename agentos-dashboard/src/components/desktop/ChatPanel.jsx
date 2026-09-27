@@ -403,6 +403,18 @@ export function ChatPanel({ fullscreen = false }) {
       if (d) { try { term.write(d) } catch {} }
     }
     let lastSentSize = ''
+    // Ширину менять можно, высоту — нет. Показ/скрытие экранной клавиатуры меняет высоту десятки раз
+    // за анимацию, и каждый SIGWINCH заставляет Ink перерисовать кадр целиком: старые кадры копятся в
+    // скроллбеке, и внизу остаются копии строки статуса (после /help их видно две подряд — одна со
+    // старым таймером). Тот же вывод уже зафиксирован в SplitPane: там на мобильном PTY не ресайзят
+    // вообще. Поэтому в PTY уходит только смена ШИРИНЫ (поворот, смена кегля), а высота — подгонка вида.
+    let lastSentCols = 0
+    const sendSizeToPty = () => {
+      if (!wsRef.current || wsRef.current.readyState !== 1) return
+      if (term.cols === lastSentCols) return
+      lastSentCols = term.cols
+      wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+    }
     // Смена размера идёт сериями: выезд экранной клавиатуры — это десятки кадров анимации, каждый
     // со своей высотой. Отправлять resize на каждый кадр нельзя: приложение перерисовывает кадр
     // столько же раз, и нижняя строка остаётся копиями. Склеиваем серию в одно сообщение.
@@ -410,8 +422,7 @@ export function ChatPanel({ fullscreen = false }) {
     const sendSizeSoon = () => {
       if (sizeTimer) clearTimeout(sizeTimer)
       sizeTimer = setTimeout(() => {
-        if (!wsRef.current || wsRef.current.readyState !== 1) return
-        wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+        sendSizeToPty()
         scheduleCleanRepaint()
       }, 250)
     }
@@ -524,8 +535,9 @@ export function ChatPanel({ fullscreen = false }) {
         // PTY рождается с rows, посчитанными ДО финальной раскладки, и Ink тогда рисует кадр
         // выше/ниже видимой области.
         setTimeout(() => {
-          if (!wsRef.current || wsRef.current.readyState !== 1) return
-          try { wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows })) } catch {}
+          // один раз после коннекта: PTY рождается с размерами ДО финальной раскладки
+          lastSentCols = 0
+          sendSizeToPty()
         }, 500)
       }
       ws.onmessage = (ev) => {
