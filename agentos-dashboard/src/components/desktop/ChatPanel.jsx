@@ -477,7 +477,8 @@ export function ChatPanel({ fullscreen = false }) {
       // быстрого свайпа в сокет уходил всего один отчёт. Поэтому инерцию включаем ещё и по
       // пройденному пути: если палец прошёл больше 4 строк, добавляем затухающий «довод».
       let v = flickPerTick, ticks = 0
-      if (Math.abs(touchRows) >= 4) v = Math.sign(touchRows) * Math.max(Math.abs(v), 3)
+      const dist = Math.abs(touchRows)
+      if (dist >= 3) v = Math.sign(touchRows) * Math.max(Math.abs(v), Math.min(4, 1 + dist / 4))
       if (Math.abs(v) < 0.6) { flickPerTick = 0; return }
       // Шаг между отчётами — 70 мс, не 16: приложение глотает слишком частые отчёты колеса
       // (проверено: 5 отчётов с шагом 200 мс листают, а очередь с шагом 16 мс не двигает ничего).
