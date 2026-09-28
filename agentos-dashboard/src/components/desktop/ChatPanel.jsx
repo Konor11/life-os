@@ -96,12 +96,14 @@ const KEYPAD_KEY = 'lifeos.chat.keypad'
 function storedKeypad() {
   try { const v = localStorage.getItem(KEYPAD_KEY); return v === null ? true : v === '1' } catch { return true }
 }
-const FONT_KEY = 'lifeos.chat.fontSize'
+// Кегль терминала — СВОЙ у каждого движка: на Codex удобно 11, на Hermes 5, и они не должны
+// затирать друг друга. Хранение per-engine: lifeos.chat.fontSize.<engine>, по умолчанию 11.
 const FONT_MIN = 4
 const FONT_MAX = 24
-function storedFontSize() {
+const fontKeyFor = (engine) => `lifeos.chat.fontSize.${engine || 'hermes'}`
+function storedFontSize(engine) {
   try {
-    const v = parseInt(localStorage.getItem(FONT_KEY), 10)
+    const v = parseInt(localStorage.getItem(fontKeyFor(engine)), 10)
     if (Number.isFinite(v)) return Math.min(FONT_MAX, Math.max(FONT_MIN, v))
   } catch {}
   return 11
@@ -156,7 +158,7 @@ export function ChatPanel({ fullscreen = false }) {
   const [agent, setAgent] = useState('default')
   const [engine, setEngine] = useState('hermes')
   const [conn, setConn] = useState('disconnected')
-  const [fontSize, setFontSize] = useState(storedFontSize)
+  const [fontSize, setFontSize] = useState(() => storedFontSize(engine))
   const [webPorts, setWebPorts] = useState({})  // engineId -> port (harness web UIs)
   const [webState, setWebState] = useState('stopped')  // stopped|starting|running
   const [webToken, setWebToken] = useState(null)
@@ -385,6 +387,16 @@ export function ChatPanel({ fullscreen = false }) {
   // в списке зависимостей они читаются прямо во время рендера (TDZ-ошибка иначе).
   useEffect(() => { if (engine === 'hermes' && !showWeb) loadProfiles() }, [engine, showWeb, loadProfiles])
 
+  // Кегль per-engine: при смене движка подставляем ЕГО сохранённый размер (по умолчанию 11).
+  // Живой терминал (если уже поднят) обновляем сразу — и триггерим чистую переразметку: смена
+  // кегля меняет ширину знакомест.
+  useEffect(() => {
+    const nf = storedFontSize(engine)
+    setFontSize(prev => (prev === nf ? prev : nf))
+    const t = termRef.current
+    if (t) { t.options.fontSize = nf; try { fitRef.current?.fit() } catch {}; doResizeRef.current?.() }
+  }, [engine])
+
   // OpenCode v2 web (>=2.0.14) routes: /server/:serverKey/session/:id, where
   // serverKey is base64 of the server URL. The origin is the domain entered at install
   // time (falls back to the historical default when the install recorded none).
@@ -407,7 +419,7 @@ export function ChatPanel({ fullscreen = false }) {
   const changeFont = (delta) => {
     setFontSize(prev => {
       const nf = Math.min(FONT_MAX, Math.max(FONT_MIN, prev + delta))
-      try { localStorage.setItem(FONT_KEY, String(nf)) } catch {}
+      try { localStorage.setItem(fontKeyFor(engine), String(nf)) } catch {}
       const t = termRef.current
       if (t) { t.options.fontSize = nf; try { fitRef.current?.fit() } catch {} }
       // Кегль меняет ширину знакоместа → нужен чистый кадр. Полагаться на fit() нельзя: если
@@ -463,7 +475,7 @@ export function ChatPanel({ fullscreen = false }) {
     // Наружу он отдаёт поверхность xterm.js, поэтому вся логика ниже не зависит от движка.
     const { term, fit, kind: termKind } = createTuiEngine({
       el,
-      fontSize: storedFontSize(),
+      fontSize: storedFontSize(engine),
       theme: getXtermTheme(),
       scrollback: 2000,
       cols: 120,
