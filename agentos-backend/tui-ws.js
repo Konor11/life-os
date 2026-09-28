@@ -321,11 +321,20 @@ export function attachTuiServer(app, server) {
       syncOpencodeTheme(u.query.theme)
       const tname = tmuxSessionName(engine, profile)
       const existed = await tmuxAlive(tname)
+      // tmux отдаёт новой панели ОГРАНИЧЕННЫЙ список переменных окружения (update-environment):
+      // HERMES_TUI_THEME и HERMES_PTY_HOST до движка не дошли бы. Пробрасываем нужные явно,
+      // командой самой панели — это единственный надёжный путь (set-environment не помогает
+      // самой первой сессии: сервер ещё не запущен).
+      const paneCmd = ['env',
+        `HERMES_PTY_HOST=${ptyEnv.HERMES_PTY_HOST}`,
+        `HERMES_TUI_THEME=${hermesTheme}`,
+        ...(ptyEnv.OPENROUTER_API_KEY ? [`OPENROUTER_API_KEY=${ptyEnv.OPENROUTER_API_KEY}`] : []),
+        built.cmd, ...built.args]
       let pty
       try {
         pty = spawn(tmuxPath,
           ['-L', TMUX_SOCKET, '-f', TMUX_CONF, 'new-session', '-A', '-s', tname,
-            '-x', String(qcols), '-y', String(qrows), built.cmd, ...built.args],
+            '-x', String(qcols), '-y', String(qrows), ...paneCmd],
           { name: 'xterm-256color', cols: qcols, rows: qrows, cwd: built.cwd || '/root', env: ptyEnv })
       } catch (e) {
         console.error(`[tui] tmux spawn failed engine=${engine}: ${e.message}`)
