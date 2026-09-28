@@ -374,7 +374,7 @@ const HARNESSES_DEF = [
     install: "export CODEX_NON_INTERACTIVE=true; curl -fsSL https://chatgpt.com/codex/install.sh | sh",
     desc: 'OpenAI Codex — официальный установщик OpenAI (не npm).',
     provider: 'OpenAI', key: 'OPENAI_API_KEY',
-    uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null); rm -rf /root/.codex /root/.local/share/codex /root/.cache/codex /root/.codex_auth.json",
+    uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null) /root/.local/bin/codex; rm -rf /root/.codex /root/.local/share/codex /root/.cache/codex /root/.codex_auth.json",
   },
   {
     id: 'claude', name: 'Claude Code', bin: ['claude', 'claude-code'],
@@ -383,7 +383,9 @@ const HARNESSES_DEF = [
     install: "curl -fsSL https://claude.ai/install.sh | bash",
     desc: 'Anthropic Claude Code. Официально: установщик от Anthropic (npm помечен deprecated).',
     provider: 'Anthropic', key: 'ANTHROPIC_API_KEY',
-    uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/local/bin/claude* $(command -v claude 2>/dev/null) /root/.local/bin/claude*; rm -rf /root/.claude /root/.config/claude /root/.local/share/claude",
+    // Хвосты Claude Code, которые оставлял прежний uninstall и которые находил find после него:
+// /root/.claude.json, /root/.cache/claude, /root/.local/state/claude (проверено на сервере).
+uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/local/bin/claude* $(command -v claude 2>/dev/null) /root/.local/bin/claude*; rm -rf /root/.claude /root/.claude.json /root/.config/claude /root/.local/share/claude /root/.local/state/claude /root/.cache/claude",
   },
   {
     id: 'openclaw', name: 'OpenClaw', bin: ['openclaw'],
