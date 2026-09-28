@@ -367,21 +367,27 @@ const HARNESSES_DEF = [
     },
   {
     id: 'codex', name: 'Codex', bin: ['codex'],
-    install: "curl -fsSL https://chatgpt.com/codex/install.sh | sh </dev/null",
+    // НЕЛЬЗЯ писать `| sh </dev/null`: редирект подменяет stdin самой оболочке, которая должна
+    // прочитать скрипт из пайпа — shell читает EOF, сразу выходит с кодом 0, а curl репортит
+    // «curl: (23) Failure writing output, passed ~1.4KB» и ничего не ставится (проверено: оба
+    // инсталла падали именно так). Неинтерактивность задаём флагом самого установщика.
+    install: "export CODEX_NON_INTERACTIVE=true; curl -fsSL https://chatgpt.com/codex/install.sh | sh",
     desc: 'OpenAI Codex — официальный установщик OpenAI (не npm).',
     provider: 'OpenAI', key: 'OPENAI_API_KEY',
     uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null); rm -rf /root/.codex /root/.local/share/codex /root/.cache/codex /root/.codex_auth.json",
   },
   {
     id: 'claude', name: 'Claude Code', bin: ['claude', 'claude-code'],
-    install: "curl -fsSL https://claude.ai/install.sh | bash </dev/null",
+    // `curl | bash` без `</dev/null`: stdin занят самим скриптом, установщик и так не может
+    // спрашивать интерактивно (см. комментарий у codex).
+    install: "curl -fsSL https://claude.ai/install.sh | bash",
     desc: 'Anthropic Claude Code. Официально: установщик от Anthropic (npm помечен deprecated).',
     provider: 'Anthropic', key: 'ANTHROPIC_API_KEY',
     uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/local/bin/claude* $(command -v claude 2>/dev/null) /root/.local/bin/claude*; rm -rf /root/.claude /root/.config/claude /root/.local/share/claude",
   },
   {
     id: 'openclaw', name: 'OpenClaw', bin: ['openclaw'],
-    install: "curl -fsSL https://openclaw.ai/install.sh | bash </dev/null",
+    install: "curl -fsSL https://openclaw.ai/install.sh | bash",
     desc: 'Multi-channel AI gateway. Официальный установщик (npm требует Node 24.16+).',
     provider: 'OpenRouter', key: null,
     web: { port: 18789, cmd: 'systemctl --user start openclaw-gateway' },
