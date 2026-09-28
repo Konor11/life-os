@@ -372,10 +372,21 @@ export function ChatPanel({ fullscreen = false }) {
   // On theme switch: xterm re-themes via applyTheme (mutation observer) and the
   // running TUI is told over WS so the backend syncs opencode's cli.json
   // (theme.mode hot-reloads inside the running TUI).
+  const firstThemeRun = useRef(true)
   useEffect(() => {
+    const prev = themeDarkRef.current
     themeDarkRef.current = themeDark
     try { wsRef.current?.send(JSON.stringify({ type: 'theme', theme: themeDark ? 'dark' : 'light' })) } catch {}
-  }, [themeDark])
+    // Hermes-TUI читает тему только при старте (HERMES_TUI_THEME), живьём её не поменять.
+    // Поэтому при смене темы панели перезапускаем сессию ТУТ ЖЕ — но только если агент не занят
+    // (работающий ход не прерываем: пусть пользователь нажмёт 🔄 сам после ответа).
+    if (firstThemeRun.current) { firstThemeRun.current = false; return }
+    if (prev === themeDark) return   // эффект перезапустился из-за engine/agentState, а не смены темы
+    if (engine !== 'hermes' || showWeb) return
+    if (agentState === AGENT_STATES.WORKING || agentState === AGENT_STATES.BLOCKED) return
+    const t = setTimeout(() => restartRef.current?.(), 400)
+    return () => clearTimeout(t)
+  }, [themeDark, engine, showWeb, agentState])
   useEffect(() => {
     const obs = new MutationObserver(() => {
       setThemeDark(document.documentElement.getAttribute('data-theme') !== 'light')

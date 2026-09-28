@@ -296,7 +296,12 @@ export function attachTuiServer(app, server) {
     // hermes_cli/pty_bridge.py). Без него приложение считает, что перед ним обычный терминал, и
     // рисует кадр диффом, оставляя на экране строки, которые больше не перерисовывает: после /help
     // внизу остаётся старая статусная строка рядом с новой.
+    // HERMES_TUI_THEME: тема Hermes-TUI выбирается ПРИ СТАРТЕ из окружения (см. ui-tui/src/theme.ts,
+    // detectLightMode) и живьём не переключается. Без неё TUI в светлой теме панели рисовал тёмной
+    // палитрой по белому фону — текст не читается.
+    const hermesTheme = u.query.theme === 'light' ? 'light' : 'dark'
     const ptyEnv = { ...process.env, TERM: 'xterm-256color', HERMES_PTY_HOST: 'dashboard',
+      HERMES_TUI_THEME: hermesTheme,
       OPENROUTER_API_KEY: OPENROUTER_KEY,
       PATH: `/root/.hermes/hermes-agent/.hermes/bin:/root/.hermes/bin:/root/.opencode/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}` }
     delete ptyEnv.HERMES_TUI_GATEWAY_URL
