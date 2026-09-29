@@ -1,67 +1,37 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Icon } from './Icons'
 
-// Окно входа Life OS. Показано, пока панель закрыта паролем (задаётся при установке) либо пока
-// он ещё не задан на этой установке — тогда это форма первоначальной настройки.
+// Окно входа Life OS. Показано, пока вход не выполнен; если пароль ещё не задан — это форма
+// первоначальной настройки, где админ сам придумывает логин и пароль.
 //
-// Реализация: логин/пароль проверяет бэкенд (/api/auth/login), пароль он хранит только scrypt-хешем.
-// Сессия — подписанная HttpOnly-кука, поэтому пароль нигде в браузере не лежит.
-
-const style = {
-  page: {
-    minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: 24, background: 'rgb(var(--bg-app, #f5f6f8))',
-  },
-  card: {
-    width: '100%', maxWidth: 380, background: 'rgb(var(--bg-card, #ffffff))',
-    border: '1px solid rgb(var(--border, #e5e7eb))', borderRadius: 14, padding: 24,
-    boxShadow: '0 10px 30px rgba(15,23,42,0.08)',
-  },
-  title: { fontSize: 18, fontWeight: 700, marginBottom: 4, color: 'rgb(var(--text, #111827))' },
-  sub: { fontSize: 13, marginBottom: 18, color: 'rgb(var(--text-muted, #6b7280))' },
-  label: { display: 'block', fontSize: 12, marginBottom: 4, color: 'rgb(var(--text-muted, #6b7280))' },
-  input: {
-    width: '100%', boxSizing: 'border-box', padding: '9px 11px', marginBottom: 12,
-    borderRadius: 8, border: '1px solid rgb(var(--border, #d1d5db))',
-    background: 'rgb(var(--bg-input, #ffffff))', color: 'rgb(var(--text, #111827))',
-    fontSize: 14, outline: 'none',
-  },
-  btn: {
-    width: '100%', padding: '10px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
-    background: 'rgb(var(--accent, #4f46e5))', color: '#fff', fontSize: 14, fontWeight: 600,
-  },
-  err: {
-    fontSize: 12, marginBottom: 12, padding: '8px 10px', borderRadius: 8,
-    background: 'rgba(220,38,38,0.10)', color: '#b91c1c', border: '1px solid rgba(220,38,38,0.25)',
-  },
-  hint: { fontSize: 11, marginTop: 14, color: 'rgb(var(--text-muted, #6b7280))', lineHeight: 1.45 },
-}
+// Реализация: логин/пароль проверяет бэкенд (/api/auth/login или /api/auth/setup), пароль он
+// хранит только scrypt-хешем, браузер получает подписанную HttpOnly-куку — в JS пароля нет.
+//
+// Оформление — на классах темы панели (bg-bg-card / border-border / text-text-muted / accent),
+// поэтому окно одинаково аккуратно в светлой и тёмной теме.
 
 export function LoginScreen({ onAuthenticated }) {
-  const setup = useCallback(async () => {
-    try {
-      const r = await fetch('/api/auth/status')
-      const j = await r.json()
-      return !!(j && j.required && !j.authenticated)
-    } catch { return true }
-  }, [])
-
   const [needsSetup, setNeedsSetup] = useState(false)
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
+  const [showPass, setShowPass] = useState(false)
+  const [capsOn, setCapsOn] = useState(false)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [checked, setChecked] = useState(false)
 
-  // Режим настройки узнаём один раз: если пароля ещё нет — форма должна его создать.
   useEffect(() => {
     let alive = true
-    fetch('/api/auth/status')
+    fetch('/api/auth/status', { cache: 'no-store' })
       .then(r => r.json())
       .then(j => { if (alive) { setNeedsSetup(!!(j && j.needsSetup)); setChecked(true) } })
       .catch(() => { if (alive) setChecked(true) })
     return () => { alive = false }
   }, [])
+
+  // Подсказка про Caps Lock: на телефоне это частая причина «ввожу, а не входит».
+  const onKey = (e) => setCapsOn(!!(e.getModifierState && e.getModifierState('CapsLock')))
 
   const submit = async (e) => {
     e.preventDefault()
@@ -86,58 +56,123 @@ export function LoginScreen({ onAuthenticated }) {
     }
   }
 
-  if (!checked) {
-    return <div style={style.page}><div style={style.card}><div style={style.sub}>Проверяем доступ…</div></div></div>
+  const skip = () => {
+    // Флаг нужен, чтобы экран не возвращался при каждой перезагрузке; когда пароль появится,
+    // условие в App перестаёт его учитывать.
+    try { localStorage.setItem('lifeos.auth.setupSkipped', '1') } catch {}
+    onAuthenticated && onAuthenticated(null)
   }
 
+  if (!checked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg">
+        <div className="text-sm text-text-muted">Проверяем доступ…</div>
+      </div>
+    )
+  }
+
+  const inputCls = 'w-full px-3 py-2.5 rounded-lg bg-bg border border-border text-text text-sm ' +
+    'placeholder:text-text-muted/70 outline-none transition-colors focus:border-accent ' +
+    'focus:ring-2 focus:ring-accent/20 disabled:opacity-60'
+
   return (
-    <div style={style.page}>
-      <form style={style.card} onSubmit={submit}>
-        <div style={style.title}>{needsSetup ? 'Первоначальная настройка' : 'Life OS'}</div>
-        <div style={style.sub}>
-          {needsSetup
-            ? 'Задайте логин и пароль для доступа к панели. Вводить их в Настройках потом не придётся — здесь создаётся первый доступ.'
-            : 'Введите логин и пароль, заданные при установке.'}
-        </div>
-        {err ? <div style={style.err}>{err}</div> : null}
-        <label style={style.label}>Логин</label>
-        <input
-          style={style.input} value={login} autoFocus autoComplete="username"
-          onChange={(e) => setLogin(e.target.value)} placeholder="логин"
-        />
-        <label style={style.label}>Пароль</label>
-        <input
-          style={style.input} type="password" value={password}
-          autoComplete={needsSetup ? 'new-password' : 'current-password'}
-          onChange={(e) => setPassword(e.target.value)} placeholder="пароль"
-        />
-        {needsSetup && (
-          <>
-            <label style={style.label}>Пароль ещё раз</label>
-            <input
-              style={style.input} type="password" value={confirm} autoComplete="new-password"
-              onChange={(e) => setConfirm(e.target.value)} placeholder="пароль ещё раз"
-            />
-          </>
-        )}
-        <button style={style.btn} type="submit" disabled={busy}>
-          {busy ? 'Проверяем…' : (needsSetup ? 'Задать пароль и войти' : 'Войти')}
-        </button>
-        <div style={style.hint}>
-          Пароль хранится только в виде хеша (scrypt) в файле <code>/root/.lifeos/auth.json</code> и
-          его можно сменить в разделе «Настройки → Безопасность».
+    <div className="min-h-screen flex items-center justify-center bg-bg p-4">
+      <div className="w-full max-w-[400px] relative">
+        {/* мягкое пятно за карточкой — глубина без градиентов в интерфейсе */}
+        <div className="absolute -inset-6 rounded-[28px] bg-accent/5 blur-2xl pointer-events-none" aria-hidden="true" />
+
+        <div className="relative rounded-2xl bg-bg-card border border-border shadow-card-lg p-7">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0">
+              <Icon name="Key" size={18} />
+            </span>
+            <div>
+              <h1 className="text-base font-semibold text-text leading-tight">Life OS</h1>
+              <p className="text-[11px] text-text-muted leading-tight">
+                {needsSetup ? 'первоначальная настройка' : 'защищённая панель'}
+              </p>
+            </div>
+          </div>
+
+          <p className="text-[13px] text-text-muted mt-5 mb-5 leading-relaxed">
+            {needsSetup
+              ? 'Придумайте логин и пароль для входа в панель. Вводить их в Настройках потом не придётся — здесь создаётся первый доступ.'
+              : 'Введите логин и пароль, заданные при настройке панели.'}
+          </p>
+
+          {err && (
+            <div className="mb-4 px-3 py-2 rounded-lg bg-danger/10 border border-danger/30 text-danger text-[13px]">
+              {err}
+            </div>
+          )}
+
+          <form onSubmit={submit} className="flex flex-col gap-3.5">
+            <label className="block">
+              <span className="block text-[11px] uppercase tracking-wide text-text-muted mb-1.5">Логин</span>
+              <input
+                className={inputCls} value={login} autoFocus autoComplete="username"
+                onChange={(e) => setLogin(e.target.value)} placeholder="например admin"
+                disabled={busy}
+              />
+            </label>
+
+            <label className="block">
+              <span className="block text-[11px] uppercase tracking-wide text-text-muted mb-1.5">Пароль</span>
+              <div className="relative">
+                <input
+                  className={inputCls + ' pr-11'} type={showPass ? 'text' : 'password'} value={password}
+                  autoComplete={needsSetup ? 'new-password' : 'current-password'}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyUp={onKey} onKeyDown={onKey}
+                  placeholder={needsSetup ? 'минимум 8 символов' : '••••••••'}
+                  disabled={busy}
+                />
+                <button
+                  type="button" onClick={() => setShowPass(v => !v)}
+                  title={showPass ? 'Скрыть пароль' : 'Показать пароль'}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md text-text-muted hover:text-text hover:bg-bg-elevated transition-colors text-xs"
+                >
+                  {showPass ? '🙈' : '👁'}
+                </button>
+              </div>
+            </label>
+
+            {needsSetup && (
+              <label className="block">
+                <span className="block text-[11px] uppercase tracking-wide text-text-muted mb-1.5">Пароль ещё раз</span>
+                <input
+                  className={inputCls} type={showPass ? 'text' : 'password'} value={confirm}
+                  autoComplete="new-password" onChange={(e) => setConfirm(e.target.value)}
+                  placeholder="повторите пароль" disabled={busy}
+                />
+              </label>
+            )}
+
+            {capsOn && <div className="-mt-1 text-[11px] text-warning">Caps Lock включён</div>}
+
+            <button
+              type="submit" disabled={busy}
+              className="mt-1 w-full py-2.5 rounded-lg bg-accent text-white text-sm font-medium hover:bg-accent-hover transition-colors disabled:opacity-60"
+            >
+              {busy ? 'Проверяем…' : (needsSetup ? 'Задать пароль и войти' : 'Войти')}
+            </button>
+          </form>
+
+          <p className="mt-5 pt-4 border-t border-border/70 text-[11px] text-text-muted leading-relaxed">
+            Пароль хранится только в виде хеша (scrypt) в файле <span className="font-mono">/root/.lifeos/auth.json</span>;
+            изменить его можно в разделе «Настройки → Безопасность».
+          </p>
+
           {needsSetup && (
-            <button type="button" onClick={() => {
-              // Пропустить: панель откроется без пароля. Флаг нужен, чтобы экран не возвращался
-              // при каждой перезагрузке; при появлении пароля он больше не мешает.
-              try { localStorage.setItem('lifeos.auth.setupSkipped', '1') } catch {}
-              onAuthenticated && onAuthenticated(null)
-            }} style={{ display: 'block', marginTop: 10, color: 'rgb(var(--text-muted, #6b7280))', textDecoration: 'underline', fontSize: 11 }}>
-              Пропустить — открыть без пароля
+            <button
+              type="button" onClick={skip}
+              className="mt-3 w-full text-[12px] text-text-muted hover:text-text underline underline-offset-2 transition-colors"
+            >
+              Пропустить — открыть панель без пароля
             </button>
           )}
         </div>
-      </form>
+      </div>
     </div>
   )
 }

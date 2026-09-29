@@ -62,50 +62,32 @@ else
 fi
 
 # ------------------------------------------------------- логин и пароль ----
-# Вход в Life OS задаётся ЗДЕСЬ, при установке. Пароль нигде не хранится открытым: бэкенд
-# кладёт в /root/.lifeos/auth.json только scrypt-хеш с солью (0600), а браузер получает
-# подписанную HttpOnly-куку. Поменять потом можно в «Настройки → Безопасность».
-#
-# Переменные для неинтерактивной установки: LIFEOS_LOGIN, LIFEOS_PASSWORD.
-# Если пароль не задан и терминала нет — генерируем случайный и печатаем его ОДИН раз.
-tty_read() {  # аргумент — приглашение; ответ в stdout
-  printf '%s' "$1" >/dev/tty
-  local v=""
-  IFS= read -r v </dev/tty || v=""
-  printf '%s' "$v"
-}
-
-LOGIN="${LIFEOS_LOGIN:-}"
-PASSWORD="${LIFEOS_PASSWORD:-}"
-if [ -z "$LOGIN" ] && { [ -t 0 ] || { printf '' >/dev/tty; } 2>/dev/null; }; then
-  LOGIN="$(tty_read 'Логин для входа в Life OS: ')"
-  [ -z "$LOGIN" ] && LOGIN="admin"
+# Установщик логин и пароль НЕ спрашивает: при первом открытии панель сама показывает форму
+# первоначальной настройки (/api/auth/setup) — там их и придумывают.
+# Для неинтерактивной установки (CI, чужие скрипты) учётные данные можно задать заранее:
+#   LIFEOS_LOGIN=admin LIFEOS_PASSWORD='пароль-8+' ... | bash
+# Файл /root/.lifeos/auth.json не перезаписывается, если он уже есть: обновление установщика
+# не должно сбрасывать пароль, который пользователь сменил в Настройках.
+if [ -n "${LIFEOS_LOGIN:-}" ] && [ -n "${LIFEOS_PASSWORD:-}" ]; then
+  if [ -f /root/.lifeos/auth.json ]; then
+    echo "==> /root/.lifeos/auth.json уже есть — учётные данные установщика не трогаем (смена — в Настройках)"
+  else
+    mkdir -p /root/.lifeos && chmod 700 /root/.lifeos
+    LIFEOS_AUTH_LOGIN="$LIFEOS_LOGIN" LIFEOS_AUTH_PASSWORD="$LIFEOS_PASSWORD" node -e '
+      const crypto = require("crypto"), fs = require("fs");
+      const p = process.env.LIFEOS_AUTH_PASSWORD, l = process.env.LIFEOS_AUTH_LOGIN;
+      const salt = crypto.randomBytes(16).toString("hex");
+      const hash = crypto.scryptSync(p, Buffer.from(salt, "hex"), 64, { N: 16384, r: 8, p: 1 }).toString("hex");
+      fs.writeFileSync("/root/.lifeos/auth.json", JSON.stringify({
+        login: l, salt, hash, createdAt: new Date().toISOString(), version: 1 }, null, 2), { mode: 0o600 });
+    '
+    chmod 600 /root/.lifeos/auth.json
+    echo "==> Учётные данные созданы из переменных окружения: $LIFEOS_LOGIN"
+  fi
+else
+  echo "==> Логин и пароль панели спросит первый запуск (или задайте LIFEOS_LOGIN и LIFEOS_PASSWORD)."
 fi
 
-if [ -z "$PASSWORD" ] && { [ -t 0 ] || { printf '' >/dev/tty; } 2>/dev/null; }; then
-  while : ; do
-    PASSWORD="$(tty_read 'Пароль (мин. 8 символов): ')"
-    P2="$(tty_read 'Пароль ещё раз: ')"
-    if [ "${#PASSWORD}" -lt 8 ]; then
-      echo "Пароль короче 8 символов, ещё раз." >/dev/tty
-      continue
-    fi
-    if [ "$PASSWORD" != "$P2" ]; then
-      echo "Пароли не совпадают, ещё раз." >/dev/tty
-      continue
-    fi
-    break
-  done
-fi
-
-if [ -z "$PASSWORD" ]; then
-  PASSWORD="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | head -c 20)"
-  echo ""
-  echo "⚠ Пароль сгенерирован автоматически (терминала нет). СОХРАНИТЕ ЕГО:"
-  echo "    логин: $LOGIN"
-  echo "    пароль: $PASSWORD"
-fi
-echo "==> Логин Life OS: $LOGIN"
 
 command -v systemctl >/dev/null 2>&1 || { echo "✘ systemd не найден — этот скрипт для прод-сервера с systemd"; exit 1; }
 
@@ -296,25 +278,6 @@ UNIT
 
 systemctl daemon-reload
 if command -v tmux >/dev/null 2>&1; then systemctl enable --now lifeos-tui.service >/dev/null 2>&1 || true; fi
-
-# ------------------------------------------------------------------ auth ----
-# Пишем файл учётных данных ТОЛЬКО если его ещё нет: повторный запуск install.sh (обновление)
-# не должен молча сбрасывать пароль, который пользователь уже сменил в Настройках.
-if [ -f /root/.lifeos/auth.json ]; then
-  echo "==> /root/.lifeos/auth.json уже есть — логин/пароль не трогаем (смена — в Настройках)"
-else
-  mkdir -p /root/.lifeos && chmod 700 /root/.lifeos
-  LIFEOS_AUTH_LOGIN="$LOGIN" LIFEOS_AUTH_PASSWORD="$PASSWORD" node -e '
-    const crypto = require("crypto"), fs = require("fs");
-    const p = process.env.LIFEOS_AUTH_PASSWORD, l = process.env.LIFEOS_AUTH_LOGIN;
-    const salt = crypto.randomBytes(16).toString("hex");
-    const hash = crypto.scryptSync(p, Buffer.from(salt, "hex"), 64, { N: 16384, r: 8, p: 1 }).toString("hex");
-    fs.writeFileSync("/root/.lifeos/auth.json", JSON.stringify({
-      login: l, salt, hash, createdAt: new Date().toISOString(), version: 1 }, null, 2), { mode: 0o600 });
-  '
-  chmod 600 /root/.lifeos/auth.json
-  echo "==> Вход создан: $LOGIN / (пароль введён выше)"
-fi
 
 # ---------------------------------------------------------------- health ----
 echo "==> [5/6] health check"
