@@ -1461,6 +1461,94 @@ app.get('/api/chat/transcript', async (req, res) => {
   }
 })
 
+// ---- Резервные копии по расписанию ----
+// Раз в сутки складываем все данные в /root/lifeos-backups/<дата>.json и держим последние N.
+// Раньше бэкап был возможен только вручную из консоли — а потеря данных выяснялась постфактум.
+const BACKUP_DIR = '/root/lifeos-backups'
+const BACKUP_KEEP = parseInt(process.env.LIFEOS_BACKUP_KEEP, 10) || 14
+let lastBackup = null
+
+async function makeBackup(reason) {
+  try {
+    await mkdir(BACKUP_DIR, { recursive: true })
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const out = { format: 'lifeos-backup', version: 1, createdAt: new Date().toISOString(), reason, data: {} }
+    for (const key of ['plan', 'tasks', 'notes', 'habits', 'finances', 'health', 'learning',
+                       'contacts', 'automations', 'memory', 'calendar', 'projects']) {
+      out.data[key] = await loadJson(key)
+    }
+    const file = `${BACKUP_DIR}/${stamp}.json`
+    await writeFile(file, JSON.stringify(out, null, 2))
+    // ротация: оставляем последние N файлов
+    try {
+      const files = (await readdir(BACKUP_DIR)).filter(f => f.endsWith('.json')).sort()
+      for (const old of files.slice(0, Math.max(0, files.length - BACKUP_KEEP))) {
+        try { (await import('fs/promises')).unlink(`${BACKUP_DIR}/${old}`) } catch {}
+      }
+    } catch {}
+    lastBackup = { file, at: out.createdAt, reason }
+    console.log(`[backup] создан ${file} (${reason})`)
+    return { ok: true, file, at: out.createdAt }
+  } catch (e) {
+    console.error('[backup] не удался:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+// Первый бэкап сразу при старте, дальше раз в сутки. Таймер НЕ мешает остановке службы.
+setTimeout(() => { makeBackup('старт бэкенда').catch(() => {}) }, 20000)
+setInterval(() => { makeBackup('по расписанию').catch(() => {}) }, 24 * 60 * 60 * 1000)
+
+app.post('/api/backup/now', async (_, res) => res.json(await makeBackup('вручную из панели')))
+
+app.get('/api/backup/list', async (_, res) => {
+  try {
+    const files = (await readdir(BACKUP_DIR)).filter(f => f.endsWith('.json')).sort().reverse()
+    res.json({ dir: BACKUP_DIR, keep: BACKUP_KEEP, last: lastBackup, files: files.slice(0, BACKUP_KEEP) })
+  } catch {
+    res.json({ dir: BACKUP_DIR, keep: BACKUP_KEEP, last: lastBackup, files: [] })
+  }
+})
+
+// ---- Экспорт / импорт данных Life OS ----
+// Одна кнопка «выгрузить всю жизнь в файл» и обратная: не нужно вручную копировать каталоги на
+// сервере. Формат — тот же JSON, что лежит в /root/agentos-data, плюс метаданные выгрузки.
+app.get('/api/data/export', async (req, res) => {
+  try {
+    const out = { format: 'lifeos-export', version: 1, exportedAt: new Date().toISOString(), data: {} }
+    for (const key of ['plan', 'tasks', 'notes', 'habits', 'finances', 'health', 'learning',
+                       'contacts', 'automations', 'memory', 'calendar', 'projects']) {
+      out.data[key] = await loadJson(key)
+    }
+    res.setHeader('Content-Disposition', `attachment; filename="lifeos-${new Date().toISOString().slice(0,10)}.json"`)
+    res.json(out)
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) })
+  }
+})
+
+// Импорт: принимаем ТОТ ЖЕ файлы. Ключи перечисляем явно — иначе в данные можно было бы записать
+// что угодно (в том числе служебные файлы), поэтому никакого «склеивания произвольного JSON».
+const IMPORTABLE = new Set(['plan', 'tasks', 'notes', 'habits', 'finances', 'health', 'learning',
+  'contacts', 'automations', 'memory', 'calendar', 'projects'])
+app.post('/api/data/import', async (req, res) => {
+  try {
+    const body = req.body || {}
+    const data = body.data || body
+    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'в файле нет поля data' })
+    const written = []
+    for (const [k, v] of Object.entries(data)) {
+      if (!IMPORTABLE.has(k)) continue
+      await saveJson(k, v)
+      written.push(k)
+    }
+    if (!written.length) return res.status(400).json({ error: 'не найдено ни одного известного раздела' })
+    res.json({ ok: true, imported: written })
+  } catch (e) {
+    res.status(500).json({ error: e?.message || String(e) })
+  }
+})
+
 app.get('/api/components', async (_, res) => res.json({ components: await discoverComponents() }))
 
 app.post('/api/components/install', (req, res) => {

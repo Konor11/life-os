@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // Файл лежит в components/desktop/, поэтому Icons и Mascot — уровнем выше (../),
 // а список движков — рядом (./ChatPanelEngines).
 import { Icon } from '../Icons'
@@ -334,6 +334,10 @@ function SystemSection({ status }) {
         <InfoRow label="RAM (RSS)" value={`${Math.round((status.mem?.rss || 0) / 1024 / 1024)} МБ`} mono />
         <InfoRow label="OpenRouter" value={status.openrouter === 'missing' ? 'не задан' : 'задан'} />
       </Group>
+      <Group title="Резервное копирование">
+        <InfoRow label="Копии создаются" value="раз в сутки + при старте сервера" />
+        <InfoRow label="Где хранятся" value="/root/lifeos-backups" mono />
+      </Group>
       <Group title="Профили агентов">
         <div className="flex flex-wrap gap-2 pt-1">
           {(status.profiles || []).map(p => (
@@ -349,6 +353,40 @@ function SystemSection({ status }) {
 // ----------------------------------------------------------------------- данные ----
 
 function DataSection({ status, components }) {
+  const [backups, setBackups] = useState(null)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+  const fileRef = useRef(null)
+
+  const loadBackups = useCallback(() => {
+    fetch('/api/backup/list').then(r => r.json()).then(setBackups).catch(() => setBackups(null))
+  }, [])
+  useEffect(() => { loadBackups() }, [loadBackups])
+
+  const doBackup = async () => {
+    setMsg(''); setErr('')
+    const r = await fetch('/api/backup/now', { method: 'POST' })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok || !j.ok) { setErr(j.error || 'не удалось'); return }
+    setMsg('Копия создана'); loadBackups()
+  }
+
+  const doImport = async (file) => {
+    if (!file) return
+    setMsg(''); setErr('')
+    try {
+      const text = await file.text()
+      const json = JSON.parse(text)
+      if (!window.confirm('Импорт ЗАМЕНИТ текущие данные разделов. Продолжить?')) return
+      const r = await fetch('/api/data/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(json),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { setErr(j.error || 'не удалось'); return }
+      setMsg(`Импортировано: ${(j.imported || []).join(', ')} — обновите страницу (F5)`)
+    } catch (e) { setErr('файл не читается как JSON') }
+  }
+
   return (
     <div className="space-y-6 max-w-2xl">
       <Group title="Где лежат данные">
@@ -359,6 +397,31 @@ function DataSection({ status, components }) {
           <code className="text-xs"> /root/.lifeos/auth.json</code> (в репозиторий не попадают).
         </p>
       </Group>
+      <Group title="Резервные копии" hint="Раз в сутки данные складываются в /root/lifeos-backups, хранятся последние копии. Можно создать копию и вручную.">
+        <div className="space-y-2">
+          <InfoRow label="Папка копий" value={backups?.dir || '/root/lifeos-backups'} mono />
+          <InfoRow label="Хранится копий" value={backups?.files?.length ?? '—'} />
+          <InfoRow label="Последняя копия" value={backups?.last?.at ? new Date(backups.last.at).toLocaleString('ru-RU') : 'при старте сервера'} />
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={doBackup} className="px-4 py-2 rounded-lg bg-accent text-white text-sm">Создать копию сейчас</button>
+            <button onClick={loadBackups} className="px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:text-text">Обновить список</button>
+            {msg && <span className="text-xs text-success">{msg}</span>}
+            {err && <span className="text-xs text-danger">{err}</span>}
+          </div>
+        </div>
+      </Group>
+
+      <Group title="Экспорт и импорт" hint="Выгружает все разделы одним JSON-файлом и принимает такой же файл обратно. Учётные данные входа в выгрузку НЕ входят.">
+        <div className="flex flex-wrap items-center gap-2">
+          <a href="/api/data/export" download
+            className="px-4 py-2 rounded-lg bg-accent text-white text-sm no-underline">Выгрузить данные (JSON)</a>
+          <input ref={fileRef} type="file" accept="application/json,.json" className="hidden"
+            onChange={(e) => doImport(e.target.files?.[0])} />
+          <button onClick={() => fileRef.current?.click()}
+            className="px-4 py-2 rounded-lg border border-border text-text-muted text-sm hover:text-text">Загрузить файл</button>
+        </div>
+      </Group>
+
       <Group title="Компоненты">
         <div className="space-y-1.5">
           {(components || []).map(c => (

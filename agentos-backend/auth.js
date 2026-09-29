@@ -25,9 +25,22 @@ function fileStamp() {
 
 // Читаем логин/хеш (для проверки пароля и подписи сессии). Файл перечитываем при изменении —
 // чтобы смена пароля из Настроек (или из консоли) подхватывалась сразу.
+// Страховка от тихой потери учётных данных. Если файл был создан, а потом исчез (кто-то удалил
+// руками, откат, обслуживание) — пишем в журнал ЗА МЕСТО САМОГО бэкенда, чтобы это всплыло
+// сразу. Метка-обвинитель живёт отдельно и не удаляется вместе с auth.json.
+const SEEN_FILE = '/root/.lifeos/.auth-created'
+function warnIfAuthVanished(st) {
+  if (st !== 0) return
+  try {
+    if (!existsSync(SEEN_FILE)) return
+    console.error('[auth] ВНИМАНИЕ: /root/.lifeos/auth.json исчез, хотя раньше создавался. ' +
+      'Вход в панель отключён до новой настройки. Если это не вы — проверьте, что удалило файл.')
+  } catch {}
+}
+
 export function creds() {
   const st = fileStamp()
-  if (st === 0) { cache = null; cacheMtime = 0; return null }
+  if (st === 0) { cache = null; cacheMtime = 0; warnIfAuthVanished(0); return null }
   if (cache && st === cacheMtime) return cache
   try {
     const raw = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'))
@@ -70,6 +83,8 @@ export function setCredentials(login, password) {
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true, mode: 0o700 })
   fs.writeFileSync(AUTH_FILE, JSON.stringify(rec, null, 2), { mode: 0o600 })
   try { fs.chmodSync(AUTH_FILE, 0o600) } catch {}
+  // метка «учётные данные когда-то создавались» — переживает удаление самого файла
+  try { fs.writeFileSync(SEEN_FILE, new Date().toISOString() + ' ' + l + '\n', { mode: 0o600 }) } catch {}
   cache = null; cacheMtime = 0
   return { login: l }
 }
@@ -140,6 +155,13 @@ export function authGuard(req, res, next) {
 export function wsAllowed(req) {
   if (!authRequired()) return true
   return !!verifyToken(readCookie(req.headers?.cookie))
+}
+
+// Явный сброс входа (удаление учётных данных) — снимает и метку, чтобы не пугать в журнале.
+export function clearAuth() {
+  try { fs.rmSync(AUTH_FILE, { force: true }) } catch {}
+  try { fs.rmSync(SEEN_FILE, { force: true }) } catch {}
+  cache = null; cacheMtime = 0
 }
 
 export const AUTH_FILE_PATH = AUTH_FILE
