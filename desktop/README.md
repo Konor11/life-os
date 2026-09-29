@@ -23,7 +23,33 @@ Electron на этой машине стоил бы 200–400 МБ памяти 
 отвергает неизвестные поля, и сборка падает на этапе build-скрипта с невнятным сообщением
 `unknown field`. Пояснения живут здесь, в README.
 
-## Установка (Arch)
+## Как скачать (без сборки у себя)
+
+Сборка выполняется на сервере Life OS, готовые файлы лежат в `/root/lifeos-desktop-dist` и
+раздаются панелью: **Настройки → Система → «Сборка для настольного компьютера»**. Раздача
+закрыта тем же входом, что и панель, и доступна только администратору.
+
+На Arch:
+
+```bash
+chmod +x lifeos-0.1.0-x86_64.AppImage
+./lifeos-0.1.0-x86_64.AppImage
+```
+
+AppImage несёт все библиотеки внутри, поэтому системные зависимости для запуска не нужны.
+Размер 83 МБ — из них само приложение 6,1 МБ, остальное webkit и GTK.
+
+### Что нужно для сборки на сервере (Ubuntu)
+
+```bash
+apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev \
+                   librsvg2-dev patchelf libssl-dev build-essential pkg-config file xvfb
+```
+
+`file` обязателен для `appimagetool` — без него AppImage не собирается, и ошибка выглядит
+невнятно («failed to run plugin: appimage»).
+
+## Установка (Arch) — если собираешь сам
 
 ```bash
 cd desktop
