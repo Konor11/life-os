@@ -182,8 +182,10 @@ export async function listProcesses() {
       if (isService) note = 'обновлён, а процесс со старой версии — перезапустится при перезагрузке'
       else flags.push('deleted-exe')
     }
-    // «Осиротевший» имеет смысл только для обычных программ: агентов породил tmux, службы — systemd
-    if (p.ppid === 1 && kind === 'app') flags.push('detached')
+    // «Бесхозный» отмечаем только у процессов, которые живут дольше 10 минут. Иначе в мусор
+    // попадают мимолётные node-процессы (тесты, разовые задачи) — они ничего не держат и через
+    // минуту исчезают, а список мигает. Настоящие хвосты вроде демонов codex живут сутками.
+    if (p.ppid === 1 && kind === 'app' && elapsedSec > 600) flags.push('detached')
     if (elapsedSec > 12 * 3600 && cpuSec < 5 && kind === 'app') flags.push('idle-long')
 
     out.push({
