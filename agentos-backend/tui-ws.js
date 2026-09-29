@@ -246,6 +246,24 @@ function nudgeRepaint(s, cols, rows, force) {
   setTimeout(() => { try { s.pty.resize(c, r) } catch {} }, 450)
 }
 
+// Снимок состояния сессий для внешнего наблюдения: панель рисует его маскотом (спит/работает) и
+// подсвечивает зависшие терминалы. Экспортируется отсюда, потому что карта `sessions` приватная.
+export function sessionSnapshot() {
+  const out = []
+  const now = Date.now()
+  for (const [key, s] of sessions) {
+    out.push({
+      key,
+      engine: s.engine,
+      profile: s.profile,
+      attached: !!(s.ws && s.ws.readyState === 1),
+      idleMs: s.lastDataAt ? now - s.lastDataAt : null,
+      since: s.startedAt || null,
+    })
+  }
+  return out
+}
+
 export function attachTuiServer(app, server) {
   // Upgrade /ws/tui?engine=E&profile=P to a PTY running the chosen engine.
   const wss = new WebSocketServer({ noServer: true, clientTracking: true })
