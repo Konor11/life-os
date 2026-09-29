@@ -1540,6 +1540,21 @@ async function makeBackup(reason) {
 
 // Первый бэкап сразу при старте, дальше раз в сутки. Таймер НЕ мешает остановке службы.
 setTimeout(() => { makeBackup('старт бэкенда').catch(() => {}) }, 20000)
+
+// Индекс «живого второго мозга» тоже собирается сам при старте: он производный и всегда должен
+// соответствовать истории. Позже — по кнопке, если понадобится пересобрать после обновления Hermes.
+setTimeout(async () => {
+  try {
+    const existing = await readLbrainIndex()
+    // Свежий индекс (сутки) не трогаем — лишний проход по 40k сообщений не нужен.
+    if (existing && existing.generatedAt) {
+      const age = Date.now() - new Date(existing.generatedAt.replace(' ', 'T')).getTime()
+      if (Number.isFinite(age) && age < 24 * 3600 * 1000) return
+    }
+    await lbrainIndex()
+    console.log('[lbrain] индекс собран при старте')
+  } catch (e) { console.error('[lbrain] автосборка не удалась:', e?.message || e) }
+}, 45000)
 setInterval(() => { makeBackup('по расписанию').catch(() => {}) }, 24 * 60 * 60 * 1000)
 
 app.post('/api/backup/now', async (_, res) => res.json(await makeBackup('вручную из панели')))
@@ -1977,6 +1992,109 @@ app.post('/api/memory/search', async (req, res) => {
     .slice(0, limit)
     .map(d => ({ id: d.id, content: d.content.slice(0, 300), source: d.source, metadata: d.metadata }))
   res.json({ results })
+})
+
+// ---- «Живой второй мозг»: индекс разговоров с агентами ----
+//
+// Заметки в панели заводятся руками, а знания рождаются в диалогах. Индексатор
+// (agentos-backend/lbrain_index.py) читает историю Hermes из SQLite только на чтение и отдаёт
+// перечень разговоров, темы, связи и черновики заметок с источником (диалог + сообщение + дата).
+// Поиск ходит в базу напрямую, поэтому индекс не раздувается текстом.
+//
+// Индекс — производные данные: их можно целиком пересобрать, поэтому они НЕ входят в ежедневный
+// бэкап (в отличие от твоих заметок и разделов) и лежат отдельным файлом.
+const LBRAIN_SCRIPT = path.join(__dirname, 'lbrain_index.py')
+const LBRAIN_INDEX = process.env.LIFEOS_LBRAIN_INDEX || '/root/agentos-data/lbrain/index.json'
+
+function runLbrain(args, timeoutMs = 60000) {
+  return new Promise((resolve) => {
+    execFile('python3', [LBRAIN_SCRIPT, ...args], { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (stderr && stderr.trim()) console.error('[lbrain]', stderr.trim().slice(0, 400))
+        if (err && !stdout) return resolve({ ok: false, error: err.message })
+        try { resolve({ ok: true, data: JSON.parse(stdout) }) }
+        catch (e) { resolve({ ok: false, error: 'не разобрал ответ индексатора: ' + e.message }) }
+      })
+  })
+}
+
+async function lbrainIndex() {
+  const r = await runLbrain(['index'])
+  if (!r.ok) return r
+  try {
+    await mkdir(path.dirname(LBRAIN_INDEX), { recursive: true })
+    await writeFile(LBRAIN_INDEX, JSON.stringify(r.data))
+  } catch (e) {
+    return { ok: false, error: 'не сохранил индекс: ' + e.message }
+  }
+  return r
+}
+
+async function readLbrainIndex() {
+  try {
+    const raw = await readFile(LBRAIN_INDEX, 'utf8')
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+app.get('/api/lbrain/status', async (_, res) => {
+  const idx = await readLbrainIndex()
+  if (!idx) {
+    return res.json({ built: false, hint: 'индекс ещё не собран — нажмите «Пересобрать индекс»' })
+  }
+  res.json({ built: true, generatedAt: idx.generatedAt, stats: idx.stats, topics: idx.topics.slice(0, 12) })
+})
+
+// Пересборка индекса: читает 40+ тысяч сообщений, поэтому с запасом по времени (иначе express
+// успеет ответить раньше, чем python закончит, и панель покажет «пусто»).
+app.post('/api/lbrain/index', async (req, res) => {
+  const r = await lbrainIndex()
+  if (!r.ok) return res.status(500).json({ error: r.error })
+  res.json({ ok: true, generatedAt: r.data.generatedAt, stats: r.data.stats })
+})
+
+app.get('/api/lbrain/notes', async (req, res) => {
+  const idx = await readLbrainIndex()
+  if (!idx) return res.json({ notes: [], built: false })
+  const limit = Math.min(300, parseInt(req.query.limit, 10) || 60)
+  res.json({ built: true, generatedAt: idx.generatedAt, notes: idx.notes.slice(0, limit), total: idx.notes.length })
+})
+
+app.get('/api/lbrain/sessions', async (req, res) => {
+  const idx = await readLbrainIndex()
+  if (!idx) return res.json({ sessions: [], built: false })
+  const q = String(req.query.q || '').trim().toLowerCase()
+  let list = idx.sessions
+  if (q) list = list.filter(s => s.title.toLowerCase().includes(q) || s.id.includes(q))
+  const limit = Math.min(300, parseInt(req.query.limit, 10) || 80)
+  res.json({ built: true, total: list.length, sessions: list.slice(0, limit) })
+})
+
+app.get('/api/lbrain/relations', async (req, res) => {
+  const idx = await readLbrainIndex()
+  if (!idx) return res.json({ relations: [], built: false })
+  res.json({ built: true, relations: idx.relations })
+})
+
+// Переход к источнику: сам разговор целиком.
+app.get('/api/lbrain/session', async (req, res) => {
+  const id = String(req.query.id || '')
+  if (!id || !/^[\w-]{3,80}$/.test(id)) return res.status(400).json({ error: 'нужен id разговора' })
+  const r = await runLbrain(['session', id])
+  if (!r.ok) return res.status(500).json({ error: r.error })
+  res.json(r.data)
+})
+
+// Поиск по ВСЕМ диалогам разом — то, чего вручную сделать было нельзя.
+app.get('/api/lbrain/search', async (req, res) => {
+  const q = String(req.query.q || '').trim()
+  if (q.length < 2) return res.json({ query: q, results: [] })
+  const limit = Math.min(100, parseInt(req.query.limit, 10) || 40)
+  const r = await runLbrain(['search', q, String(limit)], 45000)
+  if (!r.ok) return res.status(500).json({ error: r.error })
+  res.json(r.data)
 })
 
 // ---- Obsidian sync: import .md files (frontmatter + [[wikilinks]]) into notes ----

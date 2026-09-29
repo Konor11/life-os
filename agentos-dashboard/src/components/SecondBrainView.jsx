@@ -1,9 +1,15 @@
 import { useState } from 'react'
 import { searchMemory, ingestMemory, obsidianImport, obsidianExport } from '../data/api'
+import { LiveBrain } from './LiveBrain'
 import { Icon } from './Icons'
 
 // «Второй мозг» — Obsidian-подобный центр знаний: заметки (Zettelkasten) + RAG-память,
 // wikilinks-граф связей, семантический поиск, импорт/экспорт Obsidian .md (frontmatter + [[wikilinks]]).
+
+const fmtSourceDate = (ts) => {
+  if (!ts) return ''
+  return new Date(ts * 1000).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' })
+}
 
 const NOTE_COLORS = {
   fleeting: '#e5484d', literature: '#f5a524', permanent: '#2f9e44', meeting: '#4f46e5',
@@ -19,7 +25,7 @@ export function SecondBrainView({ notes, memory, onUpdateNotes, onUpdateMemory }
   const [searching, setSearching] = useState(false)
   const [semantic, setSemantic] = useState([])
   const [draft, setDraft] = useState(null)        // открытая заметка (редактор)
-  const [mode, setMode] = useState('graph')       // graph | search | obsidian | editor
+  const [mode, setMode] = useState('graph')       // graph | search | obsidian | live | editor
   const [flash, setFlash] = useState('')
 
   const allNotes = notes || []
@@ -123,7 +129,29 @@ export function SecondBrainView({ notes, memory, onUpdateNotes, onUpdateMemory }
         <TabBtn active={mode === 'graph'} onClick={() => setMode('graph')} icon="Sparkles" label="Граф" />
         <TabBtn active={mode === 'search'} onClick={() => { setSemantic(allItems.map(i => ({ ...i, rel: 'all' }))); setMode('search') }} icon="Grid" label="Все" />
         <TabBtn active={mode === 'obsidian'} onClick={() => setMode('obsidian')} icon="Boxes" label="Obsidian" />
+        <TabBtn active={mode === 'live'} onClick={() => setMode('live')} icon="Database" label="Живой" />
       </div>
+
+      {/* Живой режим: индекс разговоров с агентами. Черновик из диалога можно перенести
+          в обычные заметки — дальше он твой, редактируется в «Графе» как обычно. */}
+      {mode === 'live' && (
+        <LiveBrain onPromote={(n) => {
+          const note = {
+            id: `note-${Date.now()}`,
+            title: n.title,
+            content: n.content,
+            // Источник сохраняем в заметке: видно, откуда взялось, и можно вернуться к диалогу.
+            source: `${n.source.sessionTitle} · ${fmtSourceDate(n.source.ts)}`,
+            tags: ['из диалога'],
+            created: new Date().toISOString().slice(0, 10),
+            type: 'permanent',
+          }
+          // onUpdateNotes ждёт функцию-обновлятель (как setState), а не готовый массив
+          onUpdateNotes(ns => [note, ...ns])
+          flashNow('Перенесено в заметки ✓')
+          setMode('graph')
+        }} />
+      )}
 
       {mode === 'graph' && <BrainGraph items={allItems} backlinkMap={backlinkMap} onOpen={openItem} onNew={newNote} />}
 
