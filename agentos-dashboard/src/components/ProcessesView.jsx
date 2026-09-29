@@ -146,14 +146,23 @@ export function ProcessesCard() {
 
       {/* Топ по памяти: кто вообще ест ресурс */}
       {data && !open && (
+        {/* Подпись вида обязательна: без неё «3 строки» читаются как «3 сессии», хотя это
+            процессы вообще — службы web-панелей, рантайм и агенты в одной куче. */}
         <div className="mt-2.5 pt-2.5 border-t border-border/60 space-y-0.5">
-          {data.processes.slice(0, 3).map(p => (
-            <div key={p.pid} className="flex items-center gap-2 text-[11px]">
-              <span className="text-text-muted w-20 truncate">{p.name}</span>
-              <span className="text-text flex-1 truncate" title={p.cmd}>{fmtMb(p.rssMb)}</span>
-              <span className="text-text-muted">{fmtElapsed(p.elapsedSec)}</span>
-            </div>
-          ))}
+          {data.processes.slice(0, 3).map(p => {
+            const k = KIND[p.kind] || KIND.app
+            return (
+              <div key={p.pid} className="flex items-center gap-2 text-[11px]">
+                <span className="text-text-muted w-20 truncate" title={p.cmd}>{p.name}</span>
+                <span className={`text-[9px] px-1 py-0.5 rounded shrink-0 ${k.bg} ${k.cls}`}>{k.label}</span>
+                <span className="text-text flex-1 text-right">{fmtMb(p.rssMb)}</span>
+                <span className="text-text-muted w-16 text-right">{fmtElapsed(p.elapsedSec)}</span>
+              </div>
+            )
+          })}
+          <div className="text-[10px] text-text-muted/80 pt-0.5">
+            это процессы, а не сессии агентов — сессии считаются в карточке выше
+          </div>
         </div>
       )}
 
