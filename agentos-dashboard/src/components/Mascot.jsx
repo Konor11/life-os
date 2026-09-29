@@ -11,6 +11,9 @@
 //   'ok'     — зелёные глаза, довольный
 //   'error'  — красные глаза, встревожен
 export function Mascot({ size = 28, className = '', state = 'idle', title }) {
+  // Константы держим ЗДЕСЬ: на прототипе маскота они жили в <script> листа, и ссылка на них
+  // из модуля роняла весь рендер страницы («CY is not defined» — пустой экран).
+  const CY = '#22d3ee'
   const eye = { idle: CY, ok: '#34d399', error: '#f87171', work: CY, sleep: '#94a3b8' }[state] || CY
   const round = state === 'idle' || state === 'ok' || state === 'error'
   return (
