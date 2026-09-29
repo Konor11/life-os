@@ -20,7 +20,7 @@ const SECTIONS = [
   { id: 'about', label: 'О панели', icon: 'Brain' },
 ]
 
-export function SettingsTab({ theme, onToggleTheme }) {
+export function SettingsView({ theme, onToggleTheme }) {
   const [section, setSection] = useState('look')
   const [status, setStatus] = useState(null)
   const [components, setComponents] = useState(null)
