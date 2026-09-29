@@ -1,6 +1,7 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
+import { LoginScreen } from './components/LoginScreen'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -55,6 +56,38 @@ class ErrorBoundary extends React.Component {
 }
 
 function App() {
+  // Вход в Life OS. Пока пароль не задан (или вход не выполнен) — вместо панели окно входа.
+  // Любой ответ 401 от API тоже возвращает сюда: кука могла протухнуть или пароль сменили.
+  const [auth, setAuth] = useState({ checked: false, required: false, authenticated: false })
+  const checkAuth = React.useCallback(async () => {
+    try {
+      const r = await fetch('/api/auth/status', { cache: 'no-store' })
+      const j = await r.json()
+      setAuth({ checked: true, required: !!j.required, authenticated: !!j.authenticated })
+    } catch {
+      setAuth({ checked: true, required: true, authenticated: false })
+    }
+  }, [])
+  useEffect(() => { checkAuth() }, [checkAuth])
+  useEffect(() => {
+    // Глобальная ловушка 401: один ответ — и мы снова на экране входа (без перезагрузки).
+    const orig = window.fetch
+    if (orig.__lifeosAuthPatched) return
+    const patched = function (...args) {
+      return orig.apply(this, args).then((res) => {
+        if (res && res.status === 401) {
+          const u = String((args[0] && args[0].url) || args[0] || '')
+          if (u.indexOf('/api/auth/') < 0) {
+            setAuth((a) => (a.authenticated ? { ...a, authenticated: false } : a))
+          }
+        }
+        return res
+      })
+    }
+    patched.__lifeosAuthPatched = true
+    window.fetch = patched
+  }, [])
+
   const [activeView, setActiveViewRaw] = useState(() => {
     try { return localStorage.getItem('lifeos.activeView') || 'dashboard' } catch { return 'dashboard' }
   })
@@ -198,6 +231,12 @@ function App() {
     habitsActive: habits.filter(h => h.streak > 0).length,
     notesCount: notes.length,
     deepWorkToday: (plan.timeBlocks || []).filter(b => b.type === 'deep_work').reduce((s,b) => s + (b.endHour - b.startHour), 0),
+  }
+
+  // Пока вход не подтверждён — окно входа вместо панели (и вместо «Backend unavailable»,
+  // который иначе мигал бы, пока /api отдаёт 401).
+  if (!auth.checked || (auth.required && !auth.authenticated)) {
+    return <LoginScreen onAuthenticated={() => { checkAuth(); window.location.reload() }} />
   }
 
   return (

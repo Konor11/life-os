@@ -9,6 +9,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import { attachTuiServer } from './tui-ws.js'
+import * as auth from './auth.js'
 import { spawn as ptySpawn } from 'node-pty'
 console.log('>>> [MODULE LOAD] server.js executing')
 
@@ -121,6 +122,75 @@ function safeResolve(p) {
 const app = express()
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
+
+// ---- Вход в Life OS: логин/пароль из установки + смена в Настройках ----
+// Guard стоит ДО всех /api-маршрутов: статику (окно входа) отдаёт отдельный процесс `serve`,
+// поэтому без пароля статика открыта, а данные и TUI — нет. Пока файл auth.json не создан,
+// авторизация выключена, и панель показывает экран первоначальной настройки.
+app.use(auth.authGuard)
+
+app.get('/api/auth/status', (req, res) => {
+  const s = auth.sessionFromReq(req)
+  const c = auth.creds()
+  res.json({
+    required: auth.authRequired(),
+    needsSetup: !c,
+    authenticated: !!s,
+    login: s ? s.l : null,
+  })
+})
+
+app.post('/api/auth/login', (req, res) => {
+  const { login, password } = req.body || {}
+  if (!auth.authRequired()) return res.json({ ok: true, authRequired: false })
+  if (!auth.verifyPassword(login, password)) {
+    return res.status(401).json({ error: 'неверный логин или пароль' })
+  }
+  const token = auth.issueToken(auth.creds().login)
+  res.setHeader('Set-Cookie', auth.cookieHeader(token))
+  res.json({ ok: true, login: auth.creds().login })
+})
+
+app.post('/api/auth/logout', (req, res) => {
+  res.setHeader('Set-Cookie', auth.clearCookieHeader())
+  res.json({ ok: true })
+})
+
+// Первоначальная настройка — только пока пароль не задан (файла нет). После этого endpoint
+// закрывается навсегда: смена только через /api/auth/change с текущим паролем.
+app.post('/api/auth/setup', (req, res) => {
+  if (auth.authRequired()) return res.status(409).json({ error: 'пароль уже задан, меняйте в Настройках' })
+  try {
+    const { login, password } = req.body || {}
+    auth.setCredentials(login, password)
+    const token = auth.issueToken(auth.creds().login)
+    res.setHeader('Set-Cookie', auth.cookieHeader(token))
+    res.json({ ok: true, login: auth.creds().login })
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) })
+  }
+})
+
+// Смена логина/пароля из Настроек: требует текущий пароль.
+app.post('/api/auth/change', (req, res) => {
+  const s = auth.sessionFromReq(req)
+  if (!s) return res.status(401).json({ error: 'требуется вход', auth: true })
+  const { currentPassword, login, password } = req.body || {}
+  if (!auth.verifyPassword(s.l, currentPassword)) {
+    return res.status(403).json({ error: 'текущий пароль неверен' })
+  }
+  try {
+    const cur = auth.creds()
+    const newLogin = String(login || cur.login).trim()
+    const newPass = String(password || currentPassword)
+    auth.setCredentials(newLogin, newPass)
+    // Кука подписана старым хешем — перевыпускаем, иначе выбьет сразу после смены.
+    res.setHeader('Set-Cookie', auth.cookieHeader(auth.issueToken(newLogin)))
+    res.json({ ok: true, login: newLogin })
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) })
+  }
+})
 
 // ---- Life OS data ----
 app.get('/api/plan', async (_, res) => res.json(await loadJson('plan')))

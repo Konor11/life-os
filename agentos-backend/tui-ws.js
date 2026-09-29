@@ -5,6 +5,7 @@ import http from 'http'
 import url from 'url'
 import { promisify } from 'util'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { wsAllowed } from './auth.js'
 
 const execS = promisify(exec)
 const HOME_BINS = ['/root/.opencode/bin', '/root/.codex/bin', '/root/.claude/local/bin',
@@ -501,6 +502,14 @@ export function attachTuiServer(app, server) {
     const u = url.parse(req.url, true)
     console.log(`[tui] upgrade? pathname=${u.pathname}`)
     if (u.pathname === '/ws/tui') {
+      // WebSocket идёт мимо express, поэтому вход проверяем здесь: без куки в TUI не пускаем
+      // (иначе форма входа на фронте обходилась бы сокетом).
+      if (!wsAllowed(req)) {
+        console.log(`[tui] ws upgrade без входа — отказ`)
+        socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+        socket.destroy()
+        return
+      }
       console.log(`[tui] MATCH upgrading to ws`)
       wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
     }
