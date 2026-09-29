@@ -1,15 +1,14 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Icon } from './Icons'
+import { EmptyState } from './PanelUX'
 
 const courseTypes = ['programming', 'languages', 'business', 'design', 'data_science', 'marketing', 'finance', 'health', 'other']
 const resourceTypes = ['book', 'course', 'video', 'article', 'paper', 'tool', 'website', 'podcast']
 
-// Заглушки активности. Раньше ширины полос и «часы» считались Math.random() прямо в рендере:
-// каждое обновление кадра рисовало новые значения — графики дёргались на глазах и «прыгали» при
-// прокрутке и ресайзе. Теперь значение детерминировано по индексу (стабильный псевдослучай);
-// когда появится настоящая статистика, она подставляется вместо этих заглушек.
-const stubActivity = (i, max = 100) => 12 + ((i * 37) % Math.max(1, max - 12))
-const stubHours = (i) => 15 + ((i * 13) % 20)
+// СтатистикаLearning считается по-настоящему из курсов: сколько освоено часов, сколько осталось,
+// как распределён прогресс по типам. Раньше здесь стояли выдуманные числа (Math.random() прямо в
+// рендере, потом «стабильный псевдослучай» по индексу) — графики показывали активность, которой
+// не было. Если данных нет, показываем честное пустое состояние, а не красивые полосы в пустоту.
 
 export function LearningView({ learning, onUpdate }) {
   const [showForm, setShowForm] = useState(false)
@@ -26,7 +25,7 @@ export function LearningView({ learning, onUpdate }) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-text">Learning</h1>
+          <h1 className="text-2xl font-bold text-text">Обучение</h1>
           <p className="text-text-muted">Courses • Topics • Resources • Progress</p>
         </div>
         <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors flex items-center gap-2">
@@ -57,7 +56,7 @@ export function LearningView({ learning, onUpdate }) {
       {activeTab === 'courses' && <CourseList courses={learning.courses} onUpdate={onUpdate} />}
       {activeTab === 'topics' && <TopicList topics={learning.topics} onUpdate={onUpdate} />}
       {activeTab === 'resources' && <ResourceList resources={learning.resources} onUpdate={onUpdate} />}
-      {activeTab === 'progress' && <ProgressView progress={learning.progress} onUpdate={onUpdate} />}
+      {activeTab === 'progress' && <ProgressView progress={learning.progress} courses={learning.courses} onUpdate={onUpdate} />}
 
       {showForm && (
         <LearningForm
@@ -158,7 +157,7 @@ function TopicList({ topics, onUpdate }) {
       {topics.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Target" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No topics yet. What do you want to explore?</p>
+          <p>Тем пока нет. Что хотите изучить?</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -190,7 +189,7 @@ function ResourceList({ resources, onUpdate }) {
       {resources.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Library" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No resources saved yet.</p>
+          <p>Ресурсов пока нет.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -230,39 +229,102 @@ function ResourceCard({ resource, onUpdate }) {
   )
 }
 
-function ProgressView({ progress, onUpdate }) {
+const TYPE_LABELS = {
+  programming: 'Программирование', languages: 'Языки', business: 'Бизнес', design: 'Дизайн',
+  data_science: 'Данные', marketing: 'Маркетинг', finance: 'Финансы', health: 'Здоровье', other: 'Прочее',
+}
+
+function ProgressView({ progress, courses = [], onUpdate }) {
+  // Считаем по фактическим курсам. hoursDone/hoursTotal — то, что человек вводил сам.
+  const list = Array.isArray(courses) ? courses : []
+  const done = list.filter(c => c.progress >= 100)
+  const active = list.filter(c => c.progress > 0 && c.progress < 100)
+  const hoursDone = list.reduce((s, c) => s + (Number(c.hoursDone) || 0), 0)
+  const hoursTotal = list.reduce((s, c) => s + (Number(c.hoursTotal) || 0), 0)
+  const hoursLeft = Math.max(0, hoursTotal - hoursDone)
+  const avgProgress = list.length
+    ? Math.round(list.reduce((s, c) => s + (Number(c.progress) || 0), 0) / list.length)
+    : 0
+
+  // Распределение по типам: реальный средний прогресс внутри типа, а не псевдослучай.
+  const byType = useMemo(() => {
+    const g = new Map()
+    for (const c of list) {
+      const t = c.type || 'other'
+      const cur = g.get(t) || { type: t, sum: 0, n: 0 }
+      cur.sum += Number(c.progress) || 0
+      cur.n += 1
+      g.set(t, cur)
+    }
+    return [...g.values()]
+      .map(x => ({ ...x, avg: Math.round(x.sum / x.n) }))
+      .sort((a, b) => b.avg - a.avg)
+  }, [list])
+
+  const stat = (label, value, hint) => (
+    <div className="glass p-3 rounded-lg">
+      <div className="text-xs text-text-muted">{label}</div>
+      <div className="text-xl font-semibold text-text">{value}</div>
+      {hint && <div className="text-xs text-text-muted">{hint}</div>}
+    </div>
+  )
+
+  if (!list.length) {
+    return (
+      <div className="glass p-4 rounded-xl">
+        <EmptyState
+          icon="GraduationCap"
+          mascot="idle"
+          title="Статистика появится, когда добавятся курсы"
+          hint="Сейчас здесь нечего считать: графики показывали бы выдуманные числа. Добавьте курс на вкладке «Курсы» — и здесь появятся реальные часы и прогресс по типам."
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="glass p-4 rounded-xl space-y-6">
-      <h3 className="font-semibold text-text">Learning Progress</h3>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <h4 className="font-medium text-text mb-4">Weekly Activity</h4>
-          <div className="space-y-2">
-            {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map((day, i) => (
-              <div key={day} className="flex items-center gap-3">
-                <span className="w-10 text-xs text-text-muted">{day}</span>
-                <div className="flex-1 h-3 bg-border rounded-full overflow-hidden">
-                  <div className="h-full bg-accent/30 rounded-full" style={{ width: `${stubActivity(i)}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div>
-          <h4 className="font-medium text-text mb-4">Monthly Hours</h4>
-          <div className="space-y-2">
-            {['Week 1','Week 2','Week 3','Week 4'].map((w, i) => (
-              <div key={w} className="flex items-center gap-3">
-                <span className="w-16 text-xs text-text-muted">{w}</span>
-                <div className="flex-1 h-6 bg-border rounded overflow-hidden">
-                  <div className="h-full bg-accent rounded" style={{ width: `${stubActivity(i + 3, 80)}%` }} />
-                </div>
-                <span className="w-12 text-xs text-text-muted text-right">{stubHours(i)}h</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      <h3 className="font-semibold text-text">Статистика обучения</h3>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {stat('Курсов всего', list.length)}
+        {stat('Завершено', done.length, active.length ? `в процессе: ${active.length}` : null)}
+        {stat('Часов освоено', hoursDone || '—', hoursTotal ? `из ${hoursTotal}` : 'часы не указаны')}
+        {stat('Средний прогресс', `${avgProgress}%`)}
       </div>
+
+      {hoursTotal > 0 && (
+        <div>
+          <h4 className="font-medium text-text mb-2">Часы: освоено {hoursDone} из {hoursTotal}{hoursLeft > 0 ? `, осталось ${hoursLeft}` : ' — всё пройдено'}</h4>
+          <div className="h-3 bg-border rounded-full overflow-hidden">
+            <div className="h-full bg-accent rounded-full transition-all"
+              style={{ width: `${Math.min(100, hoursTotal ? Math.round((hoursDone / hoursTotal) * 100) : 0)}%` }} />
+          </div>
+        </div>
+      )}
+
+      {byType.length > 0 && (
+        <div>
+          <h4 className="font-medium text-text mb-4">Прогресс по темам</h4>
+          <div className="space-y-2">
+            {byType.map(t => (
+              <div key={t.type} className="flex items-center gap-3">
+                <span className="w-36 text-xs text-text-muted truncate">{TYPE_LABELS[t.type] || t.type}</span>
+                <div className="flex-1 h-3 bg-border rounded-full overflow-hidden">
+                  <div className="h-full bg-accent/30 rounded-full transition-all" style={{ width: `${t.avg}%` }} />
+                </div>
+                <span className="w-10 text-xs text-text-muted text-right">{t.avg}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {hoursTotal === 0 && (
+        <p className="text-xs text-text-muted">
+          Часы в курсах не указаны — укажите «часов всего» и «часов пройдено» в карточке курса,
+          и здесь появится столбик освоенного.
+        </p>
+      )}
     </div>
   )
 }
@@ -277,7 +339,7 @@ function LearningForm({ mode, course, topic, resource, onCourseChange, onTopicCh
 function CourseForm({ course, onChange, onSubmit, onCancel }) {
   return (
     <div className="glass p-4 rounded-xl space-y-4 border border-accent/30">
-      <h3 className="font-semibold text-text">New Course</h3>
+      <h3 className="font-semibold text-text">Новый курс</h3>
       <div className="space-y-4">
         <div>
           <label className="block text-xs text-text-muted mb-1">Title *</label>
@@ -291,17 +353,17 @@ function CourseForm({ course, onChange, onSubmit, onCancel }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-text-muted mb-1">Platform</label>
+            <label className="block text-xs text-text-muted mb-1">Платформа</label>
             <input type="text" value={course.platform} onChange={e => onChange({...course, platform: e.target.value})} placeholder="Coursera, Udemy, YouTube..." className="input" />
           </div>
         </div>
         <div className="grid grid-cols-4 gap-4">
           <div>
-            <label className="block text-xs text-text-muted mb-1">Total Hours</label>
+            <label className="block text-xs text-text-muted mb-1">Часов всего</label>
             <input type="number" value={course.hoursTotal} onChange={e => onChange({...course, hoursTotal: parseInt(e.target.value) || 0})} placeholder="40" className="input" />
           </div>
           <div>
-            <label className="block text-xs text-text-muted mb-1">Hours Done</label>
+            <label className="block text-xs text-text-muted mb-1">Часов пройдено</label>
             <input type="number" value={course.hoursDone} onChange={e => onChange({...course, hoursDone: parseInt(e.target.value) || 0})} placeholder="0" className="input" />
           </div>
           <div>
@@ -310,7 +372,7 @@ function CourseForm({ course, onChange, onSubmit, onCancel }) {
             <span className="text-xs text-text-muted">{course.progress}%</span>
           </div>
           <div>
-            <label className="block text-xs text-text-muted mb-1">Rating</label>
+            <label className="block text-xs text-text-muted mb-1">Оценка</label>
             <input type="number" step="0.5" min="0" max="5" value={course.rating} onChange={e => onChange({...course, rating: parseFloat(e.target.value) || 0})} placeholder="4.5" className="input" />
           </div>
         </div>
@@ -320,8 +382,8 @@ function CourseForm({ course, onChange, onSubmit, onCancel }) {
         </div>
       </div>
       <div className="flex justify-end gap-3 pt-2 border-t border-border">
-        <button onClick={onCancel} className="px-4 py-2 border border-border rounded-lg hover:bg-bg-elevated transition-colors">Cancel</button>
-        <button onClick={onSubmit} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors" disabled={!course.title}>Add Course</button>
+        <button onClick={onCancel} className="px-4 py-2 border border-border rounded-lg hover:bg-bg-elevated transition-colors">Отмена</button>
+        <button onClick={onSubmit} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors" disabled={!course.title}>Добавить курс</button>
       </div>
     </div>
   )
@@ -330,28 +392,28 @@ function CourseForm({ course, onChange, onSubmit, onCancel }) {
 function TopicForm({ topic, onChange, onSubmit, onCancel }) {
   return (
     <div className="glass p-4 rounded-xl space-y-4 border border-accent/30">
-      <h3 className="font-semibold text-text">New Topic</h3>
+      <h3 className="font-semibold text-text">Новая тема</h3>
       <div className="space-y-4">
         <div>
           <label className="block text-xs text-text-muted mb-1">Name *</label>
           <input type="text" value={topic.name} onChange={e => onChange({...topic, name: e.target.value})} placeholder="React Server Components" className="input" autoFocus />
         </div>
         <div>
-          <label className="block text-xs text-text-muted mb-1">Description</label>
+          <label className="block text-xs text-text-muted mb-1">Описание</label>
           <textarea value={topic.description} onChange={e => onChange({...topic, description: e.target.value})} placeholder="What do you want to learn?" rows={3} className="input resize-y" />
         </div>
         <div>
-          <label className="block text-xs text-text-muted mb-1">Priority</label>
+          <label className="block text-xs text-text-muted mb-1">Приоритет</label>
           <select value={topic.priority} onChange={e => onChange({...topic, priority: e.target.value})} className="input">
             <option value="high">High</option>
-            <option value="medium">Medium</option>
+            <option value="medium">Средний</option>
             <option value="low">Low</option>
           </select>
         </div>
       </div>
       <div className="flex justify-end gap-3 pt-2 border-t border-border">
-        <button onClick={onCancel} className="px-4 py-2 border border-border rounded-lg hover:bg-bg-elevated transition-colors">Cancel</button>
-        <button onClick={onSubmit} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors" disabled={!topic.name}>Add Topic</button>
+        <button onClick={onCancel} className="px-4 py-2 border border-border rounded-lg hover:bg-bg-elevated transition-colors">Отмена</button>
+        <button onClick={onSubmit} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors" disabled={!topic.name}>Добавить тему</button>
       </div>
     </div>
   )
@@ -360,7 +422,7 @@ function TopicForm({ topic, onChange, onSubmit, onCancel }) {
 function ResourceForm({ resource, onChange, onSubmit, onCancel }) {
   return (
     <div className="glass p-4 rounded-xl space-y-4 border border-accent/30">
-      <h3 className="font-semibold text-text">New Resource</h3>
+      <h3 className="font-semibold text-text">Новый ресурс</h3>
       <div className="space-y-4">
         <div>
           <label className="block text-xs text-text-muted mb-1">Title *</label>
@@ -383,13 +445,13 @@ function ResourceForm({ resource, onChange, onSubmit, onCancel }) {
           <input type="text" value={resource.tags} onChange={e => onChange({...resource, tags: e.target.value})} placeholder="reference, react, hooks" className="input" />
         </div>
         <div>
-          <label className="block text-xs text-text-muted mb-1">Notes</label>
+          <label className="block text-xs text-text-muted mb-1">Заметки</label>
           <textarea value={resource.notes} onChange={e => onChange({...resource, notes: e.target.value})} placeholder="Why is this useful?" rows={3} className="input resize-y" />
         </div>
       </div>
       <div className="flex justify-end gap-3 pt-2 border-t border-border">
-        <button onClick={onCancel} className="px-4 py-2 border border-border rounded-lg hover:bg-bg-elevated transition-colors">Cancel</button>
-        <button onClick={onSubmit} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors" disabled={!resource.title}>Add Resource</button>
+        <button onClick={onCancel} className="px-4 py-2 border border-border rounded-lg hover:bg-bg-elevated transition-colors">Отмена</button>
+        <button onClick={onSubmit} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors" disabled={!resource.title}>Добавить ресурс</button>
       </div>
     </div>
   )

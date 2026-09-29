@@ -16,8 +16,16 @@ export function HealthView({ health, onUpdate }) {
   const nutrition = health.nutrition || []
   const appointments = health.appointments || []
 
-  const latestWeight = metrics.find(m => m.type === 'weight')?.value
-  const latestSleep = metrics.find(m => m.type === 'sleep_hours')?.value
+  // Брали ПЕРВУЮ подходящую запись, поэтому после нескольких замеров показывался самый старый
+  // вес. Берём последнюю по дате (без даты — по порядку в массиве, т.е. тоже последнюю).
+  const latestOf = (type) => {
+    const of = metrics.filter(m => m.type === type)
+    if (!of.length) return undefined
+    const sorted = [...of].sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+    return sorted[0].value
+  }
+  const latestWeight = latestOf('weight')
+  const latestSleep = latestOf('sleep_hours')
   const totalWorkouts = workouts.length
   const totalDuration = workouts.reduce((sum, w) => sum + (w.duration || 0), 0)
 
@@ -35,10 +43,10 @@ export function HealthView({ health, onUpdate }) {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        <MetricCard label="Weight" value={latestWeight ? `${latestWeight} kg` : '—'} icon="Weight" color="accent" />
-        <MetricCard label="Sleep" value={latestSleep ? `${latestSleep}h` : '—'} icon="Moon" color="warning" />
-        <MetricCard label="Workouts" value={totalWorkouts} icon="Dumbbell" color="success" />
-        <MetricCard label="Total Time" value={`${Math.round(totalDuration/60)}h`} icon="Clock" color="accent" />
+        <MetricCard label="Вес" value={latestWeight != null ? `${latestWeight} кг` : '—'} icon="Weight" color="accent" />
+        <MetricCard label="Сон" value={latestSleep != null ? `${latestSleep} ч` : '—'} icon="Moon" color="warning" />
+        <MetricCard label="Тренировок" value={totalWorkouts || '—'} icon="Dumbbell" color="success" />
+        <MetricCard label="Всего времени" value={totalDuration ? `${Math.round(totalDuration / 60)} ч` : '—'} icon="Clock" color="accent" />
       </div>
 
       <div className="flex items-center gap-2 border-b border-border mb-4">
