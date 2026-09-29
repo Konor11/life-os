@@ -101,33 +101,20 @@ else
   ok "бинарник установлен: $LAUNCHER"
 fi
 
-# .desktop: нужен для трея, иконки в меню и оконного менеджера
+# .desktop: нужен для трея, иконки в меню и оконного менеджера.
+# Берём готовый файл из репозитория и только подставляем Exec: так он останется одинаковым
+# здесь и в AUR-пакете (раньше ярлык собирался тут же, и две копии разъезжались).
 DESKTOP_DIR="$HOME/.local/share/applications"
 mkdir -p "$DESKTOP_DIR"
-# Абсолютный путь подставляем, иначе ярлык не найдёт файл
-cat > "$DESKTOP_DIR/lifeos.desktop" <<EOF
-[Desktop Entry]
-Type=Application
-Name=Life OS
-Comment=Панель управления ИИ-агентами
-Exec=$LAUNCHER
-Icon=lifeos
-Terminal=false
-Categories=Utility;Development;
-StartupWMClass=Life OS
-StartupNotify=true
-EOF
+sed "s|^Exec=.*|Exec=$LAUNCHER|" "$SRC_DIR/packaging/lifeos.desktop" > "$DESKTOP_DIR/lifeos.desktop"
 ok "ярлык создан: $DESKTOP_DIR/lifeos.desktop"
 
 # Иконка для меню приложений (если есть чем рисовать)
-if command -v rsvg-convert >/dev/null 2>&1; then
-  install -Dm644 "$TAURI_DIR/icons/icon.png" "$HOME/.local/share/icons/hicolor/512x512/apps/lifeos.png" 2>/dev/null || true
-  rsvg-convert -w 512 -h 512 "$SRC_DIR/../agentos-dashboard/public/mascot.svg" \
-    -o "$HOME/.local/share/icons/hicolor/512x512/apps/lifeos.png" 2>/dev/null || true
-  ok "иконка установлена"
-else
-  warn "rsvg-convert не найден (пакет librsvg) — в меню будет иконка по умолчанию"
-fi
+# Иконки берём из репозитория: 32, 128 и 512 — ровно те, что Tauri уже собрал для трея.
+install -Dm644 "$TAURI_DIR/icons/32x32.png"  "$HOME/.local/share/icons/hicolor/32x32/apps/lifeos.png"
+install -Dm644 "$TAURI_DIR/icons/128x128.png" "$HOME/.local/share/icons/hicolor/128x128/apps/lifeos.png"
+install -Dm644 "$TAURI_DIR/icons/icon.png"     "$HOME/.local/share/icons/hicolor/512x512/apps/lifeos.png"
+ok "иконки установлены"
 
 # Обновляем кэш иконок, иначе новая иконка появится только после перезахода
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then

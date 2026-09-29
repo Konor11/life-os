@@ -1,0 +1,54 @@
+# Maintainer: Konor11 <@Konor11>
+#
+# Life OS — нативный клиент панели ИИ-агентов (Tauri v2).
+# Интерфейс не входит в пакет: приложение загружает панель с lifeos.dktunnel.xyz,
+# поэтому пакет маленький, а интерфейс всегда свежий.
+
+pkgname=lifeos
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Нативный клиент панели управления ИИ-агентами Life OS: трей, уведомления, горячие клавиши"
+arch=('x86_64')
+url="https://github.com/Konor11/life-os"
+license=('MIT')
+# PKGBUILD собирается из релизного архива GitHub: он неизменяемый, в отличие от авто-архива по тегу.
+source=("https://github.com/Konor11/life-os/releases/download/v$pkgver/lifeos-desktop-$pkgver.tar.gz")
+sha256sums=('b8c063453d7fd5fe8ece3730b0f309f9eabec9fe50cba5238eb0ebab8ee5ccf5')
+
+# Зависимости времени выполнения: webkit — это сам webview, на котором рисуется панель.
+depends=('webkit2gtk-4.1'
+         'gtk3'
+         'libappindicator-gtk3'
+         'librsvg'
+         'cairo'
+         'pango'
+         'glib2')
+# Инструменты сборки. Rust ставится из Arch-репозитория, отдельный rustup не нужен.
+makedepends=('cargo'
+             'rust'
+             'pkgconf'
+             'patchelf')
+
+# Rust тянет ~400 крейтов; собирать параллельно и не трогать сеть во время сборки нельзя,
+# поэтому оставляем системные настройки по умолчанию.
+options=('!strip')
+# Пакет — всего один бинарник плюс ярлык и иконки.
+package() {
+  cd "$srcdir/lifeos-desktop-$pkgver/desktop/src-tauri"
+
+  # ВАЖНО: frontendDist в tauri.conf.json указывает на адрес сервера, поэтому локальная
+  # сборка фронтенда не нужна — cargo собирает только нативную часть.
+  cargo build --release --locked
+
+  install -Dm755 "target/release/lifeos" "$pkgdir/usr/bin/lifeos"
+
+  install -Dm644 "$srcdir/lifeos-desktop-$pkgver/desktop/packaging/lifeos.desktop" \
+    "$pkgdir/usr/share/applications/lifeos.desktop"
+
+  install -Dm644 "icons/32x32.png" \
+    "$pkgdir/usr/share/icons/hicolor/32x32/apps/lifeos.png"
+  install -Dm644 "icons/128x128.png" \
+    "$pkgdir/usr/share/icons/hicolor/128x128/apps/lifeos.png"
+  install -Dm644 "icons/icon.png" \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/lifeos.png"
+}

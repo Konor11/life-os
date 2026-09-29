@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Life OS
+Name[ru]=Life OS
+Comment=Панель управления ИИ-агентами
+Comment[ru]=Панель управления ИИ-агентами
+Exec=lifeos
+Icon=lifeos
+Terminal=false
+Categories=Utility;Development;Network;
+Keywords=agents;dashboard;lifeos;hermes;
+StartupWMClass=Life OS
+StartupNotify=true
