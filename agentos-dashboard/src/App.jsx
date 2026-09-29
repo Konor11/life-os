@@ -234,8 +234,11 @@ function App() {
   }
 
   // Пока вход не подтверждён — окно входа вместо панели (и вместо «Backend unavailable»,
-  // который иначе мигал бы, пока /api отдаёт 401).
-  if (!auth.checked || (auth.required && !auth.authenticated)) {
+  // который иначе мигал бы, пока /api отдаёт 401). Пока пароль НЕ задан (required=false),
+  // экран показывает форму первоначальной настройки; если пользователь нажал «Пропустить»,
+  // панель открывается, а пароль можно задать в Настройках → Безопасность.
+  const skipped = (() => { try { return localStorage.getItem('lifeos.auth.setupSkipped') === '1' } catch { return false } })()
+  if (!auth.checked || (!auth.authenticated && !(auth.required === false && skipped))) {
     return <LoginScreen onAuthenticated={() => { checkAuth(); window.location.reload() }} />
   }
 

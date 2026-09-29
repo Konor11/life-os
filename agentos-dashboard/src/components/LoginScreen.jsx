@@ -126,6 +126,16 @@ export function LoginScreen({ onAuthenticated }) {
         <div style={style.hint}>
           Пароль хранится только в виде хеша (scrypt) в файле <code>/root/.lifeos/auth.json</code> и
           его можно сменить в разделе «Настройки → Безопасность».
+          {needsSetup && (
+            <button type="button" onClick={() => {
+              // Пропустить: панель откроется без пароля. Флаг нужен, чтобы экран не возвращался
+              // при каждой перезагрузке; при появлении пароля он больше не мешает.
+              try { localStorage.setItem('lifeos.auth.setupSkipped', '1') } catch {}
+              onAuthenticated && onAuthenticated(null)
+            }} style={{ display: 'block', marginTop: 10, color: 'rgb(var(--text-muted, #6b7280))', textDecoration: 'underline', fontSize: 11 }}>
+              Пропустить — открыть без пароля
+            </button>
+          )}
         </div>
       </form>
     </div>

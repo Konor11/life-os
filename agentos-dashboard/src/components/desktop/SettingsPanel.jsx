@@ -19,8 +19,28 @@ function SecuritySection() {
   const load = () => fetch(`${API}/auth/status`).then(r => r.json()).then(setInfo).catch(() => setInfo(null))
   useEffect(() => { load() }, [])
 
+  // Если пароль ещё не задан (установка без входа или пользователь нажал «Пропустить»),
+  // создаём его здесь: /api/auth/setup работает, пока файла учётных данных нет.
+  const firstTime = !info?.required
   const save = async () => {
     setMsg(''); setErr('')
+    if (firstTime) {
+      if (!pass || pass.length < 8) return setErr('новый пароль короче 8 символов')
+      setBusy(true)
+      try {
+        const r = await fetch(`${API}/auth/setup`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ login: login || 'admin', password: pass }),
+        })
+        const j = await r.json().catch(() => ({}))
+        if (!r.ok || !j.ok) { setErr(j.error || 'не удалось сохранить'); return }
+        try { localStorage.removeItem('lifeos.auth.setupSkipped') } catch {}
+        setMsg('Пароль задан. Теперь вход обязателен.')
+        setLogin(''); setPass(''); setCurrent('')
+        load()
+      } catch (e) { setErr(String(e?.message || e)) } finally { setBusy(false) }
+      return
+    }
     if (!current) return setErr('нужен текущий пароль')
     if (!pass && login === (info?.login || '')) return setErr('новый пароль пустой — менять нечего')
     if (pass && pass.length < 8) return setErr('новый пароль короче 8 символов')
@@ -51,8 +71,8 @@ function SecuritySection() {
         <Row label="Вход включён" value={info?.required ? 'да' : 'нет (пароль не задан)'} />
         <Row label="Текущий логин" value={info?.login || '—'} mono />
         <div className="grid gap-2 mt-3">
-          <input className={field} placeholder="Новый логин (не менять — оставь пустым)" value={login} onChange={e => setLogin(e.target.value)} />
-          <input className={field} type="password" placeholder="Текущий пароль" value={current} onChange={e => setCurrent(e.target.value)} />
+          <input className={field} placeholder="Логин" value={login} onChange={e => setLogin(e.target.value)} />
+          {!firstTime && <input className={field} type="password" placeholder="Текущий пароль" value={current} onChange={e => setCurrent(e.target.value)} />}
           <input className={field} type="password" placeholder="Новый пароль (мин. 8 символов)" value={pass} onChange={e => setPass(e.target.value)} />
           <div className="flex items-center gap-2">
             <button onClick={save} disabled={busy}
