@@ -75,10 +75,13 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
 /// пользователю, куда он вошёл (важно, если сервер сменится).
 #[tauri::command]
 fn server_url(app: AppHandle) -> Result<String, String> {
+    // frontend_dist — это Option<FrontendDist>, а не сам FrontendDist: без Option здесь
+    // не компилируется. Проверить пришлось реальной сборкой, по документации это неочевидно.
     let cfg = app.config().clone();
     match cfg.build.frontend_dist {
-        tauri::utils::config::FrontendDist::Url(u) => Ok(u.to_string()),
-        other => Err(format!("панель не загружается по адресу: {other:?}")),
+        Some(tauri::utils::config::FrontendDist::Url(u)) => Ok(u.to_string()),
+        Some(other) => Err(format!("панель не загружается по адресу: {other:?}")),
+        None => Err("адрес панели не задан".to_string()),
     }
 }
 
@@ -122,7 +125,6 @@ pub fn run() {
 
             // ---- Трей ----
             let menu = build_menu(&handle)?;
-            let tray_available = true;
             TrayIconBuilder::with_id("main-tray")
                 .icon(
                     app.default_window_icon()
