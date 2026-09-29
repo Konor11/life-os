@@ -17,4 +17,4 @@ dist/
 deploy/Caddyfile
 
 # runtime data
-*.local
+*.localtarget/
