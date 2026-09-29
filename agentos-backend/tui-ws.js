@@ -346,6 +346,7 @@ export function attachTuiServer(app, server) {
       if (!s) { s = { engine, profile, buffer: [], timer: null, ws: null } }
       if (s.timer) { clearTimeout(s.timer); s.timer = null }
       s.pty = pty; s.ws = ws; s.tmux = tname; s.buffer = []
+      s.startedAt = Date.now()
       sessions.set(key, s)
       active.set(ws, s)
       if (existed) {
@@ -406,6 +407,7 @@ export function attachTuiServer(app, server) {
 
     // PTY -> websocket (+ ring buffer for replay)
     pty.onData((data) => {
+      s.lastDataAt = Date.now()
       s.buffer.push(data)
       let total = 0
       for (let i = s.buffer.length - 1; i >= 0; i--) {

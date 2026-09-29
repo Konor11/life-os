@@ -1,17 +1,75 @@
+import { useEffect, useState } from 'react'
 import { Icon } from './Icons'
 import { cn } from '../lib/utils'
+import { Mascot } from './Mascot'
+import { toast } from './PanelUX'
 
 // ===== Dashboard — pixel-faithful reproduction of the Julian Goldie Life OS
 // reference. Strict 3-column masonry:
 //   Col1: System Status & Profile · Quick Actions (3x3) · Capture Note
 //   Col2: Deep Work & Meetings Hub · Today's Timeline (vertical)
 //   Col3: Current Focus & Goals · Active Habits · Recent Notes
+// Живой статус терминалов агентов: маскот показывает «спит / работает», плюс считаем запущенные
+// сессии. Раньше состояние агентов на дашборде не показывалось вообще — только статичные
+// метрики сервера. Раз в 4 с; при появлении новой активности — всплывашка (важно с телефона:
+// вкладка чата может быть свёрнута).
+function AgentsPulse() {
+  const [data, setData] = useState(null)
+  useEffect(() => {
+    let alive = true
+    let prevActive = null
+    const tick = () => {
+      fetch('/api/sessions', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(j => {
+          if (!alive) return
+          const list = (j && j.sessions) || []
+          setData(list)
+          const active = list.filter(s => s.attached && s.idleMs !== null && s.idleMs < 15000).length
+          if (prevActive !== null && active > prevActive) {
+            const fresh = list.find(s => s.attached && s.idleMs !== null && s.idleMs < 15000)
+            toast(`Агент ${fresh ? fresh.engine : ''} ответил`, { state: 'ok' })
+          }
+          prevActive = active
+        })
+        .catch(() => {})
+    }
+    tick()
+    const t = setInterval(tick, 4000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+
+  const list = data || []
+  const attached = list.filter(s => s.attached)
+  const busy = list.filter(s => s.attached && s.idleMs !== null && s.idleMs < 15000).length
+  const mood = busy > 0 ? 'work' : (list.length > 0 ? 'idle' : 'sleep')
+
+  return (
+    <div className="card-surface rounded-2xl p-4">
+      <div className="flex items-center gap-3">
+        <Mascot size={40} state={mood} className="text-accent" title="Состояние агентов" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-text">
+            {busy > 0 ? `Агент${busy > 1 ? 'ы' : ''} работают` : (list.length ? 'Агенты свободны' : 'Агенты не запущены')}
+          </div>
+          <div className="text-xs text-text-muted truncate">
+            {attached.length
+              ? attached.map(s => `${s.engine}${s.profile && s.profile !== 'default' ? ':' + s.profile : ''}`).join(' · ')
+              : 'нет подключённых сессий'}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = null }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
       {/* ============ COLUMN 1 ============ */}
       <div className="space-y-4">
         <SystemCard status={status} />
+        <AgentsPulse />
         <QuickActions onAction={onQuickAction} />
         <button onClick={() => onQuickAction && onQuickAction('new-note')}
           className="card-surface rounded-2xl p-4 w-full text-left hover:border-accent/40 transition-all">

@@ -8,7 +8,7 @@ import { existsSync, realpathSync, readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
-import { attachTuiServer } from './tui-ws.js'
+import { attachTuiServer, sessionSnapshot } from './tui-ws.js'
 import * as auth from './auth.js'
 import { spawn as ptySpawn } from 'node-pty'
 console.log('>>> [MODULE LOAD] server.js executing')
@@ -1500,6 +1500,11 @@ setTimeout(() => { makeBackup('старт бэкенда').catch(() => {}) }, 20
 setInterval(() => { makeBackup('по расписанию').catch(() => {}) }, 24 * 60 * 60 * 1000)
 
 app.post('/api/backup/now', async (_, res) => res.json(await makeBackup('вручную из панели')))
+
+// Живое состояние TUI-сессий: панель рисует его маскотом (спит / работает) и подсвечивает зависшие.
+app.get('/api/sessions', (_, res) => {
+  try { res.json({ sessions: sessionSnapshot() }) } catch (e) { res.json({ sessions: [], error: e?.message }) }
+})
 
 app.get('/api/backup/list', async (_, res) => {
   try {
