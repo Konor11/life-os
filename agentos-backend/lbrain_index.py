@@ -343,7 +343,7 @@ def do_search(query, limit=30):
                 "select id, source, title, started_at from sessions")}
             rows = con.execute(
                 f"select m.id, m.session_id, m.role, m.content, m.timestamp from messages m "
-                f"where m.role in ('user','assistant') and {where} "
+                f"where m.role in ('user','assistant') and length(m.content) > 0 and {where} "
                 f"order by m.timestamp desc limit ?", (*args, limit * 2)).fetchall()
             for r in rows:
                 s = sess.get(r["session_id"])
@@ -383,10 +383,29 @@ def do_session(session_id, limit=200):
             if not s:
                 con.close()
                 continue
+            # length(content) > 0 — в базе Hermes встречаются assistant-сообщения с пустым
+            # текстом (в этой сессии их было 171 из 200 строк). Без фильтра они занимали весь
+            # лимит, и в окне источника висели пустые пузыри.
             rows = con.execute(
                 "select id, role, content, timestamp from messages where session_id = ? "
-                "and role in ('user','assistant') order by timestamp asc limit ?",
+                "and role in ('user','assistant') and content is not null and length(content) > 0 "
+                "order by timestamp asc limit ?",
                 (session_id, limit)).fetchall()
+            # Пустые реплики в переписке — мусор: сообщение могло целиком состоять из служебной
+            # вставки, которую clean_text срезал. Пропускаем их, иначе в окне источника висят
+            # пустые пузыри с одним временем.
+            msgs = []
+            for r in rows:
+                body = clean_text(r["content"])
+                if len(body) < 3:
+                    continue
+                # Обрезка длинных сообщений должна быть видна, а не выглядеть как обрыв.
+                cut = r["content"] or ""
+                if len(body) >= MAX_INDEX_CHARS and len(cut) > MAX_INDEX_CHARS:
+                    body = body[:MAX_INDEX_CHARS].rstrip() + "…"
+                msgs.append({
+                    "id": r["id"], "role": r["role"], "text": body, "ts": r["timestamp"],
+                })
             out = {
                 "found": True,
                 "sessionId": session_id,
@@ -395,11 +414,8 @@ def do_session(session_id, limit=200):
                 "title": clean_title(s["title"], "Разговор " + session_id[:8]),
                 "startedAt": s["started_at"],
                 "model": s["model"],
-                "messages": [{
-                    "id": r["id"], "role": r["role"],
-                    "text": clean_text(r["content"])[:MAX_INDEX_CHARS],
-                    "ts": r["timestamp"],
-                } for r in rows],
+                "messages": msgs,
+                "truncated": len(rows) >= limit,
             }
             con.close()
             break
