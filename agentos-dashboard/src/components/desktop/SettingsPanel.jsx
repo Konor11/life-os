@@ -68,8 +68,16 @@ function SecuritySection() {
     <div className="mt-4">
       <h3 className="text-text font-semibold mb-2 flex items-center gap-2"><Icon name="Desktop" size={16} className="text-accent" /> Безопасность</h3>
       <div className="p-3 bg-bg-elevated rounded-lg">
-        <Row label="Вход включён" value={info?.required ? 'да' : 'нет (пароль не задан)'} />
-        <Row label="Текущий логин" value={info?.login || '—'} mono />
+        {/* Row определён внутри SettingsPanel и здесь недоступен (область видимости) — рисуем
+            свои строки, иначе рендер падает с ReferenceError. */}
+        <div className="flex items-center justify-between py-2 border-b border-border/60">
+          <span className="text-text-muted text-sm">Вход включён</span>
+          <span className="text-text text-sm">{info?.required ? 'да' : 'нет (пароль не задан)'}</span>
+        </div>
+        <div className="flex items-center justify-between py-2 border-b border-border/60">
+          <span className="text-text-muted text-sm">Текущий логин</span>
+          <span className="text-text text-sm font-mono">{info?.login || '—'}</span>
+        </div>
         <div className="grid gap-2 mt-3">
           <input className={field} placeholder="Логин" value={login} onChange={e => setLogin(e.target.value)} />
           {!firstTime && <input className={field} type="password" placeholder="Текущий пароль" value={current} onChange={e => setCurrent(e.target.value)} />}
