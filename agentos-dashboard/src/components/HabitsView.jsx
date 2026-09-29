@@ -86,32 +86,32 @@ export function HabitsView({ habits, onUpdate }) {
       <div className="glass p-6 rounded-xl">
         <h3 className="font-semibold text-text mb-4 flex items-center gap-2">
           <Icon name="Sun" size={20} className="text-warning" />
-          Rituals
+          Ритуалы
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <RitualCard 
-            name="Morning Ritual"
+            name="Утренний ритуал"
             icon="Sunrise"
             color="warning"
             steps={[
-              'Hydrate — 500ml water',
-              'Movement — 10 min stretch',
-              'Breath — 5 min meditation',
-              'Review — Plan the day',
-              'Top 1 Outcome — Write it down',
+              'Вода — 500 мл',
+              'Разминка — 10 мин',
+              'Дыхание — 5 мин',
+              "Обзор — план на день",
+              'Главный результат дня — записать',
             ]}
             time="06:00-07:00"
           />
           <RitualCard 
-            name="Evening Ritual"
+            name="Вечерний ритуал"
             icon="Moon"
             color="accent"
             steps={[
-              'Brain dump — Capture tasks',
-              'Review — Day completion',
-              'Plan Tomorrow — Top 1 + 3 MITs',
-              'Log Habits — Mark done/skip',
-              'Digital Sunset — Screens off',
+              'Сброс головы — записать задачи',
+              'Итоги дня',
+              'План на завтра — главное + 3 задачи',
+              'Отметить привычки',
+              'Цифровой закат — экраны выключить',
             ]}
             time="22:00-22:30"
           />
@@ -284,6 +284,9 @@ function HabitForm({ habit, onChange, onSubmit, onCancel }) {
 }
 
 function RitualCard({ name, icon, color, steps, time }) {
+  // Отметки выполненных пунктов живут только в рамках карточки (rituals — статичный справочник,
+  // его негде хранить на сервере: в /api/habits есть только привычки со стриками).
+  const [done, setDone] = useState({})
   return (
     <div className="glass p-4 rounded-lg border-l-4 border-current" style={{ borderColor: color }}>
       <div className="flex items-center justify-between mb-4">
@@ -301,13 +304,37 @@ function RitualCard({ name, icon, color, steps, time }) {
         </button>
       </div>
       <ol className="space-y-2">
+        {/* Чекбоксы РИТУАЛА работали как декорация: без onChange и без сохранения нажатие
+            визуально ничего не менялось (и key={i} сбивал состояние при перестановке). Теперь
+            отметка живёт в состоянии карточки и сбрасывается кнопкой. */}
         {steps.map((step, i) => (
-          <li key={i} className="flex items-center gap-2 text-sm text-text">
+          <li key={step} className="flex items-center gap-2 text-sm text-text">
             <span className="w-5 h-5 rounded-full border border-border flex items-center justify-center text-xs font-medium text-text-muted flex-shrink-0">{i + 1}</span>
-            <span className="flex-1">{step}</span>
-            <input type="checkbox" className="w-4 h-4 accent-accent rounded" />
+            <button
+              onClick={() => setDone(d => ({ ...d, [i]: !d[i] }))}
+              className={`flex-1 text-left rounded px-1 py-0.5 transition-colors ${done[i] ? 'line-through text-text-muted' : 'hover:text-accent'}`}
+            >
+              {step}
+            </button>
+            <input
+              type="checkbox"
+              checked={!!done[i]}
+              onChange={() => setDone(d => ({ ...d, [i]: !d[i] }))}
+              className="w-4 h-4 accent-accent rounded shrink-0"
+              aria-label={step}
+            />
           </li>
         ))}
+        {Object.values(done).some(Boolean) && (
+          <li>
+            <button
+              onClick={() => setDone({})}
+              className="text-xs text-text-muted hover:text-text underline underline-offset-2"
+            >
+              Сбросить отметки
+            </button>
+          </li>
+        )}
       </ol>
     </div>
   )

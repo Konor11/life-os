@@ -287,7 +287,7 @@ function App() {
               {activeView === 'terminal' && <TerminalTab />}
               {activeView === 'files' && <FilesTab />}
               {activeView === 'chat' && <ChatTab />}
-              {activeView === 'settings' && <SettingsTab />}
+              {activeView === 'settings' && <SettingsTab theme={theme} onToggleTheme={toggleTheme} />}
               {activeView === 'agents' && <AgentsView />}
               {activeView === 'keys' && <KeysView />}
               {activeView === 'harness' && <HarnessView />}

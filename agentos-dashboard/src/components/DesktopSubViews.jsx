@@ -3,7 +3,7 @@ import { Icon } from './Icons'
 import { TerminalPanel } from './desktop/TerminalPanel'
 import { FileManagerPanel } from './desktop/FileManagerPanel'
 import { ChatPanel } from './desktop/ChatPanel'
-import { SettingsPanel } from './desktop/SettingsPanel'
+import { SettingsView } from './desktop/SettingsView'
 
 // Отдельные вкладки, вынесенные из DesktopView на верхний уровень сайдбара Life OS:
 // Terminal, Files, Chat, Settings. Каждая имеет кнопку «на весь экран».
@@ -62,10 +62,8 @@ export function ChatTab() {
   )
 }
 
-export function SettingsTab() {
-  return (
-    <FullscreenShell label="Настройки" icon="Settings" height="calc(100dvh - 9rem)">
-      <SettingsPanel />
-    </FullscreenShell>
-  )
+// Новая вкладка настроек с разделами. Старый SettingsPanel (плоский список сервер/движки/данные)
+// остаётся в проекте как источник стилистики, но в UI больше не используется.
+export function SettingsTab({ theme, onToggleTheme }) {
+  return <SettingsView theme={theme} onToggleTheme={onToggleTheme} />
 }
