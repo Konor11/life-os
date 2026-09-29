@@ -2,6 +2,7 @@ import React, { useState, useEffect, Suspense, lazy } from 'react'
 import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 import { LoginScreen } from './components/LoginScreen'
+import { Mascot } from './components/Mascot'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -220,8 +221,9 @@ function App() {
 
   if (loading) {
     return (
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'rgb(var(--cx-bg))', color:'#5865f2', fontFamily:'system-ui' }}>
-        Loading Life OS...
+      <div className="flex flex-col items-center justify-center gap-4" style={{ minHeight: '100vh', background: 'rgb(var(--cx-bg))' }}>
+        <span className="text-accent"><Mascot size={72} state="work" title="Life OS" /></span>
+        <span className="text-text-muted text-sm">Загружаю Life OS…</span>
       </div>
     )
   }

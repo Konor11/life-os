@@ -1,6 +1,7 @@
 import { useState, useEffect, cloneElement } from 'react'
 import { cn } from '../lib/utils'
 import { Icon } from './Icons'
+import { Mascot } from './Mascot'
 
 export function AppShell({ sidebarRender, mainRender }) {
   // Mobile: sidebar is an overlay drawer toggled by the burger in the top bar.
@@ -113,7 +114,7 @@ export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme,
           so here the brand row is hidden to save vertical space in the drawer. */}
       <div className="hidden lg:flex p-4 border-b border-border items-center justify-between">
         <h2 className="font-semibold text-lg flex items-center gap-2">
-          <Icon name="Brain" size={20} className="text-accent" />
+          <Mascot size={22} className="text-accent" title="Life OS" />
           Life OS
         </h2>
         <button

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Icon } from './Icons'
+import { Mascot } from './Mascot'
 
 // Окно входа Life OS. Показано, пока вход не выполнен; если пароль ещё не задан — это форма
 // первоначальной настройки, где админ сам придумывает логин и пароль.
@@ -83,9 +83,7 @@ export function LoginScreen({ onAuthenticated }) {
 
         <div className="relative rounded-2xl bg-bg-card border border-border shadow-card-lg p-7">
           <div className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-accent/10 text-accent flex items-center justify-center shrink-0">
-              <Icon name="Key" size={18} />
-            </span>
+            <Mascot size={40} className="text-accent" title="Life OS" />
             <div>
               <h1 className="text-base font-semibold text-text leading-tight">Life OS</h1>
               <p className="text-[11px] text-text-muted leading-tight">
