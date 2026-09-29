@@ -1,0 +1,13 @@
+{
+  "name": "Life OS",
+  "short_name": "Life OS",
+  "description": "Mission Control для ИИ-агентов",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0e14",
+  "theme_color": "#6366f1",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/mascot.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
