@@ -407,7 +407,7 @@ function SecuritySection() {
         </div>
       </Group>
 
-      {info?.isAdmin && <UsersGroup onChanged={load} />}
+      {info?.required && info?.isAdmin && <UsersGroup onChanged={load} />}
 
       <Group title="Что закрыто паролем" hint="Пароль защищает всё, кроме самого окна входа: статику отдаёт отдельный процесс, иначе форму негде рисовать.">
         <ul className="text-sm text-text-muted space-y-1.5">

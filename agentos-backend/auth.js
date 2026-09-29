@@ -46,7 +46,7 @@ function warnIfAuthVanished(st) {
   if (st !== 0) return
   try {
     if (!fs.existsSync(SEEN_FILE)) return
-    console.error('[auth] ВНИМАНИЕ: /root/.lifeos/auth.json исчез, хотя раньше создавался. ' +
+    console.error(`[auth] ВНИМАНИЕ: ${AUTH_FILE} исчез, хотя раньше создавался. ` +
       'Вход в панель отключён до новой настройки. Если это не вы — проверьте, что удалило файл.')
   } catch {}
 }

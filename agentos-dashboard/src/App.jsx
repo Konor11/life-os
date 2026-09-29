@@ -70,7 +70,9 @@ function App() {
         required: !!j.required,
         authenticated: !!j.authenticated,
         role: j.role || null,
-        isAdmin: !j.role ? !!j.authenticated : !!j.isAdmin,
+        // Роли нет только когда вход не настроен — тогда ограничений нет вовсе, и прятать
+        // админские разделы незачем (так же ведёт себя бэкенд: authGuard пропускает всё).
+        isAdmin: j.role ? !!j.isAdmin : true,
       })
     } catch {
       setAuth({ checked: true, required: true, authenticated: false })
