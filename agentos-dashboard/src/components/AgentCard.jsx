@@ -3,6 +3,7 @@ import { Icon } from './Icons'
 import { cn } from '../lib/utils'
 import { Mascot } from './Mascot'
 import { toast } from './PanelUX'
+import { ProcessesCard } from './ProcessesView'
 
 // ===== Dashboard — pixel-faithful reproduction of the Julian Goldie Life OS
 // reference. Strict 3-column masonry:
@@ -182,6 +183,9 @@ export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = 
       {/* ============ COLUMN 3 ============ */}
       <div className="space-y-4">
         <FocusCard plan={plan} />
+        {/* Процессы живут здесь, а не отдельной вкладкой: видеть, что ест сервер и не оставляет
+            ли хвостов от удалённых движков, нужно на главном экране, а не по специальному запросу. */}
+        <ProcessesCard />
         <HabitsCard habits={habits} />
         <NotesCard notes={notes} />
       </div>

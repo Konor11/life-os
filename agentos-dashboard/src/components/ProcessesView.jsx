@@ -34,12 +34,12 @@ const KIND = {
   app: { label: 'программа', cls: 'text-text', bg: 'bg-bg-elevated' },
 }
 
-export function ProcessesView() {
+// Данные и действия вынесены, чтобы компактная карточка на дашборде и полный список
+// использовали один и тот же код: раньше логика «завершить» рисковала разъехаться.
+function useProcesses(autoRefreshMs = 5000) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(0)          // pid в процессе завершения
-  const [filter, setFilter] = useState('all')  // all | suspicious | app | agent
-  const [onlyMine, setOnlyMine] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -55,9 +55,10 @@ export function ProcessesView() {
 
   useEffect(() => {
     load()
-    const t = setInterval(load, 5000)
+    if (!autoRefreshMs) return
+    const t = setInterval(load, autoRefreshMs)
     return () => clearInterval(t)
-  }, [load])
+  }, [load, autoRefreshMs])
 
   const kill = async (p, force) => {
     const what = `${p.name} (pid ${p.pid}, ${fmtMb(p.rssMb)})`
@@ -78,6 +79,108 @@ export function ProcessesView() {
     } catch (e) { toast(String(e.message || e), { state: 'error' }) } finally { setBusy(0) }
   }
 
+  return { data, err, busy, load, kill }
+}
+
+// Карточка для дашборда: коротко — что с сервером, и всё, что выглядит мусором. Полный список
+// открывается прямо здесь, отдельной вкладки ради этого заводить не нужно.
+export function ProcessesCard() {
+  const { data, err, busy, load, kill } = useProcesses(5000)
+  const [open, setOpen] = useState(false)
+  const s = data?.stats
+
+  if (err) {
+    return (
+      <div className="card-surface rounded-2xl p-4">
+        <div className="text-sm font-medium text-text">Процессы</div>
+        <div className="text-xs text-danger mt-1">{err}</div>
+        <div className="text-[11px] text-text-muted mt-1">Доступно только администратору</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="card-surface rounded-2xl p-4">
+      <div className="flex items-center gap-2.5">
+        <Mascot size={30} state={s?.suspicious ? 'error' : 'idle'} className="text-accent shrink-0"
+          title="Состояние процессов" />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-text">Процессы</div>
+          <div className="text-xs text-text-muted">
+            {!data ? 'читаю список…' : s?.suspicious
+              ? `подозрительных: ${s.suspicious}`
+              : `всего ${s.total} · память ${fmtMb(s.rssMb)} · мусора нет`}
+          </div>
+        </div>
+        {data && (
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-bg-elevated text-text-muted shrink-0">
+            {fmtMb(s.rssMb)}
+          </span>
+        )}
+      </div>
+
+      {/* Мусор — сразу виден, без раскрытия: ради него карточка и делалась */}
+      {data && data.suspicious.length > 0 && (
+        <div className="mt-2.5 pt-2.5 border-t border-border/60 space-y-1">
+          {data.suspicious.slice(0, 3).map(p => (
+            <div key={p.pid} className="flex items-center gap-2 text-xs flex-wrap">
+              <span className="text-text">{p.name}</span>
+              <span className="text-text-muted">{fmtMb(p.rssMb)} · {fmtElapsed(p.elapsedSec)}</span>
+              {p.exeMissing && <span className="text-danger">файла нет на диске</span>}
+              {p.flags.includes('detached') && <span className="text-warning">бесхозный</span>}
+              {p.canKill ? (
+                <button onClick={() => kill(p, false)} disabled={busy === p.pid}
+                  className="ml-auto px-2 py-0.5 rounded border border-border text-[10px] text-text-muted hover:text-text disabled:opacity-50">
+                  {busy === p.pid ? '…' : 'Завершить'}
+                </button>
+              ) : (
+                <span className="ml-auto text-[10px] text-text-muted/70">{p.notKillableBecause || 'защищён'}</span>
+              )}
+            </div>
+          ))}
+          {data.suspicious.length > 3 && (
+            <div className="text-[10px] text-text-muted">и ещё {data.suspicious.length - 3} — раскрой список</div>
+          )}
+        </div>
+      )}
+
+      {/* Топ по памяти: кто вообще ест ресурс */}
+      {data && !open && (
+        <div className="mt-2.5 pt-2.5 border-t border-border/60 space-y-0.5">
+          {data.processes.slice(0, 3).map(p => (
+            <div key={p.pid} className="flex items-center gap-2 text-[11px]">
+              <span className="text-text-muted w-20 truncate">{p.name}</span>
+              <span className="text-text flex-1 truncate" title={p.cmd}>{fmtMb(p.rssMb)}</span>
+              <span className="text-text-muted">{fmtElapsed(p.elapsedSec)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mt-2.5">
+        <button onClick={() => setOpen(v => !v)}
+          className="px-2.5 py-1 rounded-lg border border-border text-[11px] text-text-muted hover:text-text">
+          {open ? 'Свернуть' : 'Весь список'}
+        </button>
+        <button onClick={load} className="px-2.5 py-1 rounded-lg border border-border text-[11px] text-text-muted hover:text-text">
+          Обновить
+        </button>
+      </div>
+
+      {open && (
+        <div className="mt-3 -mx-1">
+          <ProcessesTable data={data} busy={busy} kill={kill} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Таблица и фильтры — общая часть для полного вида и раскрытия в карточке.
+function ProcessesTable({ data, busy, kill }) {
+  const [filter, setFilter] = useState('all')
+  const [onlyMine, setOnlyMine] = useState(false)
+
   const list = useMemo(() => {
     let l = data?.processes || []
     if (filter === 'suspicious') l = l.filter(p => p.flags.length)
@@ -88,7 +191,6 @@ export function ProcessesView() {
   }, [data, filter, onlyMine])
 
   const s = data?.stats
-  const mood = s?.suspicious ? 'error' : (data ? 'idle' : 'idle')
 
   const row = (p) => {
     const k = KIND[p.kind] || KIND.app
@@ -147,76 +249,17 @@ export function ProcessesView() {
     )
   }
 
-  return (
-    <div className="space-y-4">
-      <div className="flex items-start gap-3">
-        <Mascot size={44} state={mood} className="text-accent" title="Процессы сервера" />
-        <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-bold text-text">Процессы</h1>
-          <p className="text-xs text-text-muted">
-            Что реально работает на сервере. Метка «файла нет на диске» означает, что программа
-            удалена, а процесс продолжает жить — такие хвосты держат память и не видны нигде ещё.
-          </p>
-        </div>
-        <button onClick={load}
-          className="px-3 py-1.5 rounded-lg border border-border text-xs text-text-muted hover:text-text shrink-0">
-          Обновить
-        </button>
+  if (!data) {
+    return (
+      <div className="glass p-4 rounded-xl">
+        <EmptyState icon="Activity" mascot="idle" title="Читаю список процессов…" />
       </div>
+    )
+  }
 
-      {err && <div className="text-xs text-danger px-1">{err}</div>}
-
-      {s && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <div className="glass p-3 rounded-lg">
-            <div className="text-[11px] text-text-muted">Процессов</div>
-            <div className="text-lg font-semibold text-text">{s.total}</div>
-          </div>
-          <div className="glass p-3 rounded-lg">
-            <div className="text-[11px] text-text-muted">Память процессов</div>
-            <div className="text-lg font-semibold text-text">{fmtMb(s.rssMb)}</div>
-          </div>
-          <div className={`glass p-3 rounded-lg ${s.suspicious ? 'border-danger/40' : ''}`}>
-            <div className="text-[11px] text-text-muted">Подозрительных</div>
-            <div className={`text-lg font-semibold ${s.suspicious ? 'text-danger' : 'text-text'}`}>{s.suspicious}</div>
-          </div>
-          <div className="glass p-3 rounded-lg">
-            <div className="text-[11px] text-text-muted">Файла нет на диске</div>
-            <div className={`text-lg font-semibold ${s.deletedExe ? 'text-danger' : 'text-text'}`}>{s.deletedExe}</div>
-            {s.staleServices > 0 && (
-              <div className="text-[10px] text-text-muted/80">
-                ещё {s.staleServices} — службы со старой версии, не мусор
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {data && data.suspicious.length > 0 && (
-        <div className="glass p-3 rounded-xl border-danger/30">
-          <div className="text-sm font-medium text-text mb-1">Похоже на мусор</div>
-          <div className="space-y-1">
-            {data.suspicious.slice(0, 5).map(p => (
-              <div key={p.pid} className="flex items-center gap-2 flex-wrap text-xs">
-                <span className="text-text">{p.name}</span>
-                <span className="text-text-muted">pid {p.pid} · {fmtMb(p.rssMb)} · {fmtElapsed(p.elapsedSec)}</span>
-                {p.exeMissing && <span className="text-danger">файла нет на диске ({p.exe})</span>}
-                {p.flags.includes('detached') && !p.exeMissing && <span className="text-warning">бесхозный процесс</span>}
-                {p.canKill ? (
-                  <button onClick={() => kill(p, false)} disabled={busy === p.pid}
-                    className="ml-auto px-2.5 py-1 rounded-lg border border-border text-text-muted hover:text-text disabled:opacity-50">
-                    {busy === p.pid ? '…' : 'Завершить'}
-                  </button>
-                ) : (
-                  <span className="ml-auto text-[10px] text-text-muted/70">{p.notKillableBecause || 'защищён'}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 flex-wrap">
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 flex-wrap">
         {[
           ['all', 'Все'],
           ['suspicious', 'С метками'],
@@ -224,42 +267,36 @@ export function ProcessesView() {
           ['agent', 'Агенты'],
         ].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+            className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-colors ${
               filter === id ? 'bg-accent text-white' : 'text-text-muted hover:text-text hover:bg-bg-elevated'
             }`}>
             {label}
           </button>
         ))}
-        <label className="flex items-center gap-1.5 text-xs text-text-muted ml-2 cursor-pointer">
+        <label className="flex items-center gap-1.5 text-[11px] text-text-muted ml-1 cursor-pointer">
           <input type="checkbox" checked={onlyMine} onChange={e => setOnlyMine(e.target.checked)} />
-          только те, что можно завершить
+          только завершаемые
         </label>
+        <span className="ml-auto text-[11px] text-text-muted">{list.length} шт</span>
       </div>
 
-      {!data && !err && (
-        <div className="glass p-4 rounded-xl">
-          <EmptyState icon="Activity" mascot="idle" title="Читаю список процессов…" />
-        </div>
-      )}
-
-      {data && list.length === 0 && (
-        <div className="glass p-4 rounded-xl">
+      {list.length === 0 ? (
+        <div className="glass p-3 rounded-xl">
           <EmptyState icon="CheckCircle" mascot="ok" title="Пусто"
-            hint={onlyMine ? 'Ничего нельзя завершить — все процессы либо системные, либо сама панель.' : 'Под этот фильтр ничего не попало.'} />
+            hint={onlyMine
+              ? 'Ничего нельзя завершить: всё либо системное, либо сама панель.'
+              : 'Под этот фильтр ничего не попало.'} />
         </div>
-      )}
-
-      {data && list.length > 0 && (
+      ) : (
         <div className="glass p-1 rounded-xl overflow-x-auto">
-          <table className="w-full min-w-[720px]">
+          <table className="w-full min-w-[640px]">
             <thead>
               <tr className="text-left text-[11px] text-text-muted">
-                <th className="py-2 px-2 font-medium">Процесс</th>
-                <th className="py-2 px-2 font-medium">PID</th>
-                <th className="py-2 px-2 font-medium">Память</th>
-                <th className="py-2 px-2 font-medium">Работает</th>
-                <th className="py-2 px-2 font-medium">CPU</th>
-                <th className="py-2 px-2 font-medium text-right">Действие</th>
+                <th className="py-1.5 px-2 font-medium">Процесс</th>
+                <th className="py-1.5 px-2 font-medium">PID</th>
+                <th className="py-1.5 px-2 font-medium">Память</th>
+                <th className="py-1.5 px-2 font-medium">Работает</th>
+                <th className="py-1.5 px-2 font-medium text-right">Действие</th>
               </tr>
             </thead>
             <tbody>{list.map(row)}</tbody>
@@ -267,10 +304,12 @@ export function ProcessesView() {
         </div>
       )}
 
-      <p className="text-[11px] text-text-muted px-1">
-        Список обновляется сам раз в 5 секунд. Системные службы, процессы самой панели и всё, что
-        живёт в её systemd-юните, завершать нельзя — это защита, а не ошибка.
-      </p>
+      {s?.staleServices > 0 && (
+        <div className="text-[10px] text-text-muted/80 px-1">
+          {s.staleServices} служб работают со старой версией после обновления — это не мусор,
+          перезапустятся при перезагрузке.
+        </div>
+      )}
     </div>
   )
 }

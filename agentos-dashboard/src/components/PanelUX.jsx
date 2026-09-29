@@ -27,7 +27,6 @@ export const NAV = [
   { id: 'chat', label: 'Чат', hint: 'терминалы движков', icon: 'MessageSquare' },
   { id: 'terminal', label: 'Терминал', hint: 'оболочка сервера', icon: 'Terminal', adminOnly: true },
   { id: 'files', label: 'Файлы', hint: 'менеджер файлов', icon: 'Folder', adminOnly: true },
-  { id: 'processes', label: 'Процессы', hint: 'что реально работает на сервере', icon: 'Activity', adminOnly: true },
   { id: 'agents', label: 'Агенты', hint: 'профили и состояние', icon: 'Wrench' },
   { id: 'automations', label: 'Автоматизации', hint: 'сценарии', icon: 'Clock' },
   { id: 'keys', label: 'Ключи', hint: 'API-ключи', icon: 'Key' },

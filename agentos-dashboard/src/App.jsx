@@ -4,7 +4,6 @@ import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, sav
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
 import { CommandPalette, useHotkeys, ToastHost, toast, NAV } from './components/PanelUX'
-import { ProcessesView } from './components/ProcessesView'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -328,7 +327,6 @@ function App() {
               {activeView === 'chat' && <ChatTab />}
               {activeView === 'settings' && <SettingsTab theme={theme} onToggleTheme={toggleTheme} />}
               {activeView === 'agents' && <AgentsView />}
-              {activeView === 'processes' && <ProcessesView />}
               {activeView === 'keys' && <KeysView />}
               {activeView === 'harness' && <HarnessView />}
               {activeView === 'split' && <SplitPaneView />}
