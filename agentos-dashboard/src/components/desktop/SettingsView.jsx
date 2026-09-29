@@ -238,6 +238,101 @@ function EnginesSection({ harnesses }) {
 
 // --------------------------------------------------------------- безопасность ----
 
+// Пользователи и роли. Список и правка — только для администратора (бэкенд проверяет и сам:
+// даже если подделать запрос, без роли admin эндпоинты вернут 403).
+const ROLE_OPTS = [
+  { id: 'admin', label: 'Администратор' },
+  { id: 'user', label: 'Пользователь' },
+  { id: 'viewer', label: 'Наблюдатель' },
+]
+
+function UsersGroup({ onChanged }) {
+  const [data, setData] = useState(null)
+  const [login, setLogin] = useState('')
+  const [pass, setPass] = useState('')
+  const [role, setRole] = useState('user')
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    fetch('/api/auth/users', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => (j && j.users ? setData(j) : setErr(j.error || 'не удалось')))
+      .catch(() => setErr('не удалось'))
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const call = async (url, method, body) => {
+    setMsg(''); setErr(''); setBusy(true)
+    try {
+      const r = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok) { setErr(j.error || 'не удалось'); return false }
+      setMsg('Готово')
+      load(); onChanged && onChanged()
+      return true
+    } catch (e) { setErr(String(e?.message || e)); return false } finally { setBusy(false) }
+  }
+
+  const add = async () => {
+    if (pass.length < 8) return setErr('пароль короче 8 символов')
+    if (await call('/api/auth/users', 'POST', { login, password: pass, role })) {
+      setLogin(''); setPass('')
+    }
+  }
+
+  const input = 'w-full px-3 py-2 rounded-lg bg-bg border border-border text-text text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/20'
+  const roleLabel = (r) => (ROLE_OPTS.find(x => x.id === r) || {}).label || r
+
+  return (
+    <Group title="Пользователи и доступ"
+      hint="Администратор — всё. Пользователь — работа с данными и чат, но без терминала, файлов и установки движков. Наблюдатель — только просмотр. Пароль каждого хранится отдельно, в виде scrypt-хеша.">
+      <div className="space-y-2.5">
+        {(data?.users || []).map(u => (
+          <div key={u.login} className="flex flex-wrap items-center gap-2 py-1.5 border-b border-border/50 last:border-0">
+            <span className="text-sm text-text font-medium w-40 truncate">{u.login}</span>
+            <select
+              value={u.role}
+              onChange={e => call('/api/auth/user', 'POST', { login: u.login, role: e.target.value })}
+              className="px-2 py-1 rounded-lg bg-bg border border-border text-text text-xs"
+            >
+              {ROLE_OPTS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+            <span className="text-xs text-text-muted flex-1">
+              {u.createdAt ? 'с ' + new Date(u.createdAt).toLocaleDateString('ru-RU') : ''}
+            </span>
+            <button
+              onClick={() => {
+                const p = window.prompt(`Новый пароль для ${u.login} (мин. 8 символов)`)
+                if (p) call('/api/auth/user', 'POST', { login: u.login, password: p })
+              }}
+              className="px-2.5 py-1 rounded-lg border border-border text-text-muted text-xs hover:text-text">пароль</button>
+            <button
+              onClick={() => { if (window.confirm(`Удалить ${u.login}? Его входы сразу перестанут работать.`)) call('/api/auth/user', 'DELETE', { login: u.login }) }}
+              className="px-2.5 py-1 rounded-lg border border-border text-danger/80 text-xs hover:text-danger">удалить</button>
+          </div>
+        ))}
+
+        <div className="pt-2 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <input className={input} placeholder="логин нового" value={login} onChange={e => setLogin(e.target.value)} />
+          <input className={input} type="password" placeholder="пароль (мин. 8)" value={pass} onChange={e => setPass(e.target.value)} />
+          <div className="flex gap-2">
+            <select value={role} onChange={e => setRole(e.target.value)} className="px-2 py-2 rounded-lg bg-bg border border-border text-text text-sm">
+              {ROLE_OPTS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+            <button onClick={add} disabled={busy} className="px-4 py-2 rounded-lg bg-accent text-white text-sm disabled:opacity-60">Добавить</button>
+          </div>
+        </div>
+        {msg && <div className="text-xs text-success">{msg}</div>}
+        {err && <div className="text-xs text-danger">{err}</div>}
+      </div>
+    </Group>
+  )
+}
+
 function SecuritySection() {
   const [info, setInfo] = useState(null)
   const [login, setLogin] = useState('')
@@ -258,13 +353,16 @@ function SecuritySection() {
     setMsg(''); setErr('')
     if (firstTime && (!pass || pass.length < 8)) return setErr('пароль короче 8 символов')
     if (!firstTime && !current) return setErr('нужен текущий пароль')
-    if (!firstTime && !pass && !login) return setErr('новый пароль пустой — менять нечего')
+    if (!firstTime && !pass) return setErr('новый пароль пустой — менять нечего')
     setBusy(true)
     try {
       const url = firstTime ? '/api/auth/setup' : '/api/auth/change'
+      // Логин больше не переименовывается: он идентичность пользователя, и переименование
+      // ломало бы его пароль и все его сессии. Логин меняется только созданием нового
+      // пользователя и удалением старого.
       const body = firstTime
         ? { login: login || 'admin', password: pass }
-        : { currentPassword: current, login, password: pass }
+        : { currentPassword: current, password: pass }
       const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const j = await r.json().catch(() => ({}))
       if (!r.ok || !j.ok) { setErr(j.error || 'не удалось сохранить'); return }
@@ -283,14 +381,16 @@ function SecuritySection() {
         <div className="space-y-2.5">
           <InfoRow label="Состояние" value={info ? (info.required ? 'включён' : 'выключен') : '—'} />
           <InfoRow label="Логин" value={info?.login || '—'} mono />
+          <InfoRow label="Ваша роль" value={info?.role === 'admin' ? 'Администратор' : info?.role === 'user' ? 'Пользователь' : info?.role === 'viewer' ? 'Наблюдатель' : '—'} />
+          <InfoRow label="Можно" value={info?.isAdmin ? 'всё, включая терминал и установку движков' : info?.role === 'user' ? 'данные и чат' : 'только просмотр'} />
           {info?.required && info?.authenticated && (
             <div className="flex items-center gap-1.5 text-xs text-success pt-1">
               <span className="w-1.5 h-1.5 rounded-full bg-success" /> вы вошли как {info.login}
             </div>
           )}
-          <input className={input} placeholder={firstTime ? 'Логин (например admin)' : 'Новый логин (оставь пустым, чтобы не менять)'} value={login} onChange={e => setLogin(e.target.value)} />
+          {firstTime && <input className={input} placeholder="Логин (например admin)" value={login} onChange={e => setLogin(e.target.value)} />}
           {!firstTime && <input className={input} type="password" placeholder="Текущий пароль" value={current} onChange={e => setCurrent(e.target.value)} />}
-          <input className={input} type="password" placeholder={firstTime ? 'Новый пароль (мин. 8 символов)' : 'Новый пароль (оставь пустым)'} value={pass} onChange={e => setPass(e.target.value)} />
+          {!firstTime && <input className={input} type="password" placeholder="Новый пароль (мин. 8 символов)" value={pass} onChange={e => setPass(e.target.value)} />}
           <div className="flex items-center gap-2 pt-1">
             <button onClick={save} disabled={busy} className="px-4 py-2 rounded-lg bg-accent text-white text-sm disabled:opacity-60">
               {busy ? 'Сохраняю…' : (firstTime ? 'Задать пароль' : 'Сменить')}
@@ -306,6 +406,8 @@ function SecuritySection() {
           </div>
         </div>
       </Group>
+
+      {info?.isAdmin && <UsersGroup onChanged={load} />}
 
       <Group title="Что закрыто паролем" hint="Пароль защищает всё, кроме самого окна входа: статику отдаёт отдельный процесс, иначе форму негде рисовать.">
         <ul className="text-sm text-text-muted space-y-1.5">

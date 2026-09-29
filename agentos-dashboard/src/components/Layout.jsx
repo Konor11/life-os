@@ -89,7 +89,7 @@ export function AppShell({ sidebarRender, mainRender, onOpenPalette }) {
   )
 }
 
-export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme, installedComponents, onOpenPalette }) {
+export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme, installedComponents, onOpenPalette, isAdmin = true }) {
   // n8n / Coder appear in the menu only after they are installed («Установка компонентов»).
   const compInstalled = (id) => !installedComponents || installedComponents[id] !== false
   const views = [
@@ -107,18 +107,22 @@ export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme,
     { id: 'projects', label: 'Projects', icon: 'Folder' },
     { id: 'assistant', label: 'Assistant', icon: 'Brain' },
     { id: 'brain', label: 'Второй мозг', icon: 'Sparkles' },
-    { id: 'n8n', label: 'n8n', icon: 'Zap', component: true },
-    { id: 'coder', label: 'Coder', icon: 'Terminal', component: true },
-    { id: 'terminal', label: 'Terminal', icon: 'Terminal' },
-    { id: 'files', label: 'Files', icon: 'Folder' },
+    { id: 'n8n', label: 'n8n', icon: 'Zap', component: true, adminOnly: true },
+    { id: 'coder', label: 'Coder', icon: 'Terminal', component: true, adminOnly: true },
+    { id: 'terminal', label: 'Terminal', icon: 'Terminal', adminOnly: true },
+    { id: 'files', label: 'Files', icon: 'Folder', adminOnly: true },
     { id: 'chat', label: 'Chat', icon: 'MessageSquare' },
     { id: 'settings', label: 'Settings', icon: 'Settings' },
     { id: 'agents', label: 'Agents', icon: 'Wrench' },
     { id: 'automations', label: 'Automations', icon: 'Clock' },
-    { id: 'keys', label: 'Ключи', icon: 'Key' },
-    { id: 'harness', label: 'Установка компонентов', icon: 'Boxes' },
-    { id: 'split', label: 'Split Pane', icon: 'Layout' },
+    { id: 'keys', label: 'Ключи', icon: 'Key', adminOnly: true },
+    { id: 'harness', label: 'Установка компонентов', icon: 'Boxes', adminOnly: true },
+    { id: 'split', label: 'Split Pane', icon: 'Layout', adminOnly: true },
   ].filter(v => !v.component || compInstalled(v.id))
+    // Админские разделы (терминал, файлы, установка движков, ключи, Split Pane) не показываем
+    // тем, у кого нет роли администратора. Скрытие — только для удобства: настоящая проверка
+    // прав стоит на бэкенде (authGuard), поэтому руками введённый адрес всё равно не откроет.
+    .filter(v => !v.adminOnly || isAdmin)
 
   return (
     <div className="h-full flex flex-col">

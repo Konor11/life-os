@@ -1,9 +1,9 @@
-import React, { useState, useEffect, Suspense, lazy } from 'react'
+import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react'
 import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
-import { CommandPalette, useHotkeys, ToastHost, toast } from './components/PanelUX'
+import { CommandPalette, useHotkeys, ToastHost, toast, NAV } from './components/PanelUX'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -60,12 +60,18 @@ class ErrorBoundary extends React.Component {
 function App() {
   // Вход в Life OS. Пока пароль не задан (или вход не выполнен) — вместо панели окно входа.
   // Любой ответ 401 от API тоже возвращает сюда: кука могла протухнуть или пароль сменили.
-  const [auth, setAuth] = useState({ checked: false, required: false, authenticated: false })
+  const [auth, setAuth] = useState({ checked: false, required: false, authenticated: false, role: null, isAdmin: true })
   const checkAuth = React.useCallback(async () => {
     try {
       const r = await fetch('/api/auth/status', { cache: 'no-store' })
       const j = await r.json()
-      setAuth({ checked: true, required: !!j.required, authenticated: !!j.authenticated })
+      setAuth({
+        checked: true,
+        required: !!j.required,
+        authenticated: !!j.authenticated,
+        role: j.role || null,
+        isAdmin: !j.role ? !!j.authenticated : !!j.isAdmin,
+      })
     } catch {
       setAuth({ checked: true, required: true, authenticated: false })
     }
@@ -104,7 +110,12 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
-  const { paletteOpen, setPaletteOpen } = useHotkeys(setActiveViewRaw)
+  const { paletteOpen, setPaletteOpen } = useHotkeys(setActiveViewRaw, auth.isAdmin)
+  // Палитра и меню показывают только разделы, доступные моей роли (см. NAV в PanelUX).
+  const visibleViews = useMemo(
+    () => (auth.isAdmin === false ? NAV.filter(n => !n.adminOnly) : NAV),
+    [auth.isAdmin],
+  )
 
   const [plan, setPlan] = useState(emptyPlan)
   const [tasks, setTasks] = useState(emptyTasks)
@@ -267,11 +278,12 @@ function App() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onNavigate={(id) => setActiveView(id)}
+        items={visibleViews}
       />
       <ToastHost />
       <AppShell
         onOpenPalette={() => setPaletteOpen(true)}
-        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} installedComponents={components} onOpenPalette={() => setPaletteOpen(true)} />)}
+        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} installedComponents={components} onOpenPalette={() => setPaletteOpen(true)} isAdmin={auth.isAdmin !== false} />)}
         mainRender={(
           <>
             <MainContent>

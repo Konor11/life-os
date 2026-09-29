@@ -137,6 +137,8 @@ app.get('/api/auth/status', (req, res) => {
     needsSetup: !c,
     authenticated: !!s,
     login: s ? s.l : null,
+    role: s ? s.r : null,
+    isAdmin: !!(s && s.r === 'admin'),
   })
 })
 
@@ -146,9 +148,10 @@ app.post('/api/auth/login', (req, res) => {
   if (!auth.verifyPassword(login, password)) {
     return res.status(401).json({ error: 'неверный логин или пароль' })
   }
-  const token = auth.issueToken(auth.creds().login)
+  const token = auth.issueToken(login)
+  const u = auth.findUser(login)
   res.setHeader('Set-Cookie', auth.cookieHeader(token))
-  res.json({ ok: true, login: auth.creds().login })
+  res.json({ ok: true, login, role: u ? u.role : null })
 })
 
 app.post('/api/auth/logout', (req, res) => {
@@ -162,10 +165,10 @@ app.post('/api/auth/setup', (req, res) => {
   if (auth.authRequired()) return res.status(409).json({ error: 'пароль уже задан, меняйте в Настройках' })
   try {
     const { login, password } = req.body || {}
-    auth.setCredentials(login, password)
-    const token = auth.issueToken(auth.creds().login)
+    const created = auth.setCredentials(login, password)
+    const token = auth.issueToken(created.login)
     res.setHeader('Set-Cookie', auth.cookieHeader(token))
-    res.json({ ok: true, login: auth.creds().login })
+    res.json({ ok: true, login: created.login, role: created.role })
   } catch (e) {
     res.status(400).json({ error: e?.message || String(e) })
   }
@@ -175,18 +178,56 @@ app.post('/api/auth/setup', (req, res) => {
 app.post('/api/auth/change', (req, res) => {
   const s = auth.sessionFromReq(req)
   if (!s) return res.status(401).json({ error: 'требуется вход', auth: true })
-  const { currentPassword, login, password } = req.body || {}
+  const { currentPassword, password } = req.body || {}
   if (!auth.verifyPassword(s.l, currentPassword)) {
     return res.status(403).json({ error: 'текущий пароль неверен' })
   }
   try {
-    const cur = auth.creds()
-    const newLogin = String(login || cur.login).trim()
-    const newPass = String(password || currentPassword)
-    auth.setCredentials(newLogin, newPass)
-    // Кука подписана старым хешем — перевыпускаем, иначе выбьет сразу после смены.
-    res.setHeader('Set-Cookie', auth.cookieHeader(auth.issueToken(newLogin)))
-    res.json({ ok: true, login: newLogin })
+    // Свою учётку меняем только по текущему паролю. Смена паролей ДРУГИХ людей и роли —
+    // отдельные маршруты ниже (нужен администратор).
+    if (password) auth.setPassword(s.l, password)
+    // Кука подписана прежним хешем — перевыпускаем, иначе выбьет сразу после смены.
+    res.setHeader('Set-Cookie', auth.cookieHeader(auth.issueToken(s.l)))
+    res.json({ ok: true, login: s.l, passwordChanged: !!password })
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) })
+  }
+})
+
+// ---- Пользователи и роли (только администратор) ----
+app.get('/api/auth/users', auth.requireAdmin, (req, res) => {
+  res.json({
+    users: auth.users().map(u => ({ login: u.login, role: u.role, createdAt: u.createdAt })),
+    roles: auth.ROLES,
+    roleLabels: auth.ROLE_LABELS,
+  })
+})
+
+app.post('/api/auth/users', auth.requireAdmin, (req, res) => {
+  try {
+    const { login, password, role } = req.body || {}
+    res.json({ ok: true, user: auth.addUser(login, password, role) })
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) })
+  }
+})
+
+app.post('/api/auth/user', auth.requireAdmin, (req, res) => {
+  try {
+    const { login, role, password } = req.body || {}
+    if (role) auth.setRole(login, role)
+    if (password) auth.setPassword(login, password)
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(400).json({ error: e?.message || String(e) })
+  }
+})
+
+app.delete('/api/auth/user', auth.requireAdmin, (req, res) => {
+  try {
+    const login = String((req.body && req.body.login) || req.query.login || '')
+    auth.removeUser(login)
+    res.json({ ok: true })
   } catch (e) {
     res.status(400).json({ error: e?.message || String(e) })
   }

@@ -25,31 +25,31 @@ export const NAV = [
   { id: 'assistant', label: 'Ассистент', hint: 'диалог с агентами', icon: 'Brain' },
   { id: 'brain', label: 'Второй мозг', hint: 'граф заметок', icon: 'Sparkles' },
   { id: 'chat', label: 'Чат', hint: 'терминалы движков', icon: 'MessageSquare' },
-  { id: 'terminal', label: 'Терминал', hint: 'оболочка сервера', icon: 'Terminal' },
-  { id: 'files', label: 'Файлы', hint: 'менеджер файлов', icon: 'Folder' },
+  { id: 'terminal', label: 'Терминал', hint: 'оболочка сервера', icon: 'Terminal', adminOnly: true },
+  { id: 'files', label: 'Файлы', hint: 'менеджер файлов', icon: 'Folder', adminOnly: true },
   { id: 'agents', label: 'Агенты', hint: 'профили и состояние', icon: 'Wrench' },
   { id: 'automations', label: 'Автоматизации', hint: 'сценарии', icon: 'Clock' },
   { id: 'keys', label: 'Ключи', hint: 'API-ключи', icon: 'Key' },
-  { id: 'harness', label: 'Установка', hint: 'движки и компоненты', icon: 'Boxes' },
-  { id: 'split', label: 'Split Pane', hint: 'мультиагентный экран', icon: 'Layout' },
+  { id: 'harness', label: 'Установка', hint: 'движки и компоненты', icon: 'Boxes', adminOnly: true },
+  { id: 'split', label: 'Split Pane', hint: 'мультиагентный экран', icon: 'Layout', adminOnly: true },
   { id: 'settings', label: 'Настройки', hint: 'вид, движки, безопасность', icon: 'Settings' },
 ]
 
 // -------------------------------------------------------------------- палитра ----
 
-export function CommandPalette({ open, onClose, onNavigate }) {
+export function CommandPalette({ open, onClose, onNavigate, items = NAV }) {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const inputRef = useRef(null)
 
   const results = useMemo(() => {
     const s = q.trim().toLowerCase()
-    if (!s) return NAV
-    return NAV.filter(n =>
+    if (!s) return items
+    return items.filter(n =>
       n.label.toLowerCase().includes(s) ||
       (n.hint || '').toLowerCase().includes(s) ||
       n.id.includes(s))
-  }, [q])
+  }, [q, items])
 
   useEffect(() => {
     if (open) { setQ(''); setSel(0); setTimeout(() => inputRef.current?.focus(), 30) }
@@ -109,10 +109,12 @@ export function CommandPalette({ open, onClose, onNavigate }) {
 
 // -------------------------------------------------------------- хоткеи и ⌘K ----
 
-export function useHotkeys(onNavigate) {
+export function useHotkeys(onNavigate, isAdmin = true) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const navRef = useRef(onNavigate)
   navRef.current = onNavigate
+  const isAdminRef = useRef(isAdmin)
+  isAdminRef.current = isAdmin
 
   useEffect(() => {
     const onKey = (e) => {
@@ -122,10 +124,11 @@ export function useHotkeys(onNavigate) {
         e.preventDefault(); setPaletteOpen(v => !v); return
       }
       if (typing) return
-      // Alt+1..9 — быстрый переход по первым девяти разделам
+      // Alt+1..9 — быстрый переход по первым девяти разделам (без админских)
       if (e.altKey && /^[1-9]$/.test(e.key)) {
         e.preventDefault()
-        const n = NAV[parseInt(e.key, 10) - 1]
+        const list = isAdminRef.current ? NAV : NAV.filter(n => !n.adminOnly)
+        const n = list[parseInt(e.key, 10) - 1]
         if (n) navRef.current(n.id)
       }
       // g d — «go dashboard», двойное нажатие как в редакторах
