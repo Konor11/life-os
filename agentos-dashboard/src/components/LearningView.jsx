@@ -242,6 +242,7 @@ function ProgressView({ progress, courses = [], onUpdate }) {
   const hoursDone = list.reduce((s, c) => s + (Number(c.hoursDone) || 0), 0)
   const hoursTotal = list.reduce((s, c) => s + (Number(c.hoursTotal) || 0), 0)
   const hoursLeft = Math.max(0, hoursTotal - hoursDone)
+  const notStarted = list.filter(c => !(Number(c.progress) > 0)).length
   const avgProgress = list.length
     ? Math.round(list.reduce((s, c) => s + (Number(c.progress) || 0), 0) / list.length)
     : 0
@@ -286,7 +287,7 @@ function ProgressView({ progress, courses = [], onUpdate }) {
     <div className="glass p-4 rounded-xl space-y-6">
       <h3 className="font-semibold text-text">Статистика обучения</h3>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {stat('Курсов всего', list.length)}
+        {stat('Курсов всего', list.length, notStarted ? `не начато: ${notStarted}` : null)}
         {stat('Завершено', done.length, active.length ? `в процессе: ${active.length}` : null)}
         {stat('Часов освоено', hoursDone || '—', hoursTotal ? `из ${hoursTotal}` : 'часы не указаны')}
         {stat('Средний прогресс', `${avgProgress}%`)}
