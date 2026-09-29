@@ -114,6 +114,11 @@ export function ProcessesView() {
           </div>
           <div className="text-[11px] text-text-muted mt-0.5 break-all" title={p.cmd}>{p.cmd}</div>
           {p.unit && <div className="text-[10px] text-text-muted/80">юнит: {p.unit}</div>}
+          {p.note && (
+            <div className="text-[10px] text-text-muted/80 mt-0.5" title="Это не мусор: служба просто не перезапущена после обновления пакета">
+              {p.note}
+            </div>
+          )}
         </td>
         <td className="py-2 px-2 text-xs text-text-muted whitespace-nowrap">{p.pid}</td>
         <td className="py-2 px-2 text-xs text-text whitespace-nowrap">{fmtMb(p.rssMb)}</td>
@@ -178,6 +183,11 @@ export function ProcessesView() {
           <div className="glass p-3 rounded-lg">
             <div className="text-[11px] text-text-muted">Файла нет на диске</div>
             <div className={`text-lg font-semibold ${s.deletedExe ? 'text-danger' : 'text-text'}`}>{s.deletedExe}</div>
+            {s.staleServices > 0 && (
+              <div className="text-[10px] text-text-muted/80">
+                ещё {s.staleServices} — службы со старой версии, не мусор
+              </div>
+            )}
           </div>
         </div>
       )}

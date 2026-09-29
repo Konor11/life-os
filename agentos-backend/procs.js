@@ -162,8 +162,19 @@ export async function listProcesses() {
       : isAgent ? 'agent'
       : 'app'
 
+    // Разведём два разных случая «файла нет на диске»:
+    //  * служба systemd, запущенная ДО обновления пакета (python3 → python3.14, новый systemd) —
+    //    это норма для долгого аптайма, она перезапустится сама. Бить её нельзя и незачем;
+    //  * бесхозный демон удалённого движка (codex) — вот это мусор, держит сотни мегабайт.
+    // Если не разделить, список показывает 4 «страшных» процесса, которые трогать нельзя, и
+    // настоящий мусор в нём теряется.
+    const isService = kind === 'service' || kind === 'system'
     const flags = []
-    if (missing) flags.push('deleted-exe')            // программы на диске уже нет
+    let note = ''
+    if (missing) {
+      if (isService) note = 'обновлён, а процесс со старой версии — перезапустится при перезагрузке'
+      else flags.push('deleted-exe')
+    }
     // «Осиротевший» имеет смысл только для обычных программ: агентов породил tmux, службы — systemd
     if (p.ppid === 1 && kind === 'app') flags.push('detached')
     if (elapsedSec > 12 * 3600 && cpuSec < 5 && kind === 'app') flags.push('idle-long')
@@ -180,6 +191,9 @@ export async function listProcesses() {
       elapsedSec: Math.round(elapsedSec),
       exe,
       exeMissing: missing,
+      note,
+      // Служба на старой версии после обновления — к мусору не относим, но показываем отдельно
+      staleService: missing && isService,
       kind,
       unit,
       isOurs: mine,
@@ -204,7 +218,8 @@ export async function listProcesses() {
       total: out.length,
       rssMb: out.reduce((s, p) => s + p.rssMb, 0),
       suspicious: suspicious.length,
-      deletedExe: out.filter(p => p.exeMissing).length,
+      deletedExe: out.filter(p => p.flags.includes('deleted-exe')).length,
+      staleServices: out.filter(p => p.staleService).length,
       detached: out.filter(p => p.flags.includes('detached')).length,
     },
     suspicious,
