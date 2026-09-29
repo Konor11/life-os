@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { nativeNotify } from '../lib/desktop'
 import { Icon } from './Icons'
 import { Mascot } from './Mascot'
 
@@ -163,16 +164,25 @@ export function ToastHost() {
   const seq = useRef(0)
 
   useEffect(() => {
-    pushToast = (message, opts) => {
-      const id = ++seq.current
-      setItems(list => [...list.slice(-3), { id, message, ...opts }])
-      setTimeout(() => setItems(list => list.filter(t => t.id !== id)), opts.timeout || 4200)
-    }
+    pushToast = (message, opts) => ref.current && ref.current(message, opts)
     return () => { pushToast = null }
   }, [])
 
   const dismiss = (id) => setItems(list => list.filter(t => t.id !== id))
   if (!items.length) return null
+
+  // Каждое новое уведомление дополнительно уходит в системный трей, если панель открыта внутри
+  // десктопного приложения. В браузере nativeNotify ничего не делает — там всплывашка выше.
+  // Ссылка, а не сама функция: toast() вызывается снаружи (из карточек и кнопок), и он должен
+  // видеть актуальный обработчик, иначе первое же уведомление уйдёт в никуда.
+  const ref = useRef(null)
+  ref.current = (message, opts = {}) => {
+    const id = ++seq.current
+    setItems(list => [...list.slice(-3), { id, message, ...opts }])
+    // В приложении — ещё и системное уведомление. В браузере вызов ничего не делает.
+    nativeNotify('Life OS', message)
+    setTimeout(() => setItems(list => list.filter(t => t.id !== id)), opts.timeout || 4200)
+  }
 
   return (
     <div className="fixed z-50 bottom-4 right-4 left-4 sm:left-auto flex flex-col gap-2 items-end pointer-events-none">

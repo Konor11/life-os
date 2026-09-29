@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // Файл лежит в components/desktop/, поэтому Icons и Mascot — уровнем выше (../),
 // а список движков — рядом (./ChatPanelEngines).
 import { Icon } from '../Icons'
+import { desktopInfo, setAutostart as setAutostartNative } from '../../lib/desktop'
 import { Mascot } from '../Mascot'
 import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanelEngines'
 
@@ -422,6 +423,57 @@ function SecuritySection() {
 
 // --------------------------------------------------------------------- система ----
 
+// Блок виден ТОЛЬКО внутри десктопного приложения. В браузере его нет вовсе: переключатель
+// автозапуска на сервере не имеет смысла и только путает.
+function DesktopGroup() {
+  const [info, setInfo] = useState(null)
+  const [autostart, setAutostart] = useState(null)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      const inf = await desktopInfo()
+      if (!alive) return
+      if (!inf) return                      // мы в браузере — блока не будет
+      setInfo(inf)
+      setAutostart(!!inf.autostart)
+    })()
+    return () => { alive = false }
+  }, [])
+
+  if (!info) return null
+
+  const toggle = async () => {
+    setBusy(true); setErr('')
+    const r = await setAutostartNative(!autostart)
+    if (r === null) { setErr('не удалось переключить автозапуск'); setBusy(false); return }
+    setAutostart(r); setBusy(false)
+  }
+
+  return (
+    <Group title="Настольное приложение" hint="Эти настройки существуют только в приложении Life OS для Linux, а не в браузере.">
+      <InfoRow label="Версия приложения" value={info.version} mono />
+      <InfoRow label="Платформа" value={info.platform} mono />
+      <div className="flex items-center gap-3 pt-1">
+        <button
+          onClick={toggle}
+          disabled={busy}
+          className={`px-4 py-2 rounded-lg text-sm disabled:opacity-60 ${
+            autostart ? 'bg-accent text-white' : 'border border-border text-text-muted hover:text-text'
+          }`}>
+          {busy ? 'Переключаю…' : (autostart ? 'Автозапуск включён' : 'Включить автозапуск')}
+        </button>
+        <span className="text-xs text-text-muted">
+          Запускать Life OS при входе в систему (трей, не мешает)
+        </span>
+      </div>
+      {err && <div className="text-xs text-danger">{err}</div>}
+    </Group>
+  )
+}
+
 function SystemSection({ status }) {
   if (!status) return <div className="text-sm text-text-muted">Читаю состояние сервера…</div>
   if (status.error) return <div className="text-sm text-danger">{status.error}</div>
@@ -436,6 +488,7 @@ function SystemSection({ status }) {
         <InfoRow label="RAM (RSS)" value={`${Math.round((status.mem?.rss || 0) / 1024 / 1024)} МБ`} mono />
         <InfoRow label="OpenRouter" value={status.openrouter === 'missing' ? 'не задан' : 'задан'} />
       </Group>
+      <DesktopGroup />
       <Group title="Резервное копирование">
         <InfoRow label="Копии создаются" value="раз в сутки + при старте сервера" />
         <InfoRow label="Где хранятся" value="/root/lifeos-backups" mono />

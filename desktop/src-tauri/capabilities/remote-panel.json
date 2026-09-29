@@ -1,0 +1,20 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "remote-panel",
+  "description": "Панель Life OS грузится с сервера, поэтому нативные вызовы разрешаем именно для её домена. Локальных окон с этим набором прав нет.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["https://lifeos.dktunnel.xyz", "https://lifeos.dktunnel.xyz/*"]
+  },
+  "permissions": [
+    "core:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-title",
+    "core:window:allow-minimize",
+    "core:app:allow-version",
+    "notification:default",
+    "autostart:default"
+  ]
+}
