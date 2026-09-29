@@ -47,16 +47,23 @@ also very much then than been being were our us your yours ok okay yes yeah righ
 """.split())
 
 
+# Каталог с историей Hermes. По умолчанию — тот, где работает движок. Переопределяется переменной
+# окружения LIFEOS_HERMES_HOME: Life OS может стоять на одном хосте, а разговаривать с агентами
+# можно с другого (история лежит там), и наоборот. Без этого индекс видел бы пустую базу.
+HERMES_HOME = os.environ.get("LIFEOS_HERMES_HOME", "/root/.hermes")
+
+
 def db_paths():
-    """Все базы истории: основная + по профилям (флот тоже обсуждает делa)."""
-    out = ["/root/.hermes/state.db"]
-    out += sorted(glob.glob("/root/.hermes/profiles/*/state.db"))
+    """Все базы истории: основная + по профилям (флот тоже обсуждает дела)."""
+    out = [os.path.join(HERMES_HOME, "state.db")]
+    out += sorted(glob.glob(os.path.join(HERMES_HOME, "profiles", "*", "state.db")))
     return [p for p in out if os.path.exists(p)]
 
 
 def profile_of(path):
-    if "/profiles/" in path:
-        return path.split("/profiles/")[1].split("/")[0]
+    marker = os.path.join(HERMES_HOME, "profiles") + os.sep
+    if marker in path:
+        return path.split(marker)[1].split(os.sep)[0]
     return "default"
 
 
