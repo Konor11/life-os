@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Icon } from './Icons'
-import { Mascot } from './Mascot'
-import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './desktop/ChatPanelEngines'
+// Файл лежит в components/desktop/, поэтому Icons и Mascot — уровнем выше (../),
+// а список движков — рядом (./ChatPanelEngines).
+import { Icon } from '../Icons'
+import { Mascot } from '../Mascot'
+import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanelEngines'
 
 // Полноценная вкладка «Настройки»: слева список разделов, справа содержимое выбранного.
 // Разделы: Внешний вид · Движки · Безопасность · Система · Данные · О панели.
