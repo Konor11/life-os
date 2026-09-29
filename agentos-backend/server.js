@@ -14,7 +14,9 @@ import { spawn as ptySpawn } from 'node-pty'
 console.log('>>> [MODULE LOAD] server.js executing')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = '/root/agentos-data'
+// Переопределяется переменной окружения только для тестов на отдельном экземпляре (тест ролей,
+// экспорт/импорт): иначе проверка ходила бы по боевым данным и затирала их.
+const DATA_DIR = process.env.LIFEOS_DATA_DIR || '/root/agentos-data'
 const ALLOWED_ROOTS = ['/root', '/tmp', '/home']  // terminal/fs sandbox
 const execP = promisify(execFile)
 const execS = promisify(exec)
@@ -1505,7 +1507,7 @@ app.get('/api/chat/transcript', async (req, res) => {
 // ---- Резервные копии по расписанию ----
 // Раз в сутки складываем все данные в /root/lifeos-backups/<дата>.json и держим последние N.
 // Раньше бэкап был возможен только вручную из консоли — а потеря данных выяснялась постфактум.
-const BACKUP_DIR = '/root/lifeos-backups'
+const BACKUP_DIR = process.env.LIFEOS_BACKUP_DIR || '/root/lifeos-backups'
 const BACKUP_KEEP = parseInt(process.env.LIFEOS_BACKUP_KEEP, 10) || 14
 let lastBackup = null
 

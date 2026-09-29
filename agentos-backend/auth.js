@@ -20,7 +20,7 @@ import fs from 'fs'
 import path from 'path'
 
 const AUTH_FILE = process.env.LIFEOS_AUTH_FILE || '/root/.lifeos/auth.json'
-const SEEN_FILE = '/root/.lifeos/.auth-created'
+const SEEN_FILE = AUTH_FILE + '-created'
 const COOKIE = 'lifeos_session'
 const SESSION_DAYS = 30
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 }
