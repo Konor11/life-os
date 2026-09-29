@@ -474,6 +474,52 @@ function DesktopGroup() {
   )
 }
 
+// Готовые сборки десктопного приложения. Показывает файлы только администратору: сборка —
+// не данные, но и выкладывать её в общий доступ незачем.
+function DesktopDownloadsGroup() {
+  const [data, setData] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/desktop/info', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error('доступ запрещён'))))
+      .then(j => { if (alive) setData(j) })
+      .catch(e => { if (alive) setErr(e.message) })
+    return () => { alive = false }
+  }, [])
+
+  if (err) return null
+  if (!data) return null
+
+  const mb = (n) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} МБ` : `${Math.round(n / 1024)} КБ`)
+  const when = (t) => (t ? new Date(t).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '')
+
+  return (
+    <Group title="Сборка для настольного компьютера"
+      hint="Готовые файлы приложения для Linux. AppImage запускается без установки: скачай, разреши запуск и открой.">
+      {data.files.length === 0 ? (
+        <div className="text-xs text-text-muted">
+          Файлов пока нет — сборка выполняется на сервере. Появится здесь, когда будет готова.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {data.files.map(f => (
+            <div key={f.name} className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm text-text font-medium truncate">{f.name}</span>
+              <span className="text-xs text-text-muted">{mb(f.size)} · {when(f.mtime)}</span>
+              <a href={f.url} download
+                className="ml-auto px-3 py-1.5 rounded-lg bg-accent text-white text-xs no-underline hover:bg-accent-hover">
+                Скачать
+              </a>
+            </div>
+          ))}
+        </div>
+      )}
+    </Group>
+  )
+}
+
 function SystemSection({ status }) {
   if (!status) return <div className="text-sm text-text-muted">Читаю состояние сервера…</div>
   if (status.error) return <div className="text-sm text-danger">{status.error}</div>
@@ -489,6 +535,7 @@ function SystemSection({ status }) {
         <InfoRow label="OpenRouter" value={status.openrouter === 'missing' ? 'не задан' : 'задан'} />
       </Group>
       <DesktopGroup />
+      <DesktopDownloadsGroup />
       <Group title="Резервное копирование">
         <InfoRow label="Копии создаются" value="раз в сутки + при старте сервера" />
         <InfoRow label="Где хранятся" value="/root/lifeos-backups" mono />

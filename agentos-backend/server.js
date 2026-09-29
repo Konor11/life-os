@@ -2057,6 +2057,39 @@ async function readLbrainIndex() {
   }
 }
 
+// ---- Сборка десктопного приложения ----
+// Готовый AppImage отдаём через панель: не нужен сторонний хостинг, доступ закрыт тем же
+// входом, что и у панели. Файл — сборка, а не данные, поэтому в ежедневный бэкап не идёт.
+const DESKTOP_DIST = process.env.LIFEOS_DESKTOP_DIST || '/root/lifeos-desktop-dist'
+
+app.get('/api/desktop/info', async (req, res) => {
+  let files = []
+  try {
+    files = (await readdir(DESKTOP_DIST))
+      .filter(f => f.endsWith('.AppImage') || f.endsWith('.deb') || f.endsWith('.tar.gz'))
+      .map(f => {
+        let size = 0, mtime = null
+        try { const st = stat(`${DESKTOP_DIST}/${f}`); size = st.size; mtime = st.mtime } catch {}
+        return { name: f, size, mtime, url: `/api/desktop/file/${encodeURIComponent(f)}` }
+      })
+  } catch {}
+  res.json({ dir: DESKTOP_DIST, files })
+})
+
+// Имя файла не должно уехать за пределы каталога: проверяем по-нормальному, а не «на глаз».
+app.get('/api/desktop/file/:name', auth.requireAdmin, async (req, res) => {
+  const name = String(req.params.name || '')
+  if (!/^[A-Za-z0-9._-]{1,120}$/.test(name) || name.includes('..')) {
+    return res.status(400).json({ error: 'некорректное имя файла' })
+  }
+  const file = path.join(DESKTOP_DIST, name)
+  if (!file.startsWith(DESKTOP_DIST + path.sep)) {
+    return res.status(403).json({ error: 'доступ запрещён' })
+  }
+  try { await stat(file) } catch { return res.status(404).json({ error: 'файла нет — сборка не выложена' }) }
+  res.download(file, name)
+})
+
 // ---- Процессы сервера ----
 // Показывает, что реально висит на сервере, и отделяет мусор от нормальной работы. Главное —
 // пометка «программы на диске уже нет»: такие процессы переживают удаление движка (демоны codex)
