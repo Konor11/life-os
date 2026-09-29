@@ -1560,8 +1560,22 @@ setInterval(() => { makeBackup('по расписанию').catch(() => {}) }, 2
 app.post('/api/backup/now', async (_, res) => res.json(await makeBackup('вручную из панели')))
 
 // Живое состояние TUI-сессий: панель рисует его маскотом (спит / работает) и подсвечивает зависшие.
-app.get('/api/sessions', (_, res) => {
-  try { res.json({ sessions: sessionSnapshot() }) } catch (e) { res.json({ sessions: [], error: e?.message }) }
+app.get('/api/sessions', async (_, res) => {
+  try {
+    const list = await sessionSnapshot()
+    res.json({
+      sessions: list,
+      // Отдельные счётчики: «работают» — про агентов в tmux, «подключено» — про открытые вкладки.
+      // Раньше панель показывала только второе и делала вид, что агентов нет.
+      stats: {
+        total: list.length,
+        attached: list.filter(s => s.attached).length,
+        working: list.filter(s => s.idleMs !== null && s.idleMs < 15000).length,
+      },
+    })
+  } catch (e) {
+    res.json({ sessions: [], stats: { total: 0, attached: 0, working: 0 }, error: e?.message })
+  }
 })
 
 app.get('/api/backup/list', async (_, res) => {

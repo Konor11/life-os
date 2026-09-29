@@ -246,21 +246,75 @@ function nudgeRepaint(s, cols, rows, force) {
   setTimeout(() => { try { s.pty.resize(c, r) } catch {} }, 450)
 }
 
-// Снимок состояния сессий для внешнего наблюдения: панель рисует его маскотом (спит/работает) и
-// подсвечивает зависшие терминалы. Экспортируется отсюда, потому что карта `sessions` приватная.
-export function sessionSnapshot() {
+// Движки, чьи сессии мы умеем распознавать в именах tmux. Порядок важен: длинные имена
+// ('opencode') проверяются раньше коротких префиксов, иначе 'lifeos-opencode' распался бы на
+// 'open' + 'code'.
+const KNOWN_ENGINES = ['hermes', 'opencode', 'codex', 'claude', 'openclaw', 'dsh']
+
+// 'lifeos-hermes-laptop' -> { engine: 'hermes', profile: 'laptop' }
+// 'lifeos-codex'        -> { engine: 'codex', profile: 'default' }
+function parseTmuxName(name) {
+  const base = String(name || '').replace(/^lifeos-/, '')
+  for (const e of KNOWN_ENGINES) {
+    if (base === e) return { engine: e, profile: 'default' }
+    if (base.startsWith(e + '-')) return { engine: e, profile: base.slice(e.length + 1) }
+  }
+  return { engine: base || 'unknown', profile: 'default' }
+}
+
+// Снимок состояния сессий для внешнего наблюдения.
+//
+// ВАЖНО: источник правды — tmux, а не карта `sessions` в памяти этого процесса. Сессии
+// персистентны (lifeos-tui.service), поэтому они живут и тогда, когда браузер ничего не открывал.
+// Раньше снимок смотрел только в память, и дашборд показывал «нет подключённых сессий», хотя
+// шесть сессий агентов работали в tmux по несколько часов. Теперь список — из tmux, а из памяти
+// берётся только то, чего в tmux нет: подключён ли сейчас браузер и когда шёл вывод.
+export async function sessionSnapshot() {
   const out = []
   const now = Date.now()
+
+  // 1) что реально живёт в tmux
+  let tmuxList = []
+  try {
+    const r = await tmuxRun(
+      `list-sessions -F '#{session_name}\t#{session_created}\t#{session_attached}' 2>/dev/null`)
+    for (const line of String(r.out || '').split('\n')) {
+      const [name, created, attached] = line.split('\t')
+      if (!name || name === '__keeper') continue      // keeper — служебная, агентом не считается
+      const { engine, profile } = parseTmuxName(name)
+      const mem = sessions.get(`${engine}:${profile}`)
+      out.push({
+        key: `${engine}:${profile}`,
+        tmux: name,
+        engine,
+        profile,
+        // Подключён ли браузер именно к этой сессии
+        attached: !!(mem && mem.ws && mem.ws.readyState === 1),
+        // Активность: из памяти, если подключена; иначе неизвестно (сессия живёт, но не пишет)
+        idleMs: mem && mem.lastDataAt ? now - mem.lastDataAt : null,
+        since: created ? Number(created) * 1000 : null,
+        ageMs: created ? now - Number(created) * 1000 : null,
+      })
+    }
+  } catch (e) {
+    console.error('[tui] не удалось опросить tmux для снимка сессий:', e?.message || e)
+  }
+
+  // 2) сессии, которые есть в памяти, но по какой-то причине не видны в tmux (гонка при старте)
   for (const [key, s] of sessions) {
+    if (out.some(x => x.key === key)) continue
     out.push({
       key,
+      tmux: s.tmux || null,
       engine: s.engine,
       profile: s.profile,
       attached: !!(s.ws && s.ws.readyState === 1),
       idleMs: s.lastDataAt ? now - s.lastDataAt : null,
       since: s.startedAt || null,
+      ageMs: s.startedAt ? now - s.startedAt : null,
     })
   }
+
   return out
 }
 

@@ -13,26 +13,49 @@ import { toast } from './PanelUX'
 // сессии. Раньше состояние агентов на дашборде не показывалось вообще — только статичные
 // метрики сервера. Раз в 4 с; при появлении новой активности — всплывашка (важно с телефона:
 // вкладка чата может быть свёрнута).
+// «Живёт» = в tmux прямо сейчас. «Пишет» = вывод шёл в последние 15 секунд.
+// Разделение существенно: сессия может жить часами (Hermes ждёт твоей команды), и это нормально —
+// но написать «нет подключённых сессий» про неё было враньём.
+const fmtAge = (ms) => {
+  if (!ms || ms < 0) return ''
+  const min = Math.floor(ms / 60000)
+  if (min < 1) return 'только что'
+  if (min < 60) return `${min} мин`
+  const h = Math.floor(min / 60)
+  const m = min % 60
+  return m ? `${h} ч ${m} мин` : `${h} ч`
+}
+
+const plural = (n, one, few, many) => {
+  const m10 = n % 10, m100 = n % 100
+  if (m10 === 1 && m100 !== 11) return one
+  if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return few
+  return many
+}
+
 function AgentsPulse() {
   const [data, setData] = useState(null)
+  const [err, setErr] = useState('')
   useEffect(() => {
     let alive = true
-    let prevActive = null
+    let prevWriting = null
     const tick = () => {
       fetch('/api/sessions', { cache: 'no-store' })
         .then(r => r.json())
         .then(j => {
           if (!alive) return
+          if (j && j.error) { setErr(j.error); return }
+          setErr('')
           const list = (j && j.sessions) || []
           setData(list)
-          const active = list.filter(s => s.attached && s.idleMs !== null && s.idleMs < 15000).length
-          if (prevActive !== null && active > prevActive) {
+          const writing = list.filter(s => s.attached && s.idleMs !== null && s.idleMs < 15000).length
+          if (prevWriting !== null && writing > prevWriting) {
             const fresh = list.find(s => s.attached && s.idleMs !== null && s.idleMs < 15000)
             toast(`Агент ${fresh ? fresh.engine : ''} ответил`, { state: 'ok' })
           }
-          prevActive = active
+          prevWriting = writing
         })
-        .catch(() => {})
+        .catch(() => setErr('не удалось опросить сессии'))
     }
     tick()
     const t = setInterval(tick, 4000)
@@ -40,28 +63,59 @@ function AgentsPulse() {
   }, [])
 
   const list = data || []
+  const writing = list.filter(s => s.idleMs !== null && s.idleMs < 15000)
+  const waiting = list.filter(s => !(s.idleMs !== null && s.idleMs < 15000))
   const attached = list.filter(s => s.attached)
-  const busy = list.filter(s => s.attached && s.idleMs !== null && s.idleMs < 15000).length
-  const mood = busy > 0 ? 'work' : (list.length > 0 ? 'idle' : 'sleep')
+  const mood = writing.length > 0 ? 'work' : (list.length > 0 ? 'idle' : 'sleep')
+
+  const title = !data && !err ? 'Проверяю…'
+    : err ? 'Не вижу сессии'
+    : writing.length ? `Пишет${writing.length > 1 ? 'ы' : ''} ${writing.length} ${plural(writing.length, 'агент', 'агента', 'агентов')}`
+    : list.length ? `Живут ${list.length} ${plural(list.length, 'сессия', 'сессии', 'сессий')}`
+    : 'Агенты не запущены'
 
   return (
     <div className="card-surface rounded-2xl p-4">
       <div className="flex items-center gap-3">
         <Mascot size={40} state={mood} className="text-accent" title="Состояние агентов" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-text">
-            {busy > 0 ? `Агент${busy > 1 ? 'ы' : ''} работают` : (list.length ? 'Агенты свободны' : 'Агенты не запущены')}
-          </div>
-          <div className="text-xs text-text-muted truncate">
-            {attached.length
-              ? attached.map(s => `${s.engine}${s.profile && s.profile !== 'default' ? ':' + s.profile : ''}`).join(' · ')
-              : 'нет подключённых сессий'}
-          </div>
+          <div className="text-sm font-medium text-text">{title}</div>
+          {list.length === 0 && !err && (
+            <div className="text-xs text-text-muted">
+              Открой вкладку «Чат» и выбери агента — сессия появится здесь
+            </div>
+          )}
+          {err && <div className="text-xs text-danger">{err}</div>}
+          {list.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-1">
+              {list.map(s => {
+                const busy = s.idleMs !== null && s.idleMs < 15000
+                return (
+                  <span key={s.key}
+                    title={`${s.engine}${s.profile !== 'default' ? ':' + s.profile : ''} · живёт ${fmtAge(s.ageMs)} · ${s.attached ? 'вкладка открыта' : 'вкладка закрыта'}`}
+                    className={`text-[11px] px-1.5 py-0.5 rounded ${
+                      busy ? 'bg-accent/20 text-accent'
+                        : s.attached ? 'bg-bg-elevated text-text-muted'
+                        : 'bg-bg-elevated/60 text-text-muted/70'}`}>
+                    {s.engine}{s.profile !== 'default' ? ':' + s.profile : ''}
+                    <span className="ml-1 opacity-70">{fmtAge(s.ageMs)}</span>
+                  </span>
+                )
+              })}
+            </div>
+          )}
+          {attached.length < list.length && list.length > 0 && (
+            <div className="text-[11px] text-text-muted mt-1">
+              {attached.length} из {list.length} открыты в панели — остальные работают в фоне
+            </div>
+          )}
         </div>
       </div>
     </div>
   )
 }
+
+
 
 export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = null }) {
   return (
