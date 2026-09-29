@@ -43,7 +43,7 @@ export function AppShell({ sidebarRender, mainRender }) {
             <Icon name={open ? 'X' : 'Menu'} size={22} />
           </button>
           <span className="font-semibold text-base flex items-center gap-2">
-            <Icon name="Brain" size={18} className="text-accent" />
+            <Mascot size={22} className="text-accent" title="Life OS" />
             Life OS
           </span>
         </header>
