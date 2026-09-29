@@ -11,7 +11,7 @@ export function SystemStrip({ status = null }) {
       style={{ borderColor: 'rgba(88,101,242,0.35)' }}>
       <div className="flex items-center gap-2 mb-2">
         <span className={`w-2 h-2 rounded-full ${status.openrouter === 'configured' ? 'bg-success' : 'bg-danger'}`} />
-        <h3 className="text-sm font-semibold text-text">System status</h3>
+        <h3 className="text-sm font-semibold text-text">Состояние системы</h3>
         <span className="text-xs text-text-muted ml-auto">🟢 {status.host}</span>
       </div>
       <div className="flex flex-wrap gap-2">

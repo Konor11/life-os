@@ -19,7 +19,7 @@ export function CoderView() {
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center"><Icon name="Terminal" size={18} className="text-accent" /></div>
           <div className="min-w-0">
-            <h3 className="font-semibold text-text text-sm">Coder Workspaces</h3>
+            <h3 className="font-semibold text-text text-sm">Рабочие пространства Coder</h3>
             <p className="text-xs text-text-muted truncate">Облачная разработка: VS Code в браузере, терминал, воркспейсы{url ? ` · ${url.replace('https://', '')}` : ''}</p>
           </div>
         </div>

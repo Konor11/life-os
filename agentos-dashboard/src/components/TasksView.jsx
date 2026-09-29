@@ -52,7 +52,7 @@ export function TasksView({ tasks, onUpdate }) {
           </select>
           <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors flex items-center gap-2">
             <Icon name="Plus" size={18} />
-            New Task
+            Новая задача
           </button>
         </div>
       </div>
@@ -77,8 +77,12 @@ export function TasksView({ tasks, onUpdate }) {
           
           {/* Empty column placeholder for adding new groups */}
           {Object.keys(grouped).length === 0 && (
-            <div className="w-72 flex-shrink-0 bg-bg-elevated/50 rounded-lg p-4 text-center text-text-muted border-2 border-dashed border-border-hover">
-              No tasks. Click "New Task" to add one.
+            // Тут была английская заглушка «No tasks. Click "New Task" to add one.» — единственная,
+            // что реально показывается на пустой доске, т.к. ни одна колонка ещё не отрисована.
+            <div className="w-72 flex-shrink-0 bg-bg-elevated/50 rounded-lg p-6 text-center text-text-muted border-2 border-dashed border-border-hover flex flex-col items-center gap-2">
+              <Mascot size={44} state="idle" className="text-accent opacity-80" />
+              <span className="text-sm">Задач пока нет</span>
+              <span className="text-xs">Нажмите «Новая задача», чтобы добавить первую</span>
             </div>
           )}
         </div>
@@ -164,7 +168,7 @@ function TaskCard({ task, onMove }) {
 function TaskForm({ task, onChange, onSubmit, onCancel }) {
   return (
     <div className="glass p-4 rounded-xl space-y-4 border border-accent/30">
-      <h3 className="font-semibold text-text">New Task</h3>
+      <h3 className="font-semibold text-text">Новая задача</h3>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="sm:col-span-2">
           <label className="block text-xs text-text-muted mb-1">Title *</label>
