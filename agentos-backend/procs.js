@@ -32,11 +32,13 @@ const AGENT_UNITS = /^(lifeos|hermes)/
 // tmux-сервер, а тот — init). Считать их мусором нельзя, иначе список врёт.
 const AGENT_RE = /\b(hermes|opencode|openclaw|codex|claude)\b|\/\.hermes\/|\/\.opencode\/|\/\.codex\/|tmux -L lifeos/
 
-// Наши собственные: Life OS (бэкенд и статика) и keeper-сессия tmux. Их убийство = дашборд лёг.
+// Наши собственные: Life OS (бэкенд и статика). Их убийство = дашборд лёг.
+// Проверка по слову 'serve' в командной строке давала ложное срабатывание: opencode-web запускает
+// «… serve», и его объявляло процессом панели. Поэтому у 'serve' требуем ещё и наш путь.
 const OURS = [
   { pidFile: '/run/lifeos-backend.pid', why: 'бэкенд Life OS' },
   { name: 'lifeos-stack', why: 'супервизор Life OS' },
-  { name: 'serve', why: 'отдача статики Life OS' },
+  { name: 'serve', mustAlsoInclude: 'agentos-dashboard', why: 'отдача статики Life OS' },
 ]
 
 function readProc(pid) {
@@ -119,7 +121,12 @@ function ownPids() {
 }
 
 function isOurs(name, cmd) {
-  return OURS.some(o => (o.name && (name === o.name || cmd.includes(o.name))) || false)
+  return OURS.some(o => {
+    if (!o.name) return false
+    if (name === o.name) return !o.mustAlsoInclude || cmd.includes(o.mustAlsoInclude)
+    if (!cmd.includes(o.name)) return false
+    return !o.mustAlsoInclude || cmd.includes(o.mustAlsoInclude)
+  })
 }
 
 // Юнит, в котором живём мы сами (панель). Определяется один раз при загрузке модуля.
@@ -202,9 +209,12 @@ export async function listProcesses() {
       // «сделать систему хуже». Для этого есть systemctl.
       canKill: !self.has(pid) && kind !== 'system' && kind !== 'service' && kind !== 'lifeos',
       // Пояснение для интерфейса: почему нельзя завершить.
-      notKillableBecause: mine || sameUnit ? 'это процесс самой панели'
-        : protectedName && !unit ? `системный процесс (${p.name})`
+      // Причина должна быть верной, а не «на всякий случай»: неверная подпись сбивает с толку
+      // так же, как отсутствие защиты.
+      notKillableBecause: mine ? 'это процесс самой панели'
+        : sameUnit ? `тот же юнит панели: ${unit}`
         : unit && !AGENT_UNITS.test(unit) ? `служба systemd: ${unit}`
+        : protectedName ? `системный процесс: ${p.name}`
         : null,
       flags,
     })
