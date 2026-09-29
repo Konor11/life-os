@@ -93,7 +93,7 @@ function MetricList({ metrics, onUpdate }) {
       {metrics.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Activity" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No metrics logged yet.</p>
+          <p>Метрики пока не записывались.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -152,7 +152,7 @@ function WorkoutList({ workouts, onUpdate }) {
       {workouts.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Dumbbell" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No workouts logged yet.</p>
+          <p>Тренировок пока не было.</p>
         </div>
       ) : (
         <div className="space-y-2">

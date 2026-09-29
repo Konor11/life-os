@@ -93,7 +93,7 @@ function WorkflowList({ workflows, onUpdate, onEdit }) {
       {workflows.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Workflow" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No workflows yet. Create your first automation!</p>
+          <p>Пока нет сценариев. Создайте первый автоматический процесс!</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -218,7 +218,7 @@ function RunList({ runs, onUpdate }) {
       {runs.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="History" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No workflow runs yet.</p>
+          <p>Запусков пока не было.</p>
         </div>
       ) : (
         <div className="space-y-2">

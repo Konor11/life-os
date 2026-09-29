@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { cn } from '../lib/utils'
 import { Icon } from './Icons'
+import { Mascot } from './Mascot'
 
 const contexts = ['@computer', '@phone', '@home', '@errands', '@waiting', '@someday']
 const statuses = ['backlog', 'ready', 'in-progress', 'review', 'done']
@@ -103,9 +104,10 @@ function TaskColumn({ title, tasks, onMove }) {
       </div>
       <div className={`flex-1 ${statusColors[title] || 'border-border'} rounded-xl p-2 min-h-[400px] space-y-2`}>
         {tasks.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center text-text-muted text-sm">
-            <Icon name="Inbox" size={32} className="mb-2 opacity-50" />
-            Drop tasks here
+          // Был английский «Drop tasks here» в русской панели.
+          <div className="h-full flex flex-col items-center justify-center text-text-muted text-sm gap-2">
+            <Mascot size={40} state="idle" className="text-accent opacity-80" />
+            Перетащите задачу сюда
           </div>
         ) : (
           tasks.map(task => (

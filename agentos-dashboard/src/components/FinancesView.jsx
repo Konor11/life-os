@@ -96,7 +96,7 @@ function AccountList({ accounts, onUpdate }) {
       {accounts.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Wallet" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No accounts yet. Click "Add" to create one.</p>
+          <p>Счетов пока нет. Нажмите «Добавить», чтобы создать.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -144,7 +144,7 @@ function TransactionList({ transactions, accounts, onUpdate }) {
       {transactions.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Receipt" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No transactions yet.</p>
+          <p>Операций пока нет.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -191,7 +191,7 @@ function BudgetList({ budgets, onUpdate }) {
       {budgets.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Target" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No budgets yet.</p>
+          <p>Бюджетов пока нет.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -219,7 +219,7 @@ function GoalList({ goals, onUpdate }) {
       {goals.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Flag" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No financial goals yet.</p>
+          <p>Финансовых целей пока нет.</p>
         </div>
       ) : (
         <div className="space-y-2">

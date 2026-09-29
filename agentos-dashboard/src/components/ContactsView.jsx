@@ -103,7 +103,7 @@ function PeopleList({ people, organizations, onUpdate }) {
       {people.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Users" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No people yet. Add your first contact!</p>
+          <p>Людей пока нет. Добавьте первого контакта!</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -148,7 +148,7 @@ function OrgList({ orgs, onUpdate }) {
       {orgs.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="Building" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No organizations yet.</p>
+          <p>Организаций пока нет.</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -185,7 +185,7 @@ function InteractionList({ interactions, people, orgs, onUpdate }) {
       {interactions.length === 0 ? (
         <div className="text-center py-12 text-text-muted">
           <Icon name="MessageSquare" size={48} className="mx-auto mb-4 opacity-30" />
-          <p>No interactions logged yet.</p>
+          <p>Взаимодействий пока не записано.</p>
         </div>
       ) : (
         <div className="space-y-2">

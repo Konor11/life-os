@@ -3,7 +3,7 @@ import { cn } from '../lib/utils'
 import { Icon } from './Icons'
 import { Mascot } from './Mascot'
 
-export function AppShell({ sidebarRender, mainRender }) {
+export function AppShell({ sidebarRender, mainRender, onOpenPalette }) {
   // Mobile: sidebar is an overlay drawer toggled by the burger in the top bar.
   // Desktop (lg+): sidebar always visible, no burger needed.
   const [open, setOpen] = useState(false)
@@ -23,9 +23,12 @@ export function AppShell({ sidebarRender, mainRender }) {
 
   // Wrap the sidebar's onViewChange so a navigation click also closes the drawer
   let sidebarEl = sidebarRender
-  if (open && isMobile && sidebarRender?.props?.onViewChange) {
+  if (sidebarRender && (sidebarRender.props?.onViewChange || onOpenPalette)) {
     sidebarEl = cloneElement(sidebarRender, {
-      onViewChange: (v) => { sidebarRender.props.onViewChange(v); setOpen(false) },
+      ...(sidebarRender.props?.onViewChange ? {
+        onViewChange: (v) => { sidebarRender.props.onViewChange(v); setOpen(false) },
+      } : {}),
+      ...(onOpenPalette ? { onOpenPalette } : {}),
     })
   }
 
@@ -46,6 +49,15 @@ export function AppShell({ sidebarRender, mainRender }) {
             <Mascot size={22} className="text-accent" title="Life OS" />
             Life OS
           </span>
+          {/* Поиск по разделам: на телефоне иначе до нужной вкладки не дойти — их 25. */}
+          <button
+            onClick={onOpenPalette}
+            title="Поиск по разделам (Ctrl+K)"
+            className="ml-auto p-2 -mr-1 rounded-lg text-text-muted hover:text-text hover:bg-bg-elevated transition-colors"
+            aria-label="Поиск"
+          >
+            <Icon name="Search" size={20} />
+          </button>
         </header>
       )}
       <div className="flex flex-1 overflow-hidden relative">
@@ -77,7 +89,7 @@ export function AppShell({ sidebarRender, mainRender }) {
   )
 }
 
-export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme, installedComponents }) {
+export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme, installedComponents, onOpenPalette }) {
   // n8n / Coder appear in the menu only after they are installed («Установка компонентов»).
   const compInstalled = (id) => !installedComponents || installedComponents[id] !== false
   const views = [

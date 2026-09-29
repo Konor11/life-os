@@ -73,7 +73,7 @@ export function HabitsView({ habits, onUpdate }) {
         {habits.length === 0 && (
           <div className="col-span-full glass p-12 rounded-xl text-center">
             <Icon name="Target" size={64} className="mx-auto mb-4 opacity-30" />
-            <h3 className="text-xl font-semibold text-text mb-2">No habits yet</h3>
+            <h3 className="text-xl font-semibold text-text mb-2">Привычек пока нет</h3>
             <p className="text-text-muted mb-6">Start building your identity with tiny habits</p>
             <button onClick={() => setShowForm(true)} className="px-6 py-3 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors">
               Create Your First Habit

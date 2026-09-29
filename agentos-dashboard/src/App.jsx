@@ -3,6 +3,7 @@ import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, Knowled
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
+import { CommandPalette, useHotkeys, ToastHost, toast } from './components/PanelUX'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -103,6 +104,8 @@ function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
+  const { paletteOpen, setPaletteOpen } = useHotkeys(setActiveViewRaw)
+
   const [plan, setPlan] = useState(emptyPlan)
   const [tasks, setTasks] = useState(emptyTasks)
   const [notes, setNotes] = useState(emptyNotes)
@@ -197,6 +200,20 @@ function App() {
     fetch('/api/status').then(r => r.json()).then(d => setSysStatus(d)).catch(() => {})
   }, [])
 
+  // Живой статус в шапке: аптайм и нагрузка обновляются раз в 10 с, а не «застывают» на весь
+  // сеанс (раньше uptime показывался снимком на момент загрузки страницы).
+  useEffect(() => {
+    let alive = true
+    const tick = () => {
+      fetch('/api/status', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(d => { if (alive) setSysStatus(d) })
+        .catch(() => {})
+    }
+    const t = setInterval(tick, 10000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+
   useEffect(() => {
     let active = true
     fetchAll()
@@ -246,8 +263,15 @@ function App() {
 
   return (
     <ErrorBoundary>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onNavigate={(id) => setActiveView(id)}
+      />
+      <ToastHost />
       <AppShell
-        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} installedComponents={components} />)}
+        onOpenPalette={() => setPaletteOpen(true)}
+        sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} installedComponents={components} onOpenPalette={() => setPaletteOpen(true)} />)}
         mainRender={(
           <>
             <MainContent>
