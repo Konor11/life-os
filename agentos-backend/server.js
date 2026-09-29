@@ -2079,7 +2079,9 @@ app.get('/api/desktop/info', async (req, res) => {
 // Имя файла не должно уехать за пределы каталога: проверяем по-нормальному, а не «на глаз».
 app.get('/api/desktop/file/:name', auth.requireAdmin, async (req, res) => {
   const name = String(req.params.name || '')
-  if (!/^[A-Za-z0-9._-]{1,120}$/.test(name) || name.includes('..')) {
+  // Пробелы разрешены: Tauri сам называет сборку «Life OS_0.1.0_amd64.AppImage», и строгий
+  // фильтр без пробела отвергал её — файл лежал, но скачать его было нельзя.
+  if (!/^[A-Za-z0-9._+() -]{1,120}$/.test(name) || name.includes('..') || name.includes('/')) {
     return res.status(400).json({ error: 'некорректное имя файла' })
   }
   const file = path.join(DESKTOP_DIST, name)
