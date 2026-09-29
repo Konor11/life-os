@@ -9,6 +9,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import { attachTuiServer, sessionSnapshot, closeSession } from './tui-ws.js'
+import { listProcesses, killProcess, killProcessForced } from './procs.js'
 import * as auth from './auth.js'
 import { spawn as ptySpawn } from 'node-pty'
 console.log('>>> [MODULE LOAD] server.js executing')
@@ -2055,6 +2056,22 @@ async function readLbrainIndex() {
     return null
   }
 }
+
+// ---- Процессы сервера ----
+// Показывает, что реально висит на сервере, и отделяет мусор от нормальной работы. Главное —
+// пометка «программы на диске уже нет»: такие процессы переживают удаление движка (демоны codex)
+// и месяцами держат сотни мегабайт, не появляясь ни в списке сессий, ни в списке файлов.
+app.get('/api/processes', auth.requireAdmin, async (_, res) => {
+  try { res.json(await listProcesses()) } catch (e) { res.status(500).json({ error: e?.message }) }
+})
+
+// Завершить процесс. Только администратор. force добивает тех, кто игнорирует SIGTERM.
+app.post('/api/processes/kill', auth.requireAdmin, async (req, res) => {
+  const { pid, force } = req.body || {}
+  const r = force ? await killProcessForced(pid) : await killProcess(pid)
+  if (!r.ok) return res.status(400).json({ error: r.error })
+  res.json(r)
+})
 
 // Закрыть сессию агента. Только администратор: это kill чужого процесса.
 app.post('/api/sessions/close', auth.requireAdmin, async (req, res) => {
