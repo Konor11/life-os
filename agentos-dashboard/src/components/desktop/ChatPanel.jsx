@@ -871,7 +871,10 @@ export function ChatPanel({ fullscreen = false }) {
       {/* Engine selector */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-bg-elevated border-b border-border overflow-x-auto">
         <span className="text-xs text-text-muted whitespace-nowrap">Движок:</span>
-        {ENGINES.filter(e => !installedEngines || installedEngines[e.id]).map(e => (
+        {/* Пока /api/harnesses не ответил (installedEngines === null), чипы НЕ показываем:
+            прежний фильтр при null выводил ВСЕ движки сразу — на секунду мелькали и не
+            установленные, потом список схлопывался до реальных. */}
+        {ENGINES.filter(e => installedEngines && installedEngines[e.id]).map(e => (
           <button
             key={e.id}
             onClick={() => pickEngine(e.id)}
