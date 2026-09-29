@@ -101,6 +101,9 @@ function sessionKey(engine, profile) { return `${engine}:${profile}` }
 //  * размер окна задан вручную (window-size manual): SIGWINCH приходит приложению только когда мы
 //    сами попросили ресайз, а не от каждого дёрганья клиента (клавиатура, адресная строка).
 const TMUX_SOCKET = 'lifeos'
+// Сколько ждать перед автоудалением осиротевшей сессии. Обычно движок удаляют и сразу хотят, чтобы
+// мусор исчез, но час — минимум, чтобы не снести сессию в момент установки/переустановки движка.
+const ORPHAN_GRACE_SEC = 60 * 60
 const TMUX_CONF = '/root/.lifeos-tmux.conf'
 const TMUX_KEEPALIVE_MS = (parseInt(process.env.TUI_TMUX_KEEPALIVE_SEC, 10) || 43200) * 1000
 let tmuxPath = null
@@ -158,10 +161,21 @@ const tmuxReady = (async () => {
           const parts = line.trim().split(/\s+/)
           const name = parts[0], act = parseInt(parts[1], 10)
           if (!name || name === '__keeper' || !name.startsWith('lifeos-') || !act) continue
-          if (now - act > TMUX_KEEPALIVE_MS / 1000) {
-            console.log(`[tui] закрываю брошенную tmux-сессию ${name}`)
-            await tmuxRun(`kill-session -t ${name}`)
-          }
+
+          // Раньше здесь стояло «нет вывода дольше TMUX_KEEPALIVE → убить». Это ломало самое
+          // ценное в сессиях: агент, который тихо ждёт твою команду 12 часов, выглядит как
+          // «брошенный», хотя это нормальная работа. Так были убиты lifeos-hermes-laptop и
+          // lifeos-opencode при перезапуске панели.
+          //
+          // Теперь автоочистка трогает ТОЛЬКО осиротевшие сессии — движок удалён или профиля
+          // больше нет. Их всё равно нельзя открыть в панели, и они только занимают место.
+          // Всё остальное живёт, пока не закроет сам пользователь (кнопка «убрать» или 🔄).
+          const { engine, profile } = parseTmuxName(name)
+          const orphan = orphanReason({ engine, profile })
+          if (!orphan) continue
+          if (now - act < ORPHAN_GRACE_SEC) continue
+          console.log(`[tui] закрываю осиротевшую tmux-сессию ${name} (${orphan})`)
+          await tmuxRun(`kill-session -t ${name}`)
         }
       }
     } catch {}
