@@ -44,6 +44,14 @@ STOP = set("""
 the and for you your are was that this with have has not but all can will from they them their there
 here what when which who how why did does done just like need want more some any into out about
 also very much then than been being were our us your yours ok okay yes yeah right sure
+тебе тебя те нас наш наши ваши ваш его её им ими них ней него всему всеми всего своих свой своя моё
+был была было были будет хочется можно нужно давай ладно кстати видимо похоже судя получается
+работает работают работать сделано сделал готово хорошо спасибо пожалуйста извини извините понял поняла
+сделано хорошо всё всё всегда никогда ещё ещё раз да нет ок а ну вот там тут тогда потом сейчас
+сегодня завтра вчера неделя месяц год день деньги время час минута
+http https www com org net html png jpg json xml api url localhost sudo xyz var etc
+get set use using used new one two first next need want make made take give work works
+user users data file files line lines case cases type types name names time times
 """.split())
 
 
