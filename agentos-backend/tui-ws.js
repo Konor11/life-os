@@ -269,6 +269,33 @@ function parseTmuxName(name) {
 // Раньше снимок смотрел только в память, и дашборд показывал «нет подключённых сессий», хотя
 // шесть сессий агентов работали в tmux по несколько часов. Теперь список — из tmux, а из памяти
 // берётся только то, чего в tmux нет: подключён ли сейчас браузер и когда шёл вывод.
+// Существует ли профиль на диске. Сессия от профиля, которого больше нет, — мусор: в панели
+// такого профиля не выбрать, но tmux-сессия продолжает висеть и занимать место в дашборде.
+function profileExistsNow(profile) {
+  if (!profile || profile === 'default') return true
+  try { return existsSync(`/root/.hermes/profiles/${profile}`) } catch { return false }
+}
+
+// Установлен ли движок. Hermes ищется по своему списку кандидатов, остальные — по бинарнику
+// (в том числе в /root/.opencode/bin, куда opencode кладёт себя сам и куда нет в PATH).
+export function engineInstalled(engine) {
+  if (engine === 'hermes') return !!hermesLaunch()
+  const def = ENGINES[engine]
+  if (!def) return false
+  const dirs = ['/root/.local/bin', '/root/.opencode/bin', '/usr/local/bin', '/usr/bin']
+  for (const d of dirs) {
+    try { if (existsSync(`${d}/${def.bin || engine}`)) return true } catch {}
+  }
+  return false
+}
+
+// Почему сессия осиротевшая (пустая строка — всё в порядке).
+export function orphanReason(s) {
+  if (!engineInstalled(s.engine)) return 'движок удалён'
+  if (!profileExistsNow(s.profile)) return 'профиля больше нет'
+  return ''
+}
+
 export async function sessionSnapshot() {
   const out = []
   const now = Date.now()
@@ -294,6 +321,9 @@ export async function sessionSnapshot() {
         idleMs: mem && mem.lastDataAt ? now - mem.lastDataAt : null,
         since: created ? Number(created) * 1000 : null,
         ageMs: created ? now - Number(created) * 1000 : null,
+        // Мусор: движок удалили или профиль исчез. Такие сессии показываем отдельно и
+        // предлагаем закрыть — иначе дашборд врёт про «работающих агентов».
+        orphan: orphanReason({ engine, profile }),
       })
     }
   } catch (e) {
@@ -312,10 +342,22 @@ export async function sessionSnapshot() {
       idleMs: s.lastDataAt ? now - s.lastDataAt : null,
       since: s.startedAt || null,
       ageMs: s.startedAt ? now - s.startedAt : null,
+      orphan: orphanReason({ engine: s.engine, profile: s.profile }),
     })
   }
 
   return out
+}
+
+// Закрыть сессию агента (нужно для кнопки «убрать» у осиротевших). Только tmux-сессия: если
+// вкладка открыта, WebSocket получит exit и клиент это покажет.
+export async function closeSession(tmuxName) {
+  const name = String(tmuxName || '')
+  if (!/^[A-Za-z0-9_-]{1,60}$/.test(name) || !name.startsWith('lifeos-') || name === '__keeper') {
+    return { ok: false, error: 'некорректное имя сессии' }
+  }
+  const r = await tmuxRun(`kill-session -t ${name} 2>/dev/null`)
+  return r && r.ok ? { ok: true } : { ok: false, error: 'не удалось закрыть сессию' }
 }
 
 export function attachTuiServer(app, server) {

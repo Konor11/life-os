@@ -8,7 +8,7 @@ import { existsSync, realpathSync, readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
-import { attachTuiServer, sessionSnapshot } from './tui-ws.js'
+import { attachTuiServer, sessionSnapshot, closeSession } from './tui-ws.js'
 import * as auth from './auth.js'
 import { spawn as ptySpawn } from 'node-pty'
 console.log('>>> [MODULE LOAD] server.js executing')
@@ -1571,10 +1571,13 @@ app.get('/api/sessions', async (_, res) => {
         total: list.length,
         attached: list.filter(s => s.attached).length,
         working: list.filter(s => s.idleMs !== null && s.idleMs < 15000).length,
+        // Мусор: движок удалён или профиля нет. Такие сессии не считаем работающими агентами.
+        orphans: list.filter(s => s.orphan).length,
+        alive: list.filter(s => !s.orphan).length,
       },
     })
   } catch (e) {
-    res.json({ sessions: [], stats: { total: 0, attached: 0, working: 0 }, error: e?.message })
+    res.json({ sessions: [], stats: { total: 0, attached: 0, working: 0, orphans: 0, alive: 0 }, error: e?.message })
   }
 })
 
@@ -2052,6 +2055,13 @@ async function readLbrainIndex() {
     return null
   }
 }
+
+// Закрыть сессию агента. Только администратор: это kill чужого процесса.
+app.post('/api/sessions/close', auth.requireAdmin, async (req, res) => {
+  const r = await closeSession((req.body || {}).tmux)
+  if (!r.ok) return res.status(400).json({ error: r.error })
+  res.json({ ok: true })
+})
 
 app.get('/api/lbrain/status', async (_, res) => {
   const idx = await readLbrainIndex()

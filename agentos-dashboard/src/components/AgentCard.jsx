@@ -36,6 +36,24 @@ const plural = (n, one, few, many) => {
 function AgentsPulse() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
+  const [closing, setClosing] = useState('')
+
+  // Закрытие осиротевшей сессии — действие администратора; при отказе по правам честно говорим об этом
+  const closeOrphan = async (s) => {
+    setClosing(s.key)
+    try {
+      const r = await fetch('/api/sessions/close', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tmux: s.tmux }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { toast(j.error || 'не удалось закрыть', { state: 'error' }); return }
+      toast(`Сессия ${s.engine} закрыта`, { state: 'ok' })
+      setData(list => (list || []).filter(x => x.key !== s.key))
+    } catch (e) {
+      toast('сеть недоступна', { state: 'error' })
+    } finally { setClosing('') }
+  }
   useEffect(() => {
     let alive = true
     let prevWriting = null
@@ -62,15 +80,17 @@ function AgentsPulse() {
     return () => { alive = false; clearInterval(t) }
   }, [])
 
-  const list = data || []
+  // Мусор (движок удалён или профиля нет) в «работающих агентах» считаться не должен: из-за него
+  // дашборд показывал шесть сессий, когда реально работали три.
+  const all = data || []
+  const list = all.filter(s => !s.orphan)
+  const orphans = all.filter(s => s.orphan)
   const writing = list.filter(s => s.idleMs !== null && s.idleMs < 15000)
-  const waiting = list.filter(s => !(s.idleMs !== null && s.idleMs < 15000))
-  const attached = list.filter(s => s.attached)
   const mood = writing.length > 0 ? 'work' : (list.length > 0 ? 'idle' : 'sleep')
 
   const title = !data && !err ? 'Проверяю…'
     : err ? 'Не вижу сессии'
-    : writing.length ? `Пишет${writing.length > 1 ? 'ы' : ''} ${writing.length} ${plural(writing.length, 'агент', 'агента', 'агентов')}`
+    : writing.length ? `Пишет ${writing.length} ${plural(writing.length, 'агент', 'агента', 'агентов')}`
     : list.length ? `Живут ${list.length} ${plural(list.length, 'сессия', 'сессии', 'сессий')}`
     : 'Агенты не запущены'
 
@@ -104,9 +124,28 @@ function AgentsPulse() {
               })}
             </div>
           )}
-          {attached.length < list.length && list.length > 0 && (
-            <div className="text-[11px] text-text-muted mt-1">
-              {attached.length} из {list.length} открыты в панели — остальные работают в фоне
+          {/* Мусор отдельным блоком: он не агент, но висит и занимает место в списке. */}
+          {orphans.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-border/60">
+              <div className="text-[11px] text-text-muted mb-1">
+                Осталось после удаления ({orphans.length}):
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {orphans.map(s => (
+                  <span key={s.key}
+                    className="text-[11px] px-1.5 py-0.5 rounded bg-danger/10 text-danger/90 flex items-center gap-1"
+                    title={s.orphan}>
+                    {s.engine}{s.profile !== 'default' ? ':' + s.profile : ''}
+                    <span className="opacity-80">— {s.orphan}</span>
+                    <button
+                      disabled={closing === s.key}
+                      onClick={() => closeOrphan(s)}
+                      className="ml-0.5 underline hover:no-underline"
+                      title="Закрыть эту сессию"
+                    >убрать</button>
+                  </span>
+                ))}
+              </div>
             </div>
           )}
         </div>
