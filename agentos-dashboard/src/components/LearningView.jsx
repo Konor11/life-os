@@ -4,6 +4,13 @@ import { Icon } from './Icons'
 const courseTypes = ['programming', 'languages', 'business', 'design', 'data_science', 'marketing', 'finance', 'health', 'other']
 const resourceTypes = ['book', 'course', 'video', 'article', 'paper', 'tool', 'website', 'podcast']
 
+// Заглушки активности. Раньше ширины полос и «часы» считались Math.random() прямо в рендере:
+// каждое обновление кадра рисовало новые значения — графики дёргались на глазах и «прыгали» при
+// прокрутке и ресайзе. Теперь значение детерминировано по индексу (стабильный псевдослучай);
+// когда появится настоящая статистика, она подставляется вместо этих заглушек.
+const stubActivity = (i, max = 100) => 12 + ((i * 37) % Math.max(1, max - 12))
+const stubHours = (i) => 15 + ((i * 13) % 20)
+
 export function LearningView({ learning, onUpdate }) {
   const [showForm, setShowForm] = useState(false)
   const [activeTab, setActiveTab] = useState('courses')
@@ -235,7 +242,7 @@ function ProgressView({ progress, onUpdate }) {
               <div key={day} className="flex items-center gap-3">
                 <span className="w-10 text-xs text-text-muted">{day}</span>
                 <div className="flex-1 h-3 bg-border rounded-full overflow-hidden">
-                  <div className="h-full bg-accent/30 rounded-full" style={{ width: `${Math.random()*100}%` }} />
+                  <div className="h-full bg-accent/30 rounded-full" style={{ width: `${stubActivity(i)}%` }} />
                 </div>
               </div>
             ))}
@@ -248,9 +255,9 @@ function ProgressView({ progress, onUpdate }) {
               <div key={w} className="flex items-center gap-3">
                 <span className="w-16 text-xs text-text-muted">{w}</span>
                 <div className="flex-1 h-6 bg-border rounded overflow-hidden">
-                  <div className="h-full bg-accent rounded" style={{ width: `${20 + Math.random()*60}%` }} />
+                  <div className="h-full bg-accent rounded" style={{ width: `${stubActivity(i + 3, 80)}%` }} />
                 </div>
-                <span className="w-12 text-xs text-text-muted text-right">{15 + Math.random()*20}h</span>
+                <span className="w-12 text-xs text-text-muted text-right">{stubHours(i)}h</span>
               </div>
             ))}
           </div>
