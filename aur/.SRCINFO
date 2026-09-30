@@ -1,6 +1,6 @@
 pkgbase = lifeos
 	pkgdesc = Нативный клиент панели управления ИИ-агентами Life OS: трей, уведомления, горячие клавиши
-	pkgver = 0.1.0
+	pkgver = 0.1.1
 	pkgrel = 1
 	url = https://github.com/Konor11/life-os
 	arch = x86_64
@@ -16,5 +16,5 @@ pkgbase = lifeos
 		depends = cairo
 		depends = pango
 		depends = glib2
-	source = https://github.com/Konor11/life-os/releases/download/v0.1.0/lifeos-desktop-0.1.0.tar.gz
-	sha256sums = b8c063453d7fd5fe8ece3730b0f309f9eabec9fe50cba5238eb0ebab8ee5ccf5
+	source = https://github.com/Konor11/life-os/releases/download/v0.1.1/lifeos-desktop-0.1.0.tar.gz
+	sha256sums = bca8534820c676bae4bfa716884e5d704571fbd04b0438781ae52cb0b4b681b3
