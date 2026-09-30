@@ -88,7 +88,11 @@ export function OmniRouterView() {
           {info.status ? (
             <pre className="text-[11px] text-text-muted whitespace-pre-wrap break-words max-h-48 overflow-y-auto">{info.status}</pre>
           ) : (
-            <div className="text-xs text-text-muted">Шлюз ещё не запущен — состояние появится после старта службы.</div>
+            <div className="text-xs text-text-muted">
+              {info?.running
+                ? 'CLI не ответил — попробуй «Состояние» ещё раз или открой журнал службы.'
+                : 'Служба не запущена: состояние появится после старта. Логи — journalctl -u omniroute.'}
+            </div>
           )}
           {info.error && <div className="text-[11px] text-danger mt-1.5">{info.error}</div>}
         </div>

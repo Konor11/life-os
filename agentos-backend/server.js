@@ -1402,7 +1402,10 @@ const OMNIROUTE_HOME = '/root/.omniroute'
 
 // CLI-команды, которыми компонент сам рассказывает о себе (для /api/components/status).
 const COMPONENT_STATUS_CMD = {
-  omniroute: 'test -x /opt/node22/bin/omniroute && /opt/node22/bin/omniroute status 2>&1 || omniroute status 2>&1 || true',
+  // Если CLI ещё нет — команда не печатает НИЧЕГО. Раньше здесь стояло `|| true`, и в поле
+  // состояния попадала строка «omniroute: command not found», которая в интерфейсе выглядела
+  // как вывод самой программы. Пустое состояние честнее.
+  omniroute: 'if [ -x /opt/node22/bin/omniroute ]; then /opt/node22/bin/omniroute status 2>&1; elif command -v omniroute >/dev/null 2>&1; then omniroute status 2>&1; fi',
 }
 
 const COMPONENTS_DEF = [
