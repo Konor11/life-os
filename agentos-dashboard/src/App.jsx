@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react'
-import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
+import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, OmniRouterView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
@@ -320,6 +320,7 @@ function App() {
               {activeView === 'projects' && <Suspense fallback={<div className="flex items-center justify-center h-32 text-text-muted">Loading Projects...</div>}><ProjectsView projects={projects.projects} onUpdate={updateProjects} /></Suspense>}
               {activeView === 'assistant' && <AssistantView />}
               {activeView === 'brain' && <SecondBrainView notes={notes} memory={memory} onUpdateNotes={updateNotes} onUpdateMemory={updateMemory} />}
+              {activeView === 'omniroute' && (components?.omniroute ? <OmniRouterView /> : <HarnessView />)}
               {activeView === 'n8n' && (components?.n8n ? <N8nView /> : <HarnessView />)}
               {activeView === 'coder' && (components?.coder ? <CoderView /> : <HarnessView />)}
               {activeView === 'terminal' && <TerminalTab />}

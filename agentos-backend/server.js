@@ -1395,7 +1395,121 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target`
 
+// OmniRoute требует Node >= 22, а на сервере может быть 20. Ставим РЯДО (/opt/node22), не
+// трогая системный node: от него зависят другие компоненты и сам бэкенд Life OS.
+const NODE22_DIR = '/opt/node22'
+const OMNIROUTE_HOME = '/root/.omniroute'
+
+// CLI-команды, которыми компонент сам рассказывает о себе (для /api/components/status).
+const COMPONENT_STATUS_CMD = {
+  omniroute: 'test -x /opt/node22/bin/omniroute && /opt/node22/bin/omniroute status 2>&1 || omniroute status 2>&1 || true',
+}
+
 const COMPONENTS_DEF = [
+  {
+    id: 'omniroute', name: 'OmniRoute',
+    // Тот же принцип, что у n8n: истина — наш собственный юнит, а не "команда нашлась в PATH".
+    detect: `test -f /etc/systemd/system/omniroute.service`,
+    desc: 'OmniRoute — единый шлюз ИИ: 350+ провайдеров через один OpenAI-совместимый эндпоинт (порт 20128).',
+    webPort: 20128,
+    install: `
+set -e
+${componentDomainPrelude('omniroute', 20128).join('\n')}
+
+# --- Node 22 рядом с системным, ничего глобального не ломаем ---
+# Требование из реестра npm, а не «>= 22» наугад: node >=22.22.2 <23 || >=24 <27.
+# На Node 20 (как на боевом сервере) npm install -g упал бы с EBADENGINE посреди установки.
+node_ok() {
+  local v="$1" ma mi pa
+  v="\${v#v}"
+  ma="\$(echo "$v" | cut -d. -f1)"
+  mi="\$(echo "$v" | cut -d. -f2)"
+  pa="\$(echo "$v" | cut -d. -f3 | tr -cd '0-9')"
+  # 22.22.2 — именно патч, а не только минор: v22.22.1 требованию НЕ удовлетворяет,
+  # и npm поставил бы пакет, который потом падает при запуске.
+  if [ "$ma" -eq 22 ]; then
+    [ "$mi" -gt 22 ] && return 0
+    [ "$mi" -eq 22 ] && [ "$pa" -ge 2 ] && return 0
+    return 1
+  fi
+  [ "$ma" -ge 24 ] && [ "$ma" -lt 27 ] && return 0
+  return 1
+}
+NEED22=0
+if command -v node >/dev/null 2>&1; then
+  node_ok "$(node -v)" || NEED22=1
+else
+  NEED22=1
+fi
+if [ -x "${NODE22_DIR}/bin/node" ] && node_ok "$(${NODE22_DIR}/bin/node -v)"; then NEED22=0; fi
+if [ "$NEED22" = "1" ]; then
+  echo "[node] нужен Node >= 22, ставлю рядом в ${NODE22_DIR} (системный node не трогаю)"
+  VER="$(python3 -c "import json,urllib.request as u; v=json.load(u.urlopen('https://nodejs.org/dist/index.json')); print(next(x['version'] for x in v if x['version'].startswith('v22.')))")"
+  echo "[node] беру $VER"
+  mkdir -p "${NODE22_DIR}"
+  curl -fsSL "https://nodejs.org/dist/$VER/node-$VER-linux-x64.tar.xz" -o /tmp/node22.tar.xz
+  tar -xJf /tmp/node22.tar.xz -C "${NODE22_DIR}" --strip-components=1
+  rm -f /tmp/node22.tar.xz
+fi
+NODE_BIN="${NODE22_DIR}/bin/node"
+NPM_BIN="${NODE22_DIR}/bin/npm"
+[ -x "$NODE_BIN" ] || NODE_BIN="$(command -v node)"
+[ -x "$NPM_BIN" ] || NPM_BIN="$(command -v npm)"
+echo "[node] $($NODE_BIN -v)"
+
+# --- пакет ---
+if [ -x "${NODE22_DIR}/bin/omniroute" ]; then
+  echo "[omniroute] уже установлен"
+else
+  echo "[omniroute] ставлю через npm (это надолго, минут 5–15)"
+  PATH="${NODE22_DIR}/bin:$PATH" "$NPM_BIN" install -g omniroute --no-fund --no-audit
+fi
+NPM_PREFIX="$("$NPM_BIN" prefix -g | tr -d '\r')"
+BIN_JS="$NPM_PREFIX/lib/node_modules/omniroute/bin/omniroute.mjs"
+if [ ! -f "$BIN_JS" ]; then
+  echo "[ошибка] не нашёл $BIN_JS после установки" >&2
+  exit 1
+fi
+echo "[omniroute] точка входа: $BIN_JS"
+
+mkdir -p "${OMNIROUTE_HOME}"
+
+cat > /etc/systemd/system/omniroute.service <<'UNIT'
+[Unit]
+Description=OmniRoute — единый ИИ-шлюз (OpenAI-совместимый API + панель)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Environment=PORT=20128
+Environment=HOST=127.0.0.1
+Environment=DATA_DIR=${OMNIROUTE_HOME}
+Environment=NODE_ENV=production
+WorkingDirectory=/root
+ExecStart=${NODE_BIN} ${BIN_JS} --no-open
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now omniroute
+echo "[omniroute] жду ответа на порту 20128…"
+for i in $(seq 1 30); do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:20128/ || true)"
+  case "$code" in 200|30[0-9]|401|403) echo "[omniroute] отвечает (HTTP $code)"; break;; esac
+  sleep 2
+done
+[ -n "$DOM" ] && echo "[omniroute] веб-интерфейс: https://$DOM"
+echo "[omniroute] готово. Первый вход: Dashboard → настрой пароль и подключи провайдера."`,
+    uninstall: `systemctl stop omniroute 2>/dev/null; systemctl disable omniroute 2>/dev/null; rm -f /etc/systemd/system/omniroute.service; systemctl daemon-reload; ${NODE22_DIR}/bin/npm uninstall -g omniroute 2>/dev/null; echo '[omniroute удалён] (данные ${OMNIROUTE_HOME} и Node 22 в ${NODE22_DIR} оставлены — они могут пригодиться другим компонентам)'`,
+    timeout: 1200000,
+  },
   {
     id: 'n8n', name: 'n8n',
     // `systemctl is-active X | grep -q active` also matched "inactive" (substring) and
@@ -1666,6 +1780,38 @@ app.post('/api/components/uninstall', (req, res) => {
       uninstalls[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[удаление завершено] ${e?.message || ''}`
     })
   res.json({ ok: true, state: 'running' })
+})
+
+// Состояние компонента из его СОБСТВЕННОГО CLI, а не «страница открылась или нет».
+// У OmniRoute есть `status` (версия, база, конфигурация) и `doctor` (проверки без старта
+// сервера) — поэтому показываем то, что шлюз думает о себе, а не гадаем по коду ответа.
+app.get('/api/components/status', async (req, res) => {
+  const id = String(req.query.id || '')
+  const def = COMPONENTS_DEF.find(c => c.id === id)
+  if (!def) return res.status(404).json({ error: 'компонент не найден' })
+  if (!COMPONENT_STATUS_CMD[id]) {
+    return res.json({ ok: true, running: false, status: null, note: 'у компонента нет собственного CLI' })
+  }
+  const out = { ok: true, running: false, status: null, version: null, providers: null, error: null }
+  const port = def.webPort
+  if (port) {
+    try {
+      const { stdout } = await execS(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:${port}/`, { shell: '/bin/bash' })
+      out.running = /^2|^3|^401|^403/.test(String(stdout).trim())
+    } catch { out.running = false }
+  }
+  try {
+    const r = await execS(COMPONENT_STATUS_CMD[id], { shell: '/bin/bash', timeout: 30000 })
+    out.status = String(r.stdout || '').trim() || null
+  } catch (e) {
+    // CLI может быть ещё не установлен — это не ошибка панели, а отсутствие компонента
+    out.error = String(e?.stderr || e?.message || '').trim().slice(0, 300) || null
+  }
+  const v = out.status && out.status.match(/(\d+\.\d+\.\d+)/)
+  if (v) out.version = v[1]
+  const pv = out.status && out.status.match(/(\d+)\s+providers?/i)
+  if (pv) out.providers = Number(pv[1])
+  res.json(out)
 })
 
 // GET /api/components/install/status?id= and uninstall — reuse harness status shape

@@ -444,6 +444,14 @@ export function Icon({ name, size = 20, className = '', style }) {
         <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
       </svg>
     ),
+    // Шлюз со многими входами и одним выходом — нарисовано под OmniRoute.
+    Route: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
+        <circle cx="6" cy="19" r="3" />
+        <path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15" />
+        <circle cx="18" cy="5" r="3" />
+      </svg>
+    ),
     Dumbbell: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
         <path d="M14.4 14.4 9.6 9.6" />
