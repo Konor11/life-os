@@ -1487,7 +1487,7 @@ Environment=HOST=127.0.0.1
 Environment=DATA_DIR=${OMNIROUTE_HOME}
 Environment=NODE_ENV=production
 WorkingDirectory=/root
-ExecStart=${NODE_BIN} ${BIN_JS} --no-open
+ExecStart=\${NODE_BIN} \${BIN_JS} --no-open
 Restart=always
 RestartSec=5
 StandardOutput=journal
