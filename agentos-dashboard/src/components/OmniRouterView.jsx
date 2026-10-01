@@ -48,39 +48,45 @@ export function OmniRouterView() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg bg-bg-elevated/40 border border-border">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-9 h-9 rounded-xl bg-accent/15 flex items-center justify-center shrink-0">
-            <Icon name="Route" size={18} className="text-accent" />
+      {/* На узком экране (360px) прошлая версия была нечитаемой: заголовок обрезался до
+          «единый ий-шлюз» и налезал на бейдж, кнопки слипались. Теперь блок переносится,
+          подпись «единый ИИ-шлюз» живёт только на широких экранах, а фон плотный —
+          на полупрозрачном текст терял контраст. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 rounded-lg bg-bg-elevated border border-border">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div className="w-8 h-8 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
+            <Icon name="Route" size={16} className="text-accent" />
           </div>
           <div className="min-w-0">
-            <h3 className="font-semibold text-text text-sm">OmniRoute — единый ИИ-шлюз</h3>
-            <p className="text-xs text-text-muted truncate">
+            <h3 className="font-semibold text-text text-sm truncate">
+              OmniRoute<span className="hidden sm:inline"> — единый ИИ-шлюз</span>
+            </h3>
+            <p className="text-[11px] text-text-muted truncate">
               {url ? url.replace('https://', '') : 'домен не задан'}
-              {info?.version ? ` · версия ${info.version}` : ''}
+              {info?.version ? ` · ${info.version}` : ''}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {info && (
             <span className={`text-[11px] px-2 py-1 rounded-lg whitespace-nowrap ${
-              info.running ? 'bg-success/15 text-success' : 'bg-bg-elevated text-text-muted'}`}>
+              info.running ? 'bg-success/15 text-success' : 'bg-bg-card text-text-muted'}`}>
               {info.running ? 'работает' : 'не отвечает'}
             </span>
           )}
           {url && (
             <a href={url} target="_blank" rel="noreferrer" title="Открыть в отдельной вкладке"
-              className="px-3 py-2 border border-border rounded-lg hover:bg-bg-elevated flex items-center">
+              className="p-2 border border-border rounded-lg hover:bg-bg-card flex items-center">
               <Icon name="ExternalLink" size={14} />
             </a>
           )}
           <button onClick={() => setReloadKey(k => k + 1)} title="Перезагрузить шлюз"
-            className="px-3 py-2 border border-border rounded-lg hover:bg-bg-elevated flex items-center">
+            className="p-2 border border-border rounded-lg hover:bg-bg-card flex items-center">
             <Icon name="RefreshCw" size={14} />
           </button>
-          <button onClick={() => setShowLog(v => !v)}
-            className="px-3 py-2 border border-border rounded-lg hover:bg-bg-elevated flex items-center gap-1.5 transition-colors">
-            <Icon name="Activity" size={14} /> Состояние
+          <button onClick={() => setShowLog(v => !v)} title="Состояние шлюза"
+            className="p-2 sm:px-3 sm:py-2 border border-border rounded-lg hover:bg-bg-card flex items-center gap-1.5 transition-colors">
+            <Icon name="Activity" size={14} /><span className="hidden sm:inline">Состояние</span>
           </button>
         </div>
       </div>
