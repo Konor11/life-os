@@ -15,20 +15,29 @@ html, body, #root {
 /* ===== Design tokens (light default) ===== */
 :root,
 html[data-theme="light"] {
-  --cx-bg: 247 249 252;
+  --cx-bg: 244 245 251;
   --cx-bg-elevated: 255 255 255;
   --cx-bg-card: 255 255 255;
-  --cx-border: 228 232 240;
-  --cx-border-hover: 209 216 228;
-  --cx-text: 17 24 39;
-  --cx-text-muted: 100 116 139;
-  --cx-accent: 88 101 242;
-  --cx-accent-hover: 81 93 236;
-  --cx-success: 22 163 74;
+  --cx-border: 228 230 240;
+  --cx-border-hover: 208 211 226;
+  --cx-text: 20 26 46;
+  --cx-text-muted: 74 82 112;
+  --cx-text-faint: 130 138 166;
+  --cx-accent: 109 94 252;
+  --cx-accent-hover: 90 76 246;
+  --cx-accent-2: 14 165 233;
+  --cx-success: 16 185 129;
   --cx-warning: 245 158 11;
-  --cx-danger: 220 38 38;
+  --cx-danger: 239 68 68;
   --cx-surface: 255 255 255;
-  --cx-app-bg: radial-gradient(ellipse at top, #f2f4f9 0%, #eef1f7 100%);
+  /* Пятна света — то, что делает фон «живым». Чистый CSS, без лишнего компонента:
+     перестраховка от перерисовок на телефоне, которых дал бы JS-слой с размытием. */
+  --cx-app-bg:
+    radial-gradient(60% 52% at 14% -4%, rgba(124,107,255,.34) 0%, rgba(124,107,255,0) 70%),
+    radial-gradient(55% 46% at 102% 10%, rgba(56,189,248,.26) 0%, rgba(56,189,248,0) 70%),
+    radial-gradient(48% 40% at 46% 104%, rgba(244,114,182,.20) 0%, rgba(244,114,182,0) 70%),
+    linear-gradient(180deg, #f6f5fc 0%, #eef0f8 100%);
+  --cx-shadow-card: 0 1px 2px rgb(20 26 46 / .05), 0 12px 32px -10px rgb(20 26 46 / .16);
   color-scheme: light;
 
   /* terminal palette (light) */
@@ -44,20 +53,27 @@ html[data-theme="light"] {
 }
 
 html[data-theme="dark"] {
-  --cx-bg: 10 14 26;
-  --cx-bg-elevated: 17 24 39;
-  --cx-bg-card: 23 26 33;
-  --cx-border: 42 47 58;
-  --cx-border-hover: 58 63 74;
-  --cx-text: 231 233 238;
-  --cx-text-muted: 138 143 156;
-  --cx-accent: 88 101 242;
-  --cx-accent-hover: 102 114 247;
-  --cx-success: 16 185 129;
-  --cx-warning: 245 158 11;
-  --cx-danger: 239 68 68;
-  --cx-surface: 23 26 33;
-  --cx-app-bg: radial-gradient(ellipse at top, #131828 0%, #0a0e1a 100%);
+  --cx-bg: 10 11 22;
+  --cx-bg-elevated: 22 24 40;
+  --cx-bg-card: 26 28 46;
+  --cx-border: 44 47 68;
+  --cx-border-hover: 60 64 90;
+  --cx-text: 238 240 250;
+  --cx-text-muted: 146 153 182;
+  --cx-text-faint: 104 111 142;
+  --cx-accent: 139 124 255;
+  --cx-accent-hover: 161 149 255;
+  --cx-accent-2: 56 189 248;
+  --cx-success: 52 211 153;
+  --cx-warning: 251 191 36;
+  --cx-danger: 248 113 113;
+  --cx-surface: 26 28 46;
+  --cx-app-bg:
+    radial-gradient(58% 50% at 12% -6%, rgba(124,107,255,.38) 0%, rgba(124,107,255,0) 70%),
+    radial-gradient(52% 44% at 104% 12%, rgba(56,189,248,.22) 0%, rgba(56,189,248,0) 70%),
+    radial-gradient(46% 38% at 44% 106%, rgba(236,72,153,.20) 0%, rgba(236,72,153,0) 70%),
+    linear-gradient(180deg, #0c0d1c 0%, #080911 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 18px 44px -14px rgb(0 0 0 / .6);
   color-scheme: dark;
 
   /* terminal palette (dark) */
@@ -74,6 +90,7 @@ html[data-theme="dark"] {
 
 body {
   background: var(--cx-app-bg);
+  background-attachment: fixed;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   color: rgb(var(--cx-text));
@@ -98,21 +115,31 @@ body {
 }
 
 @layer utilities {
+  /* Стекло. Размытие именно здесь, а не на каждой карточке: backdrop-filter дорогой,
+     и на телефоне 200+ размытых элементов дают заметное подтормаживание. */
   .glass {
-    background: rgb(var(--cx-bg-card) / 0.85);
-    backdrop-filter: blur(6px);
+    background: rgb(var(--cx-bg-card) / 0.72);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
     border: 1px solid rgb(var(--cx-border));
   }
 
   .glass-strong {
-    background: rgb(var(--cx-bg-card) / 0.97);
-    backdrop-filter: blur(12px);
+    background: rgb(var(--cx-bg-card) / 0.9);
+    backdrop-filter: blur(26px) saturate(1.5);
+    -webkit-backdrop-filter: blur(26px) saturate(1.5);
     border: 1px solid rgb(var(--cx-border));
   }
 
   .card-surface {
-    background: rgb(var(--cx-surface));
+    background: rgb(var(--cx-surface) / 0.9);
     border: 1px solid rgb(var(--cx-border));
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 3px rgb(0 0 0 / 0.06);
+    box-shadow: var(--cx-shadow-card);
+  }
+
+  /* Градиентный акцент вместо сплошного — там, где в макете цвет перетекает. */
+  .accent-gradient {
+    background-image: linear-gradient(120deg,
+      rgb(var(--cx-accent)), rgb(var(--cx-accent-2)));
   }
 }
