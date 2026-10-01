@@ -4,7 +4,7 @@ import { createServer } from 'http'
 import { execFile, exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import { readFile, writeFile, mkdir, readdir, stat } from 'fs/promises'
-import { existsSync, realpathSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
@@ -135,15 +135,15 @@ app.use(express.json({ limit: '10mb' }))
 const THEME_FILE = () => path.join(DATA_DIR, 'theme.json')
 
 function readThemeFile() {
-  try { return JSON.parse(fs.readFileSync(THEME_FILE(), 'utf8')) } catch { return {} }
+  try { return JSON.parse(readFileSync(THEME_FILE(), 'utf8')) } catch { return {} }
 }
+// Раньше ошибка записи глоталась, и API отвечал ok:true — то есть панель считала,
+// будто палитра принята, хотя на диске ничего не лежало. Теперь ошибка поднимается.
 function writeThemeFile(obj) {
-  try {
-    fs.mkdirSync(DATA_DIR, { recursive: true })
-    fs.writeFileSync(THEME_FILE(), JSON.stringify(obj, null, 2))
-  } catch (e) { console.error('[theme] не записал:', e.message) }
+  mkdirSync(DATA_DIR, { recursive: true })
+  writeFileSync(THEME_FILE(), JSON.stringify(obj, null, 2))
 }
-// Палитра с ПК — общая для всех пользователей: тема система у машины одна.
+// Палитра с ПК — общая для всех пользователей: тема системы у машины одна.
 function saveDesktopTheme(p) {
   const f = readThemeFile()
   f.desktop = { ...p, receivedAt: Date.now() }
@@ -180,10 +180,16 @@ app.put('/api/theme', (req, res) => {
   const { mode, palette } = req.body || {}
   const f = readThemeFile()
   f.users = f.users || {}
+  f.users[key] = f.users[key] || {}   // у нового пользователя записи ещё нет
   if (mode) f.users[key].mode = ['light', 'dark', 'system'].includes(mode) ? mode : f.users[key].mode || 'light'
   if (palette) f.users[key].palette = ['glass', 'classic', 'omarchy'].includes(palette)
     ? palette : f.users[key].palette || 'glass'
-  writeThemeFile(f)
+  try {
+    writeThemeFile(f)
+  } catch (e) {
+    console.error('[theme] не сохранил выбор:', e.message)
+    return res.status(500).json({ error: 'не удалось сохранить выбор темы' })
+  }
   res.json({ ok: true, mode: f.users[key].mode, palette: f.users[key].palette })
 })
 
@@ -194,6 +200,7 @@ app.post('/api/theme/desktop', (req, res) => {
   if (!p.background || !p.foreground) {
     return res.status(400).json({ error: 'нужен background и foreground' })
   }
+  try {
   saveDesktopTheme({
     background: String(p.background).slice(0, 32),
     foreground: String(p.foreground).slice(0, 32),
@@ -203,6 +210,10 @@ app.post('/api/theme/desktop', (req, res) => {
     source: String(p.source || 'unknown').slice(0, 40),
     name: p.name ? String(p.name).slice(0, 60) : null,
   })
+  } catch (e) {
+    console.error('[theme/desktop] не сохранил:', e.message)
+    return res.status(500).json({ error: 'не удалось сохранить палитру: ' + e.message })
+  }
   res.json({ ok: true })
 })
 
