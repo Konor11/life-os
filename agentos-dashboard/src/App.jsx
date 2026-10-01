@@ -4,7 +4,7 @@ import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, sav
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
 import { CommandPalette, useHotkeys, ToastHost, toast, NAV } from './components/PanelUX'
-import { applyTheme, loadTheme, saveTheme, watchTheme, systemPrefersDark } from './lib/theme'
+import { applyTheme, loadTheme, saveTheme, watchTheme, systemPrefersDark, markLocalChange } from './lib/theme'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -118,6 +118,7 @@ function App() {
   // Считаем next СНАРУЖИ: setThemeState обновляет асинхронно, и applyTheme(themeState)
   // применял бы предыдущее значение — тема отставала бы на шаг.
   const applyNext = (patchObj) => {
+    markLocalChange()   // пока сервер не подтвердил, его старый ответ не должен затереть выбор
     const next = { ...themeState, ...patchObj }
     setThemeState(next)
     applyTheme(next)

@@ -1,0 +1,254 @@
+/* =============================================================================
+   Палитры Life OS.
+
+   Каждая палитра — это набор токенов для СВЕТЛОЙ и ТЁМНОЙ версии. Файл сознательно
+   рукописный: палитры из популярных тем (Catppuccin, Tokyo Night, Nord и другие)
+   заданы числами, и генерировать их из описаний — значит накапливать опечатки,
+   которые видно только в готовом виде. Всё, что здесь написано, показывается
+   живьём в Настройках → Внешний вид.
+
+   Как добавить палитру:
+     1) блок html[data-theme="THEME"] ниже — токены для тёмной;
+     2) html[data-theme="THEME"][data-mode="light"] — токены для светлой;
+     3) запись в THEMES в src/lib/themes.js — название, подпись и образцы для списка.
+
+   Токены, которые обязаны быть заданы: --cx-bg, --cx-bg-card, --cx-bg-elevated,
+   --cx-surface, --cx-border, --cx-border-hover, --cx-text, --cx-text-muted,
+   --cx-text-faint, --cx-accent, --cx-accent-2, --cx-success, --cx-warning,
+   --cx-danger, --cx-app-bg, --cx-shadow-card.
+   ============================================================================= */
+
+/* Режим задаётся атрибутом data-mode отдельно от data-theme, чтобы палитра могла
+   не совпадать с режимом: «тёмная палитра в светлом режиме» — нормальная просьба. */
+html[data-theme="glass"] { --cx-accent: 109 94 252; --cx-accent-hover: 90 76 246; --cx-accent-2: 14 165 233; }
+html[data-theme="glass"][data-mode="light"] {
+  --cx-bg: 244 245 251; --cx-bg-card: 255 255 255; --cx-bg-elevated: 255 255 255; --cx-surface: 255 255 255;
+  --cx-border: 228 230 240; --cx-border-hover: 208 211 226;
+  --cx-text: 20 26 46; --cx-text-muted: 74 82 112; --cx-text-faint: 130 138 166;
+  --cx-app-bg: radial-gradient(60% 52% at 14% -4%, rgba(124,107,255,.34) 0%, rgba(124,107,255,0) 70%),
+               radial-gradient(55% 46% at 102% 10%, rgba(56,189,248,.26) 0%, rgba(56,189,248,0) 70%),
+               linear-gradient(180deg,#f6f5fc 0%,#eef0f8 100%);
+  --cx-shadow-card: 0 1px 2px rgb(20 26 46 / .05), 0 12px 32px -10px rgb(20 26 46 / .16);
+}
+html[data-theme="glass"][data-mode="dark"] {
+  --cx-bg: 10 11 22; --cx-bg-card: 26 28 46; --cx-bg-elevated: 22 24 40; --cx-surface: 26 28 46;
+  --cx-border: 44 47 68; --cx-border-hover: 60 64 90;
+  --cx-text: 238 240 250; --cx-text-muted: 146 153 182; --cx-text-faint: 104 111 142;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(124,107,255,.38) 0%, rgba(124,107,255,0) 70%),
+               radial-gradient(52% 44% at 104% 12%, rgba(56,189,248,.22) 0%, rgba(56,189,248,0) 70%),
+               linear-gradient(180deg,#0c0d1c 0%,#080911 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 18px 44px -14px rgb(0 0 0 / .6);
+}
+
+/* ── Классика: прежняя холодная панель, путь назад ── */
+html[data-theme="classic"] { --cx-accent: 88 101 242; --cx-accent-hover: 81 93 236; --cx-accent-2: 59 130 246; }
+html[data-theme="classic"][data-mode="light"] {
+  --cx-bg: 247 249 252; --cx-bg-card: 255 255 255; --cx-bg-elevated: 255 255 255; --cx-surface: 255 255 255;
+  --cx-border: 228 232 240; --cx-border-hover: 209 216 228;
+  --cx-text: 17 24 39; --cx-text-muted: 100 116 139; --cx-text-faint: 148 163 184;
+  --cx-app-bg: radial-gradient(ellipse at top, #f2f4f9 0%, #eef1f7 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .04), 0 1px 3px rgb(0 0 0 / .06);
+}
+html[data-theme="classic"][data-mode="dark"] {
+  --cx-bg: 10 14 26; --cx-bg-card: 23 26 33; --cx-bg-elevated: 17 24 39; --cx-surface: 23 26 33;
+  --cx-border: 42 47 58; --cx-border-hover: 58 63 74;
+  --cx-text: 231 233 238; --cx-text-muted: 138 143 156; --cx-text-faint: 100 106 120;
+  --cx-app-bg: radial-gradient(ellipse at top, #131828 0%, #0a0e1a 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+}
+
+/* ── Tokyo Night ── */
+html[data-theme="tokyo-night"] { --cx-accent: 122 162 247; --cx-accent-hover: 141 180 255; --cx-accent-2: 125 207 255; }
+html[data-theme="tokyo-night"][data-mode="light"] {
+  --cx-bg: 244 245 248; --cx-bg-card: 255 255 255; --cx-bg-elevated: 250 251 253; --cx-surface: 255 255 255;
+  --cx-border: 214 217 224; --cx-border-hover: 190 194 204;
+  --cx-text: 27 31 43; --cx-text-muted: 90 98 116; --cx-text-faint: 140 148 165;
+  --cx-app-bg: linear-gradient(180deg,#f7f8fb 0%,#eceff5 100%);
+  --cx-shadow-card: 0 1px 2px rgb(15 23 42 / .05), 0 10px 28px -12px rgb(15 23 42 / .14);
+}
+html[data-theme="tokyo-night"][data-mode="dark"] {
+  --cx-bg: 26 27 38; --cx-bg-card: 31 32 46; --cx-bg-elevated: 36 40 59; --cx-surface: 31 32 46;
+  --cx-border: 41 46 66; --cx-border-hover: 61 67 90;
+  --cx-text: 169 177 214; --cx-text-muted: 122 130 160; --cx-text-faint: 86 95 125;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(122,162,247,.16) 0%, rgba(122,162,247,0) 70%),
+               linear-gradient(180deg,#1a1b26 0%,#16161e 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 40px -14px rgb(0 0 0 / .55);
+}
+
+/* ── Nord ── */
+html[data-theme="nord"] { --cx-accent: 136 192 208; --cx-accent-hover: 129 223 255; --cx-accent-2: 163 190 247; }
+html[data-theme="nord"][data-mode="light"] {
+  --cx-bg: 236 239 244; --cx-bg-card: 255 255 255; --cx-bg-elevated: 248 250 252; --cx-surface: 255 255 255;
+  --cx-border: 216 222 231; --cx-border-hover: 190 199 212;
+  --cx-text: 46 52 64; --cx-text-muted: 110 118 132; --cx-text-faint: 148 156 170;
+  --cx-app-bg: linear-gradient(180deg,#f2f5f8 0%,#e5e9f0 100%);
+  --cx-shadow-card: 0 1px 2px rgb(46 52 64 / .06), 0 10px 26px -12px rgb(46 52 64 / .16);
+}
+html[data-theme="nord"][data-mode="dark"] {
+  --cx-bg: 46 52 64; --cx-bg-card: 54 61 73; --cx-bg-elevated: 59 66 82; --cx-surface: 54 61 73;
+  --cx-border: 67 76 94; --cx-border-hover: 94 105 129;
+  --cx-text: 216 222 233; --cx-text-muted: 148 157 175; --cx-text-faint: 108 117 133;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(136,192,208,.12) 0%, rgba(136,192,208,0) 70%),
+               linear-gradient(180deg,#2e3440 0%,#272c36 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .25), 0 16px 38px -14px rgb(0 0 0 / .5);
+}
+
+/* ── Catppuccin (тёмная; светлый вариант — Latte) ── */
+html[data-theme="catppuccin"] { --cx-accent: 203 166 247; --cx-accent-hover: 215 185 255; --cx-accent-2: 137 180 250; }
+html[data-theme="catppuccin"][data-mode="light"] {
+  --cx-bg: 239 241 245; --cx-bg-card: 252 252 253; --cx-bg-elevated: 230 233 239; --cx-surface: 252 252 253;
+  --cx-border: 204 208 218; --cx-border-hover: 172 178 190;
+  --cx-text: 76 79 105; --cx-text-muted: 108 112 134; --cx-text-faint: 146 151 168;
+  --cx-success: 64 160 43; --cx-warning: 223 142 29; --cx-danger: 210 15 57;
+  --cx-app-bg: linear-gradient(180deg,#eff1f5 0%,#e6e9ef 100%);
+  --cx-shadow-card: 0 1px 2px rgb(76 79 105 / .07), 0 10px 28px -12px rgb(76 79 105 / .16);
+}
+html[data-theme="catppuccin"][data-mode="dark"] {
+  --cx-bg: 30 30 46; --cx-bg-card: 36 36 54; --cx-bg-elevated: 49 50 68; --cx-surface: 36 36 54;
+  --cx-border: 69 71 90; --cx-border-hover: 105 111 142;
+  --cx-text: 205 214 244; --cx-text-muted: 166 173 200; --cx-text-faint: 127 132 156;
+  --cx-success: 166 227 161; --cx-warning: 249 226 175; --cx-danger: 243 139 168;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(203,166,247,.16) 0%, rgba(203,166,247,0) 70%),
+               linear-gradient(180deg,#1e1e2e 0%,#181825 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 40px -14px rgb(0 0 0 / .55);
+}
+
+/* ── Gruvbox ── */
+html[data-theme="gruvbox"] { --cx-accent: 250 189 47; --cx-accent-hover: 254 211 94; --cx-accent-2: 131 165 152; }
+html[data-theme="gruvbox"][data-mode="light"] {
+  --cx-bg: 251 241 199; --cx-bg-card: 255 250 232; --cx-bg-elevated: 235 219 178; --cx-surface: 255 250 232;
+  --cx-border: 213 196 152; --cx-border-hover: 180 158 118;
+  --cx-text: 60 56 54; --cx-text-muted: 124 111 100; --cx-text-faint: 157 151 142;
+  --cx-app-bg: linear-gradient(180deg,#fbf1c7 0%,#f2e5bc 100%);
+  --cx-shadow-card: 0 1px 2px rgb(60 56 54 / .08), 0 10px 26px -12px rgb(60 56 54 / .18);
+}
+html[data-theme="gruvbox"][data-mode="dark"] {
+  --cx-bg: 40 40 40; --cx-bg-card: 50 48 48; --cx-bg-elevated: 60 56 54; --cx-surface: 50 48 48;
+  --cx-border: 80 73 69; --cx-border-hover: 124 111 100;
+  --cx-text: 235 219 178; --cx-text-muted: 168 153 132; --cx-text-faint: 124 111 100;
+  --cx-app-bg: linear-gradient(180deg,#282828 0%,#1f1f1f 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 38px -14px rgb(0 0 0 / .55);
+}
+
+/* ── Dracula ── */
+html[data-theme="dracula"] { --cx-accent: 189 147 249; --cx-accent-hover: 205 173 255; --cx-accent-2: 255 121 198; }
+html[data-theme="dracula"][data-mode="light"] {
+  --cx-bg: 245 244 250; --cx-bg-card: 255 255 255; --cx-bg-elevated: 238 236 246; --cx-surface: 255 255 255;
+  --cx-border: 214 211 226; --cx-border-hover: 180 176 196;
+  --cx-text: 40 42 54; --cx-text-muted: 98 96 120; --cx-text-faint: 140 138 160;
+  --cx-app-bg: linear-gradient(180deg,#f5f4fa 0%,#ebe9f4 100%);
+  --cx-shadow-card: 0 1px 2px rgb(40 42 54 / .07), 0 10px 28px -12px rgb(40 42 54 / .16);
+}
+html[data-theme="dracula"][data-mode="dark"] {
+  --cx-bg: 40 42 54; --cx-bg-card: 47 49 63; --cx-bg-elevated: 60 62 80; --cx-surface: 47 49 63;
+  --cx-border: 68 71 90; --cx-border-hover: 100 104 128;
+  --cx-text: 248 248 242; --cx-text-muted: 189 189 190; --cx-text-faint: 145 146 158;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(189,147,249,.14) 0%, rgba(189,147,249,0) 70%),
+               linear-gradient(180deg,#282a36 0%,#21222c 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 40px -14px rgb(0 0 0 / .55);
+}
+
+/* ── Rosé Pine ── */
+html[data-theme="rose-pine"] { --cx-accent: 196 167 231; --cx-accent-hover: 215 191 245; --cx-accent-2: 196 215 245; }
+html[data-theme="rose-pine"][data-mode="light"] {
+  --cx-bg: 250 244 237; --cx-bg-card: 255 251 246; --cx-bg-elevated: 239 233 225; --cx-surface: 255 251 246;
+  --cx-border: 226 216 205; --cx-border-hover: 196 184 170;
+  --cx-text: 87 82 121; --cx-text-muted: 124 118 152; --cx-text-faint: 160 154 180;
+  --cx-app-bg: linear-gradient(180deg,#faf4ed 0%,#f2e9e0 100%);
+  --cx-shadow-card: 0 1px 2px rgb(87 82 121 / .07), 0 10px 28px -12px rgb(87 82 121 / .16);
+}
+html[data-theme="rose-pine"][data-mode="dark"] {
+  --cx-bg: 25 23 36; --cx-bg-card: 31 29 44; --cx-bg-elevated: 38 35 58; --cx-surface: 31 29 44;
+  --cx-border: 55 51 71; --cx-border-hover: 86 79 105;
+  --cx-text: 224 222 244; --cx-text-muted: 166 161 190; --cx-text-faint: 121 117 145;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(196,167,231,.14) 0%, rgba(196,167,231,0) 70%),
+               linear-gradient(180deg,#191724 0%,#16141f 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 40px -14px rgb(0 0 0 / .55);
+}
+
+/* ── Solarized ── */
+html[data-theme="solarized"] { --cx-accent: 38 139 210; --cx-accent-hover: 83 175 232; --cx-accent-2: 42 161 152; }
+html[data-theme="solarized"][data-mode="light"] {
+  --cx-bg: 253 246 227; --cx-bg-card: 255 253 247; --cx-bg-elevated: 238 232 213; --cx-surface: 255 253 247;
+  --cx-border: 216 210 191; --cx-border-hover: 188 178 159;
+  --cx-text: 101 123 131; --cx-text-muted: 131 148 150; --cx-text-faint: 167 177 173;
+  --cx-app-bg: linear-gradient(180deg,#fdf6e3 0%,#f5eedc 100%);
+  --cx-shadow-card: 0 1px 2px rgb(101 123 131 / .08), 0 10px 26px -12px rgb(101 123 131 / .18);
+}
+html[data-theme="solarized"][data-mode="dark"] {
+  --cx-bg: 0 43 54; --cx-bg-card: 7 54 66; --cx-bg-elevated: 13 61 73; --cx-surface: 7 54 66;
+  --cx-border: 21 67 80; --cx-border-hover: 38 92 107;
+  --cx-text: 238 232 213; --cx-text-muted: 147 161 161; --cx-text-faint: 101 123 131;
+  --cx-app-bg: linear-gradient(180deg,#002b36 0%,#01313d 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 38px -14px rgb(0 0 0 / .5);
+}
+
+/* ── Ayu ── */
+html[data-theme="ayu"] { --cx-accent: 255 180 84; --cx-accent-hover: 255 198 122; --cx-accent-2: 89 194 255; }
+html[data-theme="ayu"][data-mode="light"] {
+  --cx-bg: 250 250 250; --cx-bg-card: 255 255 255; --cx-bg-elevated: 242 242 242; --cx-surface: 255 255 255;
+  --cx-border: 226 226 226; --cx-border-hover: 200 200 200;
+  --cx-text: 92 92 92; --cx-text-muted: 130 130 130; --cx-text-faint: 164 164 164;
+  --cx-app-bg: linear-gradient(180deg,#fbfbfb 0%,#f3f3f3 100%);
+  --cx-shadow-card: 0 1px 2px rgb(92 92 92 / .07), 0 10px 26px -12px rgb(92 92 92 / .15);
+}
+html[data-theme="ayu"][data-mode="dark"] {
+  --cx-bg: 15 20 25; --cx-bg-card: 20 26 33; --cx-bg-elevated: 26 33 41; --cx-surface: 20 26 33;
+  --cx-border: 39 46 54; --cx-border-hover: 58 66 77;
+  --cx-text: 191 199 213; --cx-text-muted: 133 143 153; --cx-text-faint: 92 102 112;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(255,180,84,.10) 0%, rgba(255,180,84,0) 70%),
+               linear-gradient(180deg,#0f1419 0%,#0b0f13 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 38px -14px rgb(0 0 0 / .55);
+}
+
+/* ── Everforest ── */
+html[data-theme="everforest"] { --cx-accent: 167 192 128; --cx-accent-hover: 185 204 151; --cx-accent-2: 127 187 179; }
+html[data-theme="everforest"][data-mode="light"] {
+  --cx-bg: 250 247 240; --cx-bg-card: 255 253 248; --cx-bg-elevated: 237 233 224; --cx-surface: 255 253 248;
+  --cx-border: 219 214 203; --cx-border-hover: 188 181 168;
+  --cx-text: 60 66 57; --cx-text-muted: 108 116 105; --cx-text-faint: 148 154 143;
+  --cx-app-bg: linear-gradient(180deg,#faf7f0 0%,#f2eee4 100%);
+  --cx-shadow-card: 0 1px 2px rgb(60 66 57 / .07), 0 10px 26px -12px rgb(60 66 57 / .16);
+}
+html[data-theme="everforest"][data-mode="dark"] {
+  --cx-bg: 45 53 59; --cx-bg-card: 53 62 68; --cx-bg-elevated: 62 71 76; --cx-surface: 53 62 68;
+  --cx-border: 78 88 91; --cx-border-hover: 110 122 123;
+  --cx-text: 211 198 170; --cx-text-muted: 167 161 140; --cx-text-faint: 124 120 108;
+  --cx-app-bg: linear-gradient(180deg,#2d353b 0%,#262e33 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .28), 0 16px 38px -14px rgb(0 0 0 / .5);
+}
+
+/* ── GitHub (светлая по природе; тёмный вариант — тёмный GitHub) ── */
+html[data-theme="github"] { --cx-accent: 31 111 235; --cx-accent-hover: 9 105 218; --cx-accent-2: 130 80 223; }
+html[data-theme="github"][data-mode="light"] {
+  --cx-bg: 246 248 250; --cx-bg-card: 255 255 255; --cx-bg-elevated: 240 242 245; --cx-surface: 255 255 255;
+  --cx-border: 218 222 228; --cx-border-hover: 190 196 204;
+  --cx-text: 31 35 40; --cx-text-muted: 101 109 118; --cx-text-faint: 144 152 161;
+  --cx-app-bg: linear-gradient(180deg,#f6f8fa 0%,#eef1f4 100%);
+  --cx-shadow-card: 0 1px 2px rgb(31 35 40 / .07), 0 8px 24px -12px rgb(31 35 40 / .16);
+}
+html[data-theme="github"][data-mode="dark"] {
+  --cx-bg: 13 17 23; --cx-bg-card: 22 27 34; --cx-bg-elevated: 28 34 43; --cx-surface: 22 27 34;
+  --cx-border: 45 54 66; --cx-border-hover: 68 78 91;
+  --cx-text: 230 237 243; --cx-text-muted: 156 166 178; --cx-text-faint: 112 122 135;
+  --cx-app-bg: linear-gradient(180deg,#0d1117 0%,#090c11 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 16px 38px -14px rgb(0 0 0 / .55);
+}
+
+/* ── Midnight / тёмный синий ── */
+html[data-theme="midnight"] { --cx-accent: 108 165 255; --cx-accent-hover: 138 188 255; --cx-accent-2: 160 197 255; }
+html[data-theme="midnight"][data-mode="light"] {
+  --cx-bg: 243 245 249; --cx-bg-card: 255 255 255; --cx-bg-elevated: 236 239 245; --cx-surface: 255 255 255;
+  --cx-border: 216 220 228; --cx-border-hover: 188 194 205;
+  --cx-text: 24 30 45; --cx-text-muted: 92 102 122; --cx-text-faint: 136 146 164;
+  --cx-app-bg: linear-gradient(180deg,#f3f5f9 0%,#e9edf5 100%);
+  --cx-shadow-card: 0 1px 2px rgb(24 30 45 / .06), 0 10px 28px -12px rgb(24 30 45 / .16);
+}
+html[data-theme="midnight"][data-mode="dark"] {
+  --cx-bg: 10 14 30; --cx-bg-card: 16 21 40; --cx-bg-elevated: 22 28 51; --cx-surface: 16 21 40;
+  --cx-border: 38 47 76; --cx-border-hover: 58 70 105;
+  --cx-text: 219 226 245; --cx-text-muted: 150 160 190; --cx-text-faint: 104 114 145;
+  --cx-app-bg: radial-gradient(58% 50% at 12% -6%, rgba(108,165,255,.16) 0%, rgba(108,165,255,0) 70%),
+               linear-gradient(180deg,#0a0e1e 0%,#070a16 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .35), 0 18px 42px -14px rgb(0 0 0 / .6);
+}

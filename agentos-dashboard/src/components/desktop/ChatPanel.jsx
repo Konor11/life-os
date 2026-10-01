@@ -112,7 +112,7 @@ function storedFontSize(engine) {
 // The xterm theme follows the Life OS theme (light/dark). TUI apps like opencode
 // v2 hot-reload their cli.json theme mode (see tui-ws), so both stay in sync.
 function getXtermTheme() {
-  const dark = document.documentElement.getAttribute('data-theme') !== 'light'
+  const dark = document.documentElement.getAttribute('data-mode') === 'dark'
   const ANSI = dark
     ? ['#0b0e14','#f85149','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#c9d1d9','#7d8590','#ff5f56','#3fb950','#e3b341','#4d9be6','#b362f9','#56b4c2','#f0f6fc']
     // Светлая палитра в духе One Light / GitHub-light: TUI-приложения (Hermes в том числе) рисуют
@@ -367,7 +367,7 @@ export function ChatPanel({ fullscreen = false }) {
   const [agentState, setAgentState] = useState(AGENT_STATES.UNKNOWN)
   // Track the Life OS theme so embedded web UIs (opencode/deepseek SPAs follow
   // prefers-color-scheme) can be forced to match via the iframe's color-scheme.
-  const [themeDark, setThemeDark] = useState(() => document.documentElement.getAttribute('data-theme') !== 'light')
+  const [themeDark, setThemeDark] = useState(() => document.documentElement.getAttribute('data-mode') === 'dark')
   const themeDarkRef = useRef(themeDark)
   // On theme switch: xterm re-themes via applyTheme (mutation observer) and the
   // running TUI is told over WS so the backend syncs opencode's cli.json
@@ -391,9 +391,9 @@ export function ChatPanel({ fullscreen = false }) {
   }, [themeDark, engine, agentState])
   useEffect(() => {
     const obs = new MutationObserver(() => {
-      setThemeDark(document.documentElement.getAttribute('data-theme') !== 'light')
+      setThemeDark(document.documentElement.getAttribute('data-mode') === 'dark')
     })
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mode'] })
     return () => obs.disconnect()
   }, [])
   const hasWeb = webPorts[engine] !== undefined
@@ -511,9 +511,9 @@ export function ChatPanel({ fullscreen = false }) {
       } catch (e) { /* ignore */ }
     }
     const themeObserver = new MutationObserver((muts) => {
-      if (muts.some(m => m.attributeName === 'data-theme')) applyTheme()
+      if (muts.some(m => m.attributeName === 'data-mode')) applyTheme()
     })
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mode'] })
     // Размеры терминала И PTY берём из FitAddon: колонки и строки считаются по контейнеру и кеглю,
     // поэтому xterm, PTY и само TUI-приложение работают ровно в одном размере — как в обычном
     // терминале. Форсировать 120 колонок было ошибкой: из-за расхождения размера приложение

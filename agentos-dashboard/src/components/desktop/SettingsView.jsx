@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 // Файл лежит в components/desktop/, поэтому Icons и Mascot — уровнем выше (../),
 // а список движков — рядом (./ChatPanelEngines).
 import { Icon } from '../Icons'
+import { ALL_PALETTES } from '../../lib/themes'
+import { effectiveMode } from '../../lib/theme'
 import { desktopInfo, setAutostart as setAutostartNative } from '../../lib/desktop'
 import { Mascot } from '../Mascot'
 import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanelEngines'
@@ -77,19 +79,17 @@ export function SettingsView({ theme, onToggleTheme, themeState, onSetThemeMode,
 
 // ---------------------------------------------------------------- внешний вид ----
 
-// Палитра Омachi приходит с ПК — показываем её живым образцом, но НЕ выдумываем цвета:
-// если палитра не пришла, честно говорим об этом и оставляем обычное «Стекло».
-const PALETTES = [
-  { id: 'glass', label: 'Стекло', hint: 'мягкие полупрозрачные карточки, пятна света на фоне',
-    sw: ['#f4f5fb', '#6d5efc', '#0ea5e9'] },
-  { id: 'classic', label: 'Классика', hint: 'холодный сине-серый, как панель была до редизайна',
-    sw: ['#f7f9fc', '#5865f2', '#111827'] },
-  { id: 'omarchy', label: 'Омachi', hint: 'берёт цвета из темы твоей системы на ПК',
-    sw: ['#1c1c1c', '#c8c093', '#f0f0f0'] },
-]
-
 function LookSection({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPalette }) {
   const st = themeState || { mode: 'light', palette: 'glass', desktop: null }
+  const [query, setQuery] = useState('')
+  // Режим, который РЕАЛЬНО применён — им показываем активную кнопку и берём образцы.
+  const eff = effectiveMode(st)
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return ALL_PALETTES
+    return ALL_PALETTES.filter(t =>
+      t.label.toLowerCase().includes(q) || (t.hint || '').toLowerCase().includes(q) || t.id.includes(q))
+  }, [query])
   const [font, setFont] = useState(null)   // null = «по умолчанию для движка»
   const [loaded, setLoaded] = useState(false)
   useEffect(() => { setLoaded(true) }, [])
@@ -108,45 +108,63 @@ function LookSection({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPa
           {[['light', '☀️', 'Светлая'], ['dark', '🌙', 'Тёмная'], ['system', '🖥️', 'Как в системе']].map(([id, ic, label]) => (
             <button
               key={id}
-              onClick={() => onSetThemeMode ? onSetThemeMode(id) : ((theme === 'dark') !== (id === 'dark')) && onToggleTheme()}
+              onClick={() => onSetThemeMode(id)}
               className={`flex flex-col items-start gap-1.5 px-3 py-3 rounded-xl border text-sm transition-all ${
-                st.mode === id
+                eff === id
                   ? 'border-accent bg-accent/10 text-text font-medium'
                   : 'border-border bg-bg-card text-text-muted hover:border-border-hover'
               }`}
             >
               <span className="text-lg">{ic}</span>
               <span className="text-left leading-tight">{label}</span>
-              <span className="text-[11px] text-text-muted">{st.mode === id ? 'выбрана' : 'переключить'}</span>
+              <span className="text-[11px] text-text-muted">
+                {eff === id ? 'выбрана' : 'переключить'}
+                {/* При палитре Омachi режим задаёт компьютер — показываем это честно. */}
+                {st.palette === 'omarchy' && st.desktop?.mode ? ' · с ПК' : ''}
+              </span>
             </button>
           ))}
         </div>
       </Group>
 
-      <Group title="Палитра" hint="Палитра — это цвета. Выбор хранится на сервере, поэтому телефон и компьютер показывают одно и то же.">
-        <div className="space-y-2">
-          {PALETTES.map(p => (
+      <Group title="Палитра" hint="Цвета — как в редакторе кода. Выбор хранится на сервере: телефон и компьютер показывают одно и то же.">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="relative flex-1">
+            <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Найти тему…"
+              className="w-full pl-8 pr-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
+          </div>
+          <span className="text-[11px] text-text-muted whitespace-nowrap">
+            {filtered.length} из {ALL_PALETTES.length}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[22rem] overflow-y-auto pr-1">
+          {filtered.map(p => (
             <button
               key={p.id}
               onClick={() => onSetPalette && onSetPalette(p.id)}
               disabled={!onSetPalette}
-              className={`w-full text-left px-3 py-3 rounded-xl border transition-all ${
+              title={p.hint}
+              className={`w-full text-left px-2.5 py-2.5 rounded-xl border transition-all ${
                 st.palette === p.id
                   ? 'border-accent bg-accent/10'
                   : 'border-border bg-bg-card hover:border-border-hover'
               } ${!onSetPalette ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
-              <div className="flex items-center gap-2.5">
-                <span className="flex gap-1 shrink-0">
-                  {p.sw.map((c, i) => (
-                    <span key={i} className="w-4 h-4 rounded-md border border-border" style={{ background: c }} />
-                  ))}
-                </span>
-                <span className={`text-sm ${st.palette === p.id ? 'text-text font-medium' : 'text-text-muted'}`}>
-                  {p.label}
-                </span>
-              </div>
-              <div className="text-[11px] text-text-muted mt-1">{p.hint}</div>
+              {/* Образцы берём для ТЕКУЩЕГО режима: тёмная палитра в тёмном режиме
+                  показывает то, что будет на экране, а не свой вывернутый вариант. */}
+              <span className="flex gap-1 mb-2 shrink-0">
+                {((eff === 'dark' ? p.dark : p.sw) || p.sw).map((c, i) => (
+                  <span key={i} className="h-7 flex-1 rounded-md border border-border/70" style={{ background: c }} />
+                ))}
+              </span>
+              <span className={`text-[13px] block truncate ${
+                st.palette === p.id ? 'text-text font-medium' : 'text-text-muted'}`}>
+                {p.label}
+              </span>
               {p.id === 'omarchy' && !st.desktop && (
                 <div className="text-[11px] text-warning mt-1">
                   Тема с ПК ещё не приходила — пока показывается обычное «Стекло».
@@ -169,6 +187,11 @@ function LookSection({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPa
               )}
             </button>
           ))}
+          {filtered.length === 0 && (
+            <div className="col-span-full py-6 text-center text-sm text-text-muted">
+              Ничего не нашлось по запросу «{query}»
+            </div>
+          )}
         </div>
       </Group>
 

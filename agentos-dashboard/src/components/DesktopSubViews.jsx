@@ -64,6 +64,19 @@ export function ChatTab() {
 
 // Новая вкладка настроек с разделами. Старый SettingsPanel (плоский список сервер/движки/данные)
 // остаётся в проекте как источник стилистики, но в UI больше не используется.
-export function SettingsTab({ theme, onToggleTheme }) {
-  return <SettingsView theme={theme} onToggleTheme={onToggleTheme} />
+// Пробрасываем пропы дальше. Раньше здесь стояла сигнатура «({ theme, onToggleTheme })»,
+// и всё, что касается темы, до SettingsView не доходило: раздел показывал состояние
+// по умолчанию (всегда «выбрана» = Светлая), а кнопка «Как в системе» уходила в
+// запасную ветку, умевшую только светлая↔тёмная. Из-за этого системная тема
+// не включалась вообще.
+export function SettingsTab({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPalette }) {
+  return (
+    <SettingsView
+      theme={theme}
+      onToggleTheme={onToggleTheme}
+      themeState={themeState}
+      onSetThemeMode={onSetThemeMode}
+      onSetPalette={onSetPalette}
+    />
+  )
 }

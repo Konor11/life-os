@@ -182,8 +182,13 @@ app.put('/api/theme', (req, res) => {
   f.users = f.users || {}
   f.users[key] = f.users[key] || {}   // у нового пользователя записи ещё нет
   if (mode) f.users[key].mode = ['light', 'dark', 'system'].includes(mode) ? mode : f.users[key].mode || 'light'
-  if (palette) f.users[key].palette = ['glass', 'classic', 'omarchy'].includes(palette)
-    ? palette : f.users[key].palette || 'glass'
+  if (palette) {
+    // Список держим в одном месте с фронтом (src/lib/themes.js). Здесь — копия:
+    // сервер всё равно обязан проверять, иначе в файл попадёт мусор из тела запроса.
+    const KNOWN = ['glass', 'classic', 'tokyo-night', 'nord', 'catppuccin', 'gruvbox',
+      'dracula', 'rose-pine', 'solarized', 'ayu', 'everforest', 'github', 'midnight', 'omarchy']
+    f.users[key].palette = KNOWN.includes(palette) ? palette : (f.users[key].palette || 'glass')
+  }
   try {
     writeThemeFile(f)
   } catch (e) {

@@ -1,3 +1,5 @@
+@import './themes.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -12,34 +14,18 @@ html, body, #root {
   padding: 0;
 }
 
-/* ===== Design tokens (light default) ===== */
-:root,
-html[data-theme="light"] {
-  --cx-bg: 244 245 251;
-  --cx-bg-elevated: 255 255 255;
-  --cx-bg-card: 255 255 255;
-  --cx-border: 228 230 240;
-  --cx-border-hover: 208 211 226;
-  --cx-text: 20 26 46;
-  --cx-text-muted: 74 82 112;
-  --cx-text-faint: 130 138 166;
-  --cx-accent: 109 94 252;
-  --cx-accent-hover: 90 76 246;
-  --cx-accent-2: 14 165 233;
-  --cx-success: 16 185 129;
-  --cx-warning: 245 158 11;
-  --cx-danger: 239 68 68;
-  --cx-surface: 255 255 255;
-  /* Пятна света — то, что делает фон «живым». Чистый CSS, без лишнего компонента:
-     перестраховка от перерисовок на телефоне, которых дал бы JS-слой с размытием. */
-  --cx-app-bg:
-    radial-gradient(60% 52% at 14% -4%, rgba(124,107,255,.34) 0%, rgba(124,107,255,0) 70%),
-    radial-gradient(55% 46% at 102% 10%, rgba(56,189,248,.26) 0%, rgba(56,189,248,0) 70%),
-    radial-gradient(48% 40% at 46% 104%, rgba(244,114,182,.20) 0%, rgba(244,114,182,0) 70%),
-    linear-gradient(180deg, #f6f5fc 0%, #eef0f8 100%);
-  --cx-shadow-card: 0 1px 2px rgb(20 26 46 / .05), 0 12px 32px -10px rgb(20 26 46 / .16);
-  color-scheme: light;
+/* Базовые токены палитр живут в themes.css. Здесь — только то, что от палитры
+   не зависит.
 
+   ВАЖНО: режим (светлая/тёмная) задаётся атрибутом data-mode, а не data-theme:
+   в data-theme лежит ИМЯ палитры. Раньше здесь стояло html[data-theme="dark"],
+   и после появления галереи палитр такие правила перестали бы срабатывать.
+   Терминальные цвета от палитры не зависят намеренно: их правка — отдельная задача
+   со своим согласованием. */
+html[data-mode="light"] { color-scheme: light; }
+html[data-mode="dark"] { color-scheme: dark; }
+
+html[data-mode="light"] {
   /* terminal palette (light) */
   --term-bg: 255 255 255;
   --term-header: linear-gradient(180deg,#f4f6fa,#eef1f6);
@@ -52,53 +38,7 @@ html[data-theme="light"] {
   --term-accent: 47 129 247;
 }
 
-/* Палитра «Классика» — холодный сине-серый, каким панель была до «Стекла».
-   Оставлена как путь назад: если новая палитра неудобна, переключение мгновенное. */
-html[data-palette="classic"] { --cx-accent: 88 101 242; --cx-accent-hover: 81 93 236; }
-html[data-palette="classic"][data-theme="light"] {
-  --cx-bg: 247 249 252; --cx-bg-card: 255 255 255; --cx-bg-elevated: 255 255 255;
-  --cx-border: 228 232 240; --cx-text: 17 24 39; --cx-text-muted: 100 116 139;
-  --cx-app-bg: radial-gradient(ellipse at top, #f2f4f9 0%, #eef1f7 100%);
-  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .04), 0 1px 3px rgb(0 0 0 / .06);
-}
-html[data-palette="classic"][data-theme="dark"] {
-  --cx-bg: 10 14 26; --cx-bg-card: 23 26 33; --cx-bg-elevated: 17 24 39;
-  --cx-border: 42 47 58; --cx-text: 231 233 238; --cx-text-muted: 138 143 156;
-  --cx-app-bg: radial-gradient(ellipse at top, #131828 0%, #0a0e1a 100%);
-  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
-}
-
-/* Палитра «Омachi»: значения приходят с ПК и ставятся инлайном на <html>,
-   поэтому здесь только запасной вариант на случай, пока палитра не пришла —
-   тогда панель показывает обычное «Стекло», а не выдуманные цвета. */
-html[data-palette="omarchy"]:not([data-omarchy-ready]) {
-  --cx-app-bg: var(--cx-app-glass-light);
-}
-
-html[data-theme="dark"] {
-  --cx-bg: 10 11 22;
-  --cx-bg-elevated: 22 24 40;
-  --cx-bg-card: 26 28 46;
-  --cx-border: 44 47 68;
-  --cx-border-hover: 60 64 90;
-  --cx-text: 238 240 250;
-  --cx-text-muted: 146 153 182;
-  --cx-text-faint: 104 111 142;
-  --cx-accent: 139 124 255;
-  --cx-accent-hover: 161 149 255;
-  --cx-accent-2: 56 189 248;
-  --cx-success: 52 211 153;
-  --cx-warning: 251 191 36;
-  --cx-danger: 248 113 113;
-  --cx-surface: 26 28 46;
-  --cx-app-bg:
-    radial-gradient(58% 50% at 12% -6%, rgba(124,107,255,.38) 0%, rgba(124,107,255,0) 70%),
-    radial-gradient(52% 44% at 104% 12%, rgba(56,189,248,.22) 0%, rgba(56,189,248,0) 70%),
-    radial-gradient(46% 38% at 44% 106%, rgba(236,72,153,.20) 0%, rgba(236,72,153,0) 70%),
-    linear-gradient(180deg, #0c0d1c 0%, #080911 100%);
-  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 18px 44px -14px rgb(0 0 0 / .6);
-  color-scheme: dark;
-
+html[data-mode="dark"] {
   /* terminal palette (dark) */
   --term-bg: 11 14 20;
   --term-header: linear-gradient(180deg,#161b26,#10141d);

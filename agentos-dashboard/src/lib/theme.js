@@ -11,7 +11,10 @@
 // Режим: light | dark | system. «system» — по prefers-color-scheme, как в VS Code.
 
 const MODE_RE = ['light', 'dark', 'system']
-const PALETTE_RE = ['glass', 'classic', 'omarchy']
+// Список палитр держим здесь и в themes.css. Если они разойдутся, палитра из списка
+// не найдёт токенов и панель останется на предыдущей — поэтому проверка строгая.
+const PALETTE_RE = ['glass', 'classic', 'tokyo-night', 'nord', 'catppuccin', 'gruvbox',
+  'dracula', 'rose-pine', 'solarized', 'ayu', 'everforest', 'github', 'midnight', 'omarchy']
 
 // ─────────────────────────────── цвет ───────────────────────────────
 
@@ -150,24 +153,32 @@ export function effectiveMode({ mode = 'light', palette = 'glass', desktop = nul
   return mode
 }
 
+// Локальная правка не должна затираться опросом сервера, который пришёл раньше,
+// чем наш PUT доехал. Иначе выбор «мигает» назад — выглядит как поломка.
+let suppressUntil = 0
+export function markLocalChange() { suppressUntil = Date.now() + 5000 }
+export function localChangePending() { return Date.now() < suppressUntil }
+
 export function applyTheme({ mode = 'light', palette = 'glass', desktop = null } = {}) {
   const el = root()
   const m = MODE_RE.includes(mode) ? mode : 'light'
   const p = PALETTE_RE.includes(palette) ? palette : 'glass'
 
+  // data-theme — это ПАЛИТРА, а не режим. Режим живёт в data-mode.
+  // Так палитра может быть «тёмной» при светлом режиме и наоборот — как в VS Code.
+  el.setAttribute('data-theme', p === 'omarchy' ? 'glass' : p)
   el.setAttribute('data-palette', p)
 
   // При палитре Омachi режим приходит с ПК: там уже есть `mode`, и он отражает
   // светлую или тёмную тему системы. Если ручной выбор противоречит ему, побеждает
   // система — иначе получилось бы «переключил на светлую, а ничего не изменилось».
   const desktopMode = p === 'omarchy' ? String(desktop?.mode || '').toLowerCase() : ''
-  if (desktopMode === 'light' || desktopMode === 'dark') {
-    el.setAttribute('data-theme', desktopMode)
-  } else if (m === 'system') {
-    el.setAttribute('data-theme', systemPrefersDark() ? 'dark' : 'light')
-  } else {
-    el.setAttribute('data-theme', m)
-  }
+  const mode = (desktopMode === 'light' || desktopMode === 'dark')
+    ? desktopMode
+    : (m === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : m)
+  el.setAttribute('data-mode', mode)
+  document.querySelector('meta[name="theme-color"]')
+    ?.setAttribute('content', mode === 'dark' ? '#0a0b16' : '#f4f5fb')
 
   // Палитра Омachi: цвета с ПК ставим инлайном. Если их нет — атрибута нет,
   // и CSS откатывается на обычное «Стекло» (см. index.css), без выдуманных цветов.
@@ -208,13 +219,14 @@ export async function saveTheme(next) {
 export function watchTheme(onChange, intervalMs = 15000) {
   let last = null
   const tick = async () => {
+    if (localChangePending()) return   // только что меняли — не даём старому ответу затереть
     const t = await loadTheme()
     if (!t) return
     const sig = JSON.stringify([t.mode, t.palette, t.desktop?.receivedAt || null])
     if (sig !== last) { last = sig; onChange(t) }
   }
   const id = setInterval(tick, intervalMs)
-  const onFocus = () => { tick() }
+  const onFocus = () => { if (!localChangePending()) tick() }
   window.addEventListener('focus', onFocus)
   return () => { clearInterval(id); window.removeEventListener('focus', onFocus) }
 }

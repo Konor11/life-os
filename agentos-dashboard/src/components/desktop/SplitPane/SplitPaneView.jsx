@@ -7,7 +7,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 // Terminal container background matches the Life OS theme (painted so any
 // fractional-DPR gaps between rows blend into the terminal, not the page).
 function getXtermBg() {
-  return document.documentElement.getAttribute('data-theme') !== 'light' ? '#0b0e14' : '#ffffff'
+  return document.documentElement.getAttribute('data-mode') === 'dark' ? '#0b0e14' : '#ffffff'
 }
 
 export function SplitPaneView({ fullscreen = false }) {
