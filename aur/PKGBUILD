@@ -13,7 +13,7 @@ url="https://github.com/Konor11/life-os"
 license=('MIT')
 # PKGBUILD собирается из релизного архива GitHub: он неизменяемый, в отличие от авто-архива по тегу.
 source=("https://github.com/Konor11/life-os/releases/download/v$pkgver/lifeos-desktop-$pkgver.tar.gz")
-sha256sums=('10a8b3dc28b8ec2b903b354df97c00726f0a53ee90ecdeabb85c6bbeff79269f')
+sha256sums=('f0283af18dffceff8763ab6ba393f505441cf46c0cabf768443bff41bf674de3')
 
 # Зависимости времени выполнения: webkit — это сам webview, на котором рисуется панель.
 depends=('webkit2gtk-4.1'
