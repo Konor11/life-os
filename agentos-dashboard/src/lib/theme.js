@@ -173,12 +173,13 @@ export function applyTheme({ mode = 'light', palette = 'glass', desktop = null }
   // светлую или тёмную тему системы. Если ручной выбор противоречит ему, побеждает
   // система — иначе получилось бы «переключил на светлую, а ничего не изменилось».
   const desktopMode = p === 'omarchy' ? String(desktop?.mode || '').toLowerCase() : ''
-  const mode = (desktopMode === 'light' || desktopMode === 'dark')
+  // Имя НЕ mode: это уже параметр выше, перекрытие не компилируется.
+  const eff = (desktopMode === 'light' || desktopMode === 'dark')
     ? desktopMode
     : (m === 'system' ? (systemPrefersDark() ? 'dark' : 'light') : m)
-  el.setAttribute('data-mode', mode)
+  el.setAttribute('data-mode', eff)
   document.querySelector('meta[name="theme-color"]')
-    ?.setAttribute('content', mode === 'dark' ? '#0a0b16' : '#f4f5fb')
+    ?.setAttribute('content', eff === 'dark' ? '#0a0b16' : '#f4f5fb')
 
   // Палитра Омachi: цвета с ПК ставим инлайном. Если их нет — атрибута нет,
   // и CSS откатывается на обычное «Стекло» (см. index.css), без выдуманных цветов.
