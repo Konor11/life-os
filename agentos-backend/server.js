@@ -201,15 +201,27 @@ app.post('/api/theme/desktop', (req, res) => {
     return res.status(400).json({ error: 'нужен background и foreground' })
   }
   try {
-  saveDesktopTheme({
-    background: String(p.background).slice(0, 32),
-    foreground: String(p.foreground).slice(0, 32),
-    selectionBackground: p.selectionBackground ? String(p.selectionBackground).slice(0, 32) : null,
-    selectionForeground: p.selectionForeground ? String(p.selectionForeground).slice(0, 32) : null,
-    colors: Array.isArray(p.colors) ? p.colors.slice(0, 24).map(c => String(c).slice(0, 32)) : [],
-    source: String(p.source || 'unknown').slice(0, 40),
-    name: p.name ? String(p.name).slice(0, 60) : null,
-  })
+  // Ключи — ровно те, что описаны в официальном docs/theming.md Omarchy.
+  // Раньше здесь был произвольный список, и accent/selection/muted/реальные цвета
+  // статусов до панели не доходили: панель оставалась на палитре по умолчанию.
+  const hex = (v) => (typeof v === 'string' && /^#?[0-9a-fA-F]{3,8}$/.test(v.trim())
+    ? v.trim().slice(0, 9) : null)
+  const out = { source: String(p.source || 'unknown').slice(0, 40), name: p.name ? String(p.name).slice(0, 60) : null }
+  for (const k of [
+    'mode', 'accent', 'selection', 'muted',
+    'background', 'dark_background', 'darker_background', 'lighter_background',
+    'foreground', 'dark_foreground', 'light_foreground', 'bright_foreground',
+    'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'purple',
+    'bright_red', 'bright_green', 'bright_yellow', 'bright_blue',
+    'bright_magenta', 'bright_cyan', 'bright_white', 'bright_black',
+    'bg', 'fg',
+  ]) {
+    const v = hex(p[k])
+    if (v) out[k] = v
+  }
+  for (let i = 0; i < 16; i++) { const v = hex(p[`color${i}`]); if (v) out[`color${i}`] = v }
+  if (!out.background || !out.foreground) return res.status(400).json({ error: 'нужен background и foreground' })
+  saveDesktopTheme(out)
   } catch (e) {
     console.error('[theme/desktop] не сохранил:', e.message)
     return res.status(500).json({ error: 'не удалось сохранить палитру: ' + e.message })
