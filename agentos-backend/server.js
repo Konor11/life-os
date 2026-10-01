@@ -1405,7 +1405,10 @@ const COMPONENT_STATUS_CMD = {
   // Если CLI ещё нет — команда не печатает НИЧЕГО. Раньше здесь стояло `|| true`, и в поле
   // состояния попадала строка «omniroute: command not found», которая в интерфейсе выглядела
   // как вывод самой программы. Пустое состояние честнее.
-  omniroute: 'if [ -x /opt/node22/bin/omniroute ]; then /opt/node22/bin/omniroute status 2>&1; elif command -v omniroute >/dev/null 2>&1; then omniroute status 2>&1; fi',
+  // Код возврата здесь ВСЕГДА 0. execS бросает исключение на непустом коде, и пользователю
+  // показывалось «Command failed» с текстом самой команды. Отсутствие CLI — это тоже 0:
+  // пустое состояние, а не ошибка.
+  omniroute: 'B=""; [ -x /opt/node22/bin/omniroute ] && B=/opt/node22/bin/omniroute; [ -z "$B" ] && B="$(command -v omniroute 2>/dev/null || true)"; NB="/opt/node22/bin/node"; [ -x "$NB" ] || NB="$(command -v node)"; if [ -n "$B" ]; then DATA_DIR=/root/.omniroute "$NB" "$B" status 2>&1 || true; fi; exit 0',
 }
 
 const COMPONENTS_DEF = [
@@ -1498,7 +1501,9 @@ echo "[omniroute] точка входа: $BIN_JS"
 
 mkdir -p "${OMNIROUTE_HOME}"
 
-cat > /etc/systemd/system/omniroute.service <<'UNIT'
+# Heredoc БЕЗ одинарных кавычек — иначе bash ничего не подставит и systemd получит
+# буквальные ${NODE_BIN}, а служба падает с 'Failed at step EXEC spawning ${NODE_BIN}'.
+cat > /etc/systemd/system/omniroute.service <<UNIT
 [Unit]
 Description=OmniRoute — единый ИИ-шлюз (OpenAI-совместимый API + панель)
 After=network.target
@@ -1623,6 +1628,9 @@ async function discoverComponents() {
       id: c.id, name: c.name, installed, desc: c.desc, kind: 'component',
       webPort: c.webPort || null,
       webUrl: c.webPort ? webOriginFor(c.id, { installed }) : null,
+      // Флаг диалога ОБЯЗАТЕЛЬНО едет в ответ. Раньше он остался в COMPONENTS_DEF, ответа до
+      // интерфейса не доходил, и установка начиналась сразу — без ввода домена и пароля.
+      needsInstallOptions: !!c.needsInstallOptions,
     })
   }
   return out
