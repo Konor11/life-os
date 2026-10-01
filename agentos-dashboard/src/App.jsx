@@ -4,6 +4,7 @@ import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, sav
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
 import { CommandPalette, useHotkeys, ToastHost, toast, NAV } from './components/PanelUX'
+import { applyTheme, loadTheme, saveTheme, watchTheme, systemPrefersDark } from './lib/theme'
 
 // Lazy-load all new views to force chunk creation and prevent tree-shaking
 const FinancesView = lazy(() => import('./components/FinancesView').then(m => ({ default: m.FinancesView })))
@@ -101,17 +102,55 @@ function App() {
   const [activeView, setActiveViewRaw] = useState(() => {
     try { return localStorage.getItem('lifeos.activeView') || 'dashboard' } catch { return 'dashboard' }
   })
-  const [theme, setThemeState] = useState(() => {
-    try { return localStorage.getItem('lifeos.theme') || 'light' } catch { return 'light' }
+  // Тема живёт на СЕРВЕРЕ: телефон и ПК показывают одно и то же, а смена темы на ПК
+  // доезжает сюда сама (палитру присылает Life OS Desktop). localStorage остаётся
+  // только запасным вариантом на случай, если сервер недоступен.
+  const [themeState, setThemeState] = useState(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem('lifeos.theme.v2') || 'null')
+      return v || { mode: 'light', palette: 'glass', desktop: null }
+    } catch { return { mode: 'light', palette: 'glass', desktop: null } }
   })
-  const setTheme = (t) => {
-    setThemeState(t)
-    try { localStorage.setItem('lifeos.theme', t) } catch {}
+  const theme = themeState.mode === 'system'
+    ? (systemPrefersDark() ? 'dark' : 'light')   // для кода, который спрашивает «тёмная ли тема»
+    : themeState.mode
+
+  // Считаем next СНАРУЖИ: setThemeState обновляет асинхронно, и applyTheme(themeState)
+  // применял бы предыдущее значение — тема отставала бы на шаг.
+  const applyNext = (patchObj) => {
+    const next = { ...themeState, ...patchObj }
+    setThemeState(next)
+    applyTheme(next)
+    try { localStorage.setItem('lifeos.theme.v2', JSON.stringify(next)) } catch {}
+    saveTheme({ mode: next.mode, palette: next.palette })
   }
+  const setTheme = (mode) => applyNext({ mode })
+  const setPalette = (palette) => applyNext({ palette })
   const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
+
+  // Забрать выбор с сервера при входе и следить за изменениями (ПК сменил тему — панель узнала).
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-  }, [theme])
+    let stop = null
+    loadTheme().then(t => {
+      if (!t) { applyTheme(themeState); return }
+      setThemeState(t)
+      applyTheme(t)
+      stop = watchTheme(next => { setThemeState(next); applyTheme(next) })
+    })
+    return () => { if (stop) stop() }
+    // Один раз на монтирование: дальше слежение само.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Режим «системная»: реагируем на смену темы ОС, пока вкладка открыта.
+  useEffect(() => {
+    if (themeState.mode !== 'system') return
+    let mq = null
+    try { mq = window.matchMedia('(prefers-color-scheme: dark)') } catch { return }
+    const on = () => applyTheme(themeState)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [themeState])
   const { paletteOpen, setPaletteOpen } = useHotkeys(setActiveViewRaw, auth.isAdmin)
   // Палитра и меню показывают только разделы, доступные моей роли (см. NAV в PanelUX).
   const visibleViews = useMemo(
@@ -326,7 +365,8 @@ function App() {
               {activeView === 'terminal' && <TerminalTab />}
               {activeView === 'files' && <FilesTab />}
               {activeView === 'chat' && <ChatTab />}
-              {activeView === 'settings' && <SettingsTab theme={theme} onToggleTheme={toggleTheme} />}
+              {activeView === 'settings' && <SettingsTab theme={theme} onToggleTheme={toggleTheme}
+                themeState={themeState} onSetThemeMode={setTheme} onSetPalette={setPalette} />}
               {activeView === 'agents' && <AgentsView />}
               {activeView === 'keys' && <KeysView />}
               {activeView === 'harness' && <HarnessView />}

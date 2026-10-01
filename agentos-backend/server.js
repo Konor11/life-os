@@ -126,11 +126,85 @@ const app = express()
 app.use(cors())
 app.use(express.json({ limit: '10mb' }))
 
+// ---- Тема оформления: выбор пользователя + палитра, пришедшая с ПК ----
+//
+// Выбор темы хранится на СЕРВЕРЕ, а не в localStorage: иначе телефон и ПК показывают
+// разное, а требование «сменил тему на ПК — Life OS тоже» невыполнимо в принципе.
+// Палитру с ПК присылает приложение Life OS Desktop (Omarchy), панель забирает её
+// отсюда. Пока палитра не пришла — действует обычная палитра, без молчаливых выдумок.
+const THEME_FILE = () => path.join(DATA_DIR, 'theme.json')
+
+function readThemeFile() {
+  try { return JSON.parse(fs.readFileSync(THEME_FILE(), 'utf8')) } catch { return {} }
+}
+function writeThemeFile(obj) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+    fs.writeFileSync(THEME_FILE(), JSON.stringify(obj, null, 2))
+  } catch (e) { console.error('[theme] не записал:', e.message) }
+}
+// Палитра с ПК — общая для всех пользователей: тема система у машины одна.
+function saveDesktopTheme(p) {
+  const f = readThemeFile()
+  f.desktop = { ...p, receivedAt: Date.now() }
+  writeThemeFile(f)
+}
+function desktopTheme() {
+  const d = readThemeFile().desktop
+  if (!d) return null
+  return d
+}
+
 // ---- Вход в Life OS: логин/пароль из установки + смена в Настройках ----
 // Guard стоит ДО всех /api-маршрутов: статику (окно входа) отдаёт отдельный процесс `serve`,
 // поэтому без пароля статика открыта, а данные и TUI — нет. Пока файл auth.json не создан,
 // авторизация выключена, и панель показывает экран первоначальной настройки.
 app.use(auth.authGuard)
+
+// GET /api/theme — текущий выбор пользователя + последняя палитра с ПК
+app.get('/api/theme', (req, res) => {
+  const s = auth.sessionFromReq(req)
+  const f = readThemeFile()
+  const mine = (s && f.users && f.users[s.l]) || {}
+  res.json({
+    mode: mine.mode || 'light',            // light | dark | system
+    palette: mine.palette || 'glass',     // glass | classic | omarchy
+    desktop: desktopTheme(),
+  })
+})
+
+// PUT /api/theme — сохранить выбор. Режим и палитра проверяем по списку, а не «как пришло».
+app.put('/api/theme', (req, res) => {
+  const s = auth.sessionFromReq(req)
+  const key = s ? s.l : 'local'
+  const { mode, palette } = req.body || {}
+  const f = readThemeFile()
+  f.users = f.users || {}
+  if (mode) f.users[key].mode = ['light', 'dark', 'system'].includes(mode) ? mode : f.users[key].mode || 'light'
+  if (palette) f.users[key].palette = ['glass', 'classic', 'omarchy'].includes(palette)
+    ? palette : f.users[key].palette || 'glass'
+  writeThemeFile(f)
+  res.json({ ok: true, mode: f.users[key].mode, palette: f.users[key].palette })
+})
+
+// POST /api/theme/desktop — палитра с ПК из приложения Life OS Desktop.
+// Отдельная точка, а не PUT /api/theme: её зовёт приложение, а не человек.
+app.post('/api/theme/desktop', (req, res) => {
+  const p = req.body || {}
+  if (!p.background || !p.foreground) {
+    return res.status(400).json({ error: 'нужен background и foreground' })
+  }
+  saveDesktopTheme({
+    background: String(p.background).slice(0, 32),
+    foreground: String(p.foreground).slice(0, 32),
+    selectionBackground: p.selectionBackground ? String(p.selectionBackground).slice(0, 32) : null,
+    selectionForeground: p.selectionForeground ? String(p.selectionForeground).slice(0, 32) : null,
+    colors: Array.isArray(p.colors) ? p.colors.slice(0, 24).map(c => String(c).slice(0, 32)) : [],
+    source: String(p.source || 'unknown').slice(0, 40),
+    name: p.name ? String(p.name).slice(0, 60) : null,
+  })
+  res.json({ ok: true })
+})
 
 app.get('/api/auth/status', (req, res) => {
   const s = auth.sessionFromReq(req)

@@ -52,6 +52,29 @@ html[data-theme="light"] {
   --term-accent: 47 129 247;
 }
 
+/* Палитра «Классика» — холодный сине-серый, каким панель была до «Стекла».
+   Оставлена как путь назад: если новая палитра неудобна, переключение мгновенное. */
+html[data-palette="classic"] { --cx-accent: 88 101 242; --cx-accent-hover: 81 93 236; }
+html[data-palette="classic"][data-theme="light"] {
+  --cx-bg: 247 249 252; --cx-bg-card: 255 255 255; --cx-bg-elevated: 255 255 255;
+  --cx-border: 228 232 240; --cx-text: 17 24 39; --cx-text-muted: 100 116 139;
+  --cx-app-bg: radial-gradient(ellipse at top, #f2f4f9 0%, #eef1f7 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .04), 0 1px 3px rgb(0 0 0 / .06);
+}
+html[data-palette="classic"][data-theme="dark"] {
+  --cx-bg: 10 14 26; --cx-bg-card: 23 26 33; --cx-bg-elevated: 17 24 39;
+  --cx-border: 42 47 58; --cx-text: 231 233 238; --cx-text-muted: 138 143 156;
+  --cx-app-bg: radial-gradient(ellipse at top, #131828 0%, #0a0e1a 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 8px 24px rgb(0 0 0 / .25);
+}
+
+/* Палитра «Омachi»: значения приходят с ПК и ставятся инлайном на <html>,
+   поэтому здесь только запасной вариант на случай, пока палитра не пришла —
+   тогда панель показывает обычное «Стекло», а не выдуманные цвета. */
+html[data-palette="omarchy"]:not([data-omarchy-ready]) {
+  --cx-app-bg: var(--cx-app-glass-light);
+}
+
 html[data-theme="dark"] {
   --cx-bg: 10 11 22;
   --cx-bg-elevated: 22 24 40;

@@ -21,7 +21,7 @@ const SECTIONS = [
   { id: 'about', label: 'О панели', icon: 'Brain' },
 ]
 
-export function SettingsView({ theme, onToggleTheme }) {
+export function SettingsView({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPalette }) {
   const [section, setSection] = useState('look')
   const [status, setStatus] = useState(null)
   const [components, setComponents] = useState(null)
@@ -62,7 +62,8 @@ export function SettingsView({ theme, onToggleTheme }) {
         </nav>
 
         <div className="flex-1 min-h-0 overflow-y-auto p-4">
-          {section === 'look' && <LookSection theme={theme} onToggleTheme={onToggleTheme} />}
+          {section === 'look' && <LookSection theme={theme} onToggleTheme={onToggleTheme}
+                       themeState={themeState} onSetThemeMode={onSetThemeMode} onSetPalette={onSetPalette} />}
           {section === 'engines' && <EnginesSection harnesses={harnesses} />}
           {section === 'security' && <SecuritySection />}
           {section === 'system' && <SystemSection status={status} />}
@@ -76,7 +77,19 @@ export function SettingsView({ theme, onToggleTheme }) {
 
 // ---------------------------------------------------------------- внешний вид ----
 
-function LookSection({ theme, onToggleTheme }) {
+// Палитра Омachi приходит с ПК — показываем её живым образцом, но НЕ выдумываем цвета:
+// если палитра не пришла, честно говорим об этом и оставляем обычное «Стекло».
+const PALETTES = [
+  { id: 'glass', label: 'Стекло', hint: 'мягкие полупрозрачные карточки, пятна света на фоне',
+    sw: ['#f4f5fb', '#6d5efc', '#0ea5e9'] },
+  { id: 'classic', label: 'Классика', hint: 'холодный сине-серый, как панель была до редизайна',
+    sw: ['#f7f9fc', '#5865f2', '#111827'] },
+  { id: 'omarchy', label: 'Омachi', hint: 'берёт цвета из темы твоей системы на ПК',
+    sw: ['#1c1c1c', '#c8c093', '#f0f0f0'] },
+]
+
+function LookSection({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPalette }) {
+  const st = themeState || { mode: 'light', palette: 'glass', desktop: null }
   const [font, setFont] = useState(null)   // null = «по умолчанию для движка»
   const [loaded, setLoaded] = useState(false)
   useEffect(() => { setLoaded(true) }, [])
@@ -90,25 +103,64 @@ function LookSection({ theme, onToggleTheme }) {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <Group title="Тема" hint="Тема применяется сразу во всей панели и в терминалах.">
-        <div className="grid grid-cols-2 gap-3">
-          {[['light', '☀️', 'Светлая'], ['dark', '🌙', 'Тёмная']].map(([id, ic, label]) => (
+      <Group title="Тема" hint="Как в VS Code: светлая, тёмная или как в системе. Применяется сразу во всей панели и в терминалах.">
+        <div className="grid grid-cols-3 gap-3">
+          {[['light', '☀️', 'Светлая'], ['dark', '🌙', 'Тёмная'], ['system', '🖥️', 'Как в системе']].map(([id, ic, label]) => (
             <button
               key={id}
-              onClick={() => { if ((theme === 'dark') !== (id === 'dark')) onToggleTheme() }}
-              className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-sm transition-all ${
-                theme === id
+              onClick={() => onSetThemeMode ? onSetThemeMode(id) : ((theme === 'dark') !== (id === 'dark')) && onToggleTheme()}
+              className={`flex flex-col items-start gap-1.5 px-3 py-3 rounded-xl border text-sm transition-all ${
+                st.mode === id
                   ? 'border-accent bg-accent/10 text-text font-medium'
                   : 'border-border bg-bg-card text-text-muted hover:border-border-hover'
               }`}
             >
               <span className="text-lg">{ic}</span>
-              <span className="text-left">
-                <span className="block">{label}</span>
-                <span className="block text-[11px] text-text-muted">
-                  {theme === id ? 'выбрана' : 'переключить'}
+              <span className="text-left leading-tight">{label}</span>
+              <span className="text-[11px] text-text-muted">{st.mode === id ? 'выбрана' : 'переключить'}</span>
+            </button>
+          ))}
+        </div>
+      </Group>
+
+      <Group title="Палитра" hint="Палитра — это цвета. Выбор хранится на сервере, поэтому телефон и компьютер показывают одно и то же.">
+        <div className="space-y-2">
+          {PALETTES.map(p => (
+            <button
+              key={p.id}
+              onClick={() => onSetPalette && onSetPalette(p.id)}
+              disabled={!onSetPalette}
+              className={`w-full text-left px-3 py-3 rounded-xl border transition-all ${
+                st.palette === p.id
+                  ? 'border-accent bg-accent/10'
+                  : 'border-border bg-bg-card hover:border-border-hover'
+              } ${!onSetPalette ? 'opacity-60 cursor-not-allowed' : ''}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className="flex gap-1 shrink-0">
+                  {p.sw.map((c, i) => (
+                    <span key={i} className="w-4 h-4 rounded-md border border-border" style={{ background: c }} />
+                  ))}
                 </span>
-              </span>
+                <span className={`text-sm ${st.palette === p.id ? 'text-text font-medium' : 'text-text-muted'}`}>
+                  {p.label}
+                </span>
+              </div>
+              <div className="text-[11px] text-text-muted mt-1">{p.hint}</div>
+              {p.id === 'omarchy' && !st.desktop && (
+                <div className="text-[11px] text-warning mt-1">
+                  Тема с ПК ещё не приходила — пока показывается обычное «Стекло».
+                  Запусти на компьютере Life OS Desktop, и панель подхватит цвета сама.
+                </div>
+              )}
+              {p.id === 'omarchy' && st.desktop && (
+                <div className="text-[11px] text-text-muted mt-1">
+                  Получена {st.desktop.name ? `из темы «${st.desktop.name}»` : 'с компьютера'}
+                  {st.desktop.receivedAt
+                    ? ` · ${new Date(st.desktop.receivedAt).toLocaleString('ru-RU')}`
+                    : ''}
+                </div>
+              )}
             </button>
           ))}
         </div>
