@@ -159,6 +159,12 @@ function LookSection({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPa
                   {st.desktop.receivedAt
                     ? ` · ${new Date(st.desktop.receivedAt).toLocaleString('ru-RU')}`
                     : ''}
+                  {/* Честно предупреждаем: пока выбрана палитра Омachi, светлую/тёмную
+                      задаёт компьютер — иначе переключение выглядит сломанным. */}
+                  {' · '}
+                  <span className="text-warning">
+                    пока выбрана, светлую или тёмную задаёт компьютер
+                  </span>
                 </div>
               )}
             </button>

@@ -141,6 +141,15 @@ export function systemPrefersDark() {
   try { return window.matchMedia('(prefers-color-scheme: dark)').matches } catch { return false }
 }
 
+// Режим, который реально применён — им панель должна показывать активную кнопку,
+// а не тот, который нажал и который при палитре Омachi может быть перекрыт системой.
+export function effectiveMode({ mode = 'light', palette = 'glass', desktop = null } = {}) {
+  const dm = palette === 'omarchy' ? String(desktop?.mode || '').toLowerCase() : ''
+  if (dm === 'light' || dm === 'dark') return dm
+  if (mode === 'system') return systemPrefersDark() ? 'dark' : 'light'
+  return mode
+}
+
 export function applyTheme({ mode = 'light', palette = 'glass', desktop = null } = {}) {
   const el = root()
   const m = MODE_RE.includes(mode) ? mode : 'light'
@@ -148,7 +157,13 @@ export function applyTheme({ mode = 'light', palette = 'glass', desktop = null }
 
   el.setAttribute('data-palette', p)
 
-  if (m === 'system') {
+  // При палитре Омachi режим приходит с ПК: там уже есть `mode`, и он отражает
+  // светлую или тёмную тему системы. Если ручной выбор противоречит ему, побеждает
+  // система — иначе получилось бы «переключил на светлую, а ничего не изменилось».
+  const desktopMode = p === 'omarchy' ? String(desktop?.mode || '').toLowerCase() : ''
+  if (desktopMode === 'light' || desktopMode === 'dark') {
+    el.setAttribute('data-theme', desktopMode)
+  } else if (m === 'system') {
     el.setAttribute('data-theme', systemPrefersDark() ? 'dark' : 'light')
   } else {
     el.setAttribute('data-theme', m)
