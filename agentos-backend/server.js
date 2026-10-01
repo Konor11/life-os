@@ -1502,7 +1502,10 @@ echo "[omniroute] точка входа: $BIN_JS"
 mkdir -p "${OMNIROUTE_HOME}"
 
 # Heredoc БЕЗ одинарных кавычек — иначе bash ничего не подставит и systemd получит
-# буквальные ${NODE_BIN}, а служба падает с 'Failed at step EXEC spawning ${NODE_BIN}'.
+# буквальные переменные вместо путей, а служба падает на шаге EXEC.
+# ВНИМАНИЕ: в этом блоке нельзя писать фигурные скобки с долларом даже в КОММЕНТАРИЯХ —
+# весь литерал проходит через шаблонную строку JS, и неэкранированная подстановка
+# роняет backend при старте. Проверяется скриптом deploy/check-shell-templates.mjs.
 cat > /etc/systemd/system/omniroute.service <<UNIT
 [Unit]
 Description=OmniRoute — единый ИИ-шлюз (OpenAI-совместимый API + панель)

@@ -7,6 +7,14 @@ export PYTHONUNBUFFERED=1
 
 LIFEOS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# install/uninstall компонентов — шаблонные строки JS. Неэкранированный ${...} внутри них
+# (в том числе в комментариях) даёт ReferenceError и роняет backend при старте.
+# node --check это не находит, поэтому проверяем явно и НЕ деплоим при провале.
+node "$LIFEOS_DIR/deploy/check-shell-templates.mjs" || {
+  echo "ПРОВЕРКА shell-литералов НЕ ПРОШЛА — запуск остановлен, чтобы не поднять битый backend"
+  exit 1
+}
+
 # serve ставится через npm i -g и может лежать в /usr/bin или /usr/local/bin —
 # ищем динамически; если нет вообще — нpx-фолбэк не нужен, systemd перезапустит стек
 SERVE_BIN="$(command -v serve || true)"
