@@ -4,19 +4,20 @@ import { EmptyState } from './PanelUX'
 
 // OmniRoute — единый ИИ-шлюз: 350+ провайдеров за одним OpenAI-совместимым эндпоинтом.
 //
-// ПОЧЕМУ ЗДЕСЬ НЕТ iframe. OmniRoute отдаёт на каждый ответ:
-//     X-Frame-Options: DENY
-//     Content-Security-Policy: ... frame-ancestors 'none'
-// Приложение само запрещает показывать себя внутри других страниц, и браузер рисует пустой
-// кадр. Это НЕ настройка панели: снять запрет можно только вырезав заголовки на уровне Caddy,
-// то есть сознательно отключив защиту шлюза от кликджекинга (в нём ключи от 350+ провайдеров).
-// Поэтому по умолчанию шлюз открывается в новой вкладке.
+// КАДР РАБОТАЕТ, но не сам по себе. OmniRoute отдаёт `X-Frame-Options: DENY` и
+// `frame-ancestors 'none'`. Запрет снят на прокси Caddy для домена шлюза:
+//   * X-Frame-Options и чужой CSP удаляются на прокси (reverse_proxy -> header_down);
+//   * взамен задаётся СВОЙ CSP с `frame-ancestors https://lifeos.dktunnel.xyz`.
+// Последнее важно: разрешена вставка ровноLife OS, любой чужой сайт по-прежнему не может
+// встроить шлюз (в нём ключи от 350+ провайдеров — защита от кликджекинга не снята).
+// Если Caddy перезалить старым конфигом, кадр снова опустеет — это ожидаемо.
 
 export function OmniRouterView() {
   const [url, setUrl] = useState(null)     // null = выясняем, '' = домен не задан
   const [info, setInfo] = useState(null)   // { running, status, version, providers, error }
   const [err, setErr] = useState('')
   const [showLog, setShowLog] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     fetch('/api/components', { cache: 'no-store' })
@@ -67,6 +68,16 @@ export function OmniRouterView() {
               {info.running ? 'работает' : 'не отвечает'}
             </span>
           )}
+          {url && (
+            <a href={url} target="_blank" rel="noreferrer" title="Открыть в отдельной вкладке"
+              className="px-3 py-2 border border-border rounded-lg hover:bg-bg-elevated flex items-center">
+              <Icon name="ExternalLink" size={14} />
+            </a>
+          )}
+          <button onClick={() => setReloadKey(k => k + 1)} title="Перезагрузить шлюз"
+            className="px-3 py-2 border border-border rounded-lg hover:bg-bg-elevated flex items-center">
+            <Icon name="RefreshCw" size={14} />
+          </button>
           <button onClick={() => setShowLog(v => !v)}
             className="px-3 py-2 border border-border rounded-lg hover:bg-bg-elevated flex items-center gap-1.5 transition-colors">
             <Icon name="Activity" size={14} /> Состояние
@@ -102,27 +113,17 @@ export function OmniRouterView() {
           />
         </div>
       ) : (
-        <div className="glass p-6 rounded-xl flex flex-col items-center text-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-accent/15 flex items-center justify-center">
-            <Icon name="Route" size={26} className="text-accent" />
-          </div>
-          <div className="text-sm font-medium text-text">
-            Шлюз работает, но встроить его в панель нельзя
-          </div>
-          <p className="text-xs text-text-muted max-w-lg leading-relaxed">
-            OmniRoute отдаёт заголовки <code>X-Frame-Options: DENY</code> и{' '}
-            <code>frame-ancestors 'none'</code> — приложение запрещает показывать себя внутри
-            других страниц. Поэтому здесь не кадр, а ссылка: шлюз открывается в отдельной вкладке.
-          </p>
-          <a href={url} target="_blank" rel="noreferrer"
-            className="px-5 py-2.5 rounded-lg bg-accent text-white text-sm font-medium flex items-center gap-2">
-            <Icon name="ExternalLink" size={15} /> Открыть шлюз
-          </a>
-          <div className="text-[11px] text-text-muted mt-1 space-y-1 w-full max-w-sm">
-            <p>Единый адрес для приложений (OpenAI-совместимый API):</p>
-            <code className="px-2 py-1.5 rounded bg-bg-elevated block break-all">
-              {(url || '').replace('https://', '')}/v1
-            </code>
+        <div className="flex flex-col gap-2">
+          <iframe
+            key={reloadKey}
+            src={url}
+            title="OmniRoute"
+            className="w-full rounded-xl border border-border bg-bg"
+            style={{ minHeight: '72vh' }}
+          />
+          <div className="text-[11px] text-text-muted px-1">
+            Единый адрес для приложений (OpenAI-совместимый API):{' '}
+            <code className="break-all">{url.replace('https://', '')}/v1</code>
           </div>
         </div>
       )}
