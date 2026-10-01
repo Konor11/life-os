@@ -182,7 +182,7 @@ export function HarnessView() {
   const install = async (id) => {
     const item = allItems.find(x => x.id === id)
     if (item?.needsInstallOptions) {
-      setInstallOpts({ id, name: item.name, mode: 'both', protection: 'basic', domain: '' })
+      setInstallOpts({ id, name: item.name, mode: 'both', protection: 'basic', domain: '', password: '' })
       return
     }
     runInstall(id)
@@ -201,9 +201,9 @@ export function HarnessView() {
 
   const confirmInstallOpts = async () => {
     if (!installOpts) return
-    const { id, mode, domain, protection, basicUser, basicPass } = installOpts
+    const { id, mode, domain, protection, basicUser, basicPass, password } = installOpts
     setInstallOpts(null)
-    await runInstall(id, { mode, domain, protection, basicUser, basicPass })
+    await runInstall(id, { mode, domain, protection, basicUser, basicPass, password })
   }
 
   // Open an installed engine's interactive setup wizard (Hermes: choose the AI provider).
@@ -287,7 +287,8 @@ export function HarnessView() {
                 <label className="text-sm text-text-muted block mb-1">Домен для Web UI:</label>
                 <input value={installOpts.domain}
                   onChange={e => setInstallOpts(p => ({ ...p, domain: e.target.value }))}
-                  placeholder={installOpts.id === 'hermes' ? 'например, hermes.example.com' : 'например, oc.example.com'}
+                  placeholder={installOpts.id === 'hermes' ? 'например, hermes.example.com'
+                    : installOpts.id === 'omniroute' ? 'например, omniroute.dktunnel.xyz' : 'например, oc.example.com'}
                   className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
                 <p className="text-xs text-text-muted mt-1">
                   {installOpts.id === 'hermes'
@@ -296,7 +297,20 @@ export function HarnessView() {
                 </p>
               </div>
             )}
-            {installOpts.id === 'hermes' && installOpts.mode !== 'tui' && (
+            {installOpts.id !== 'hermes' && (
+              <div className="space-y-2">
+                  <label className="text-sm text-text-muted block mb-1">Пароль администратора шлюза:</label>
+                  <input value={installOpts.password} type="text" autoComplete="new-password"
+                    onChange={e => setInstallOpts(p => ({ ...p, password: e.target.value }))}
+                    placeholder="оставь пустым — спросит при первом входе"
+                    className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
+                  <p className="text-xs text-text-muted mt-1">
+                    Задаётся официальной командой <code>omniroute setup</code>. В журнал установки не попадает.
+ </p>
+ </div>
+ </div>
+ )}
+ {installOpts.id === 'hermes' && installOpts.mode !== 'tui' && (
               <div className="space-y-2">
                 <p className="text-sm text-text-muted">Защита Web UI:</p>
                 {[

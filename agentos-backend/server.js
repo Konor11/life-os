@@ -1410,13 +1410,20 @@ const COMPONENT_STATUS_CMD = {
 
 const COMPONENTS_DEF = [
   {
-    id: 'omniroute', name: 'OmniRoute',
+    id: 'omniroute', name: 'OmniRoute', needsInstallOptions: true,
     // Тот же принцип, что у n8n: истина — наш собственный юнит, а не "команда нашлась в PATH".
     detect: `test -f /etc/systemd/system/omniroute.service`,
     desc: 'OmniRoute — единый шлюз ИИ: 350+ провайдеров через один OpenAI-совместимый эндпоинт (порт 20128).',
     webPort: 20128,
     install: `
 set -e
+# Домен пользователь вводит в диалоге установки (панель передаёт его в COMPONENT_DOMAIN).
+if [ -n "\${COMPONENT_DOMAIN:-}" ]; then
+  printf '%s' "$COMPONENT_DOMAIN" > /root/.omniroute-domain
+  echo "[домен] $COMPONENT_DOMAIN"
+else
+  echo "[домен] в диалоге не задан — определяю по базовому домену"
+fi
 ${componentDomainPrelude('omniroute', 20128).join('\n')}
 
 # --- Node 22 рядом с системным, ничего глобального не ломаем ---
@@ -1467,10 +1474,24 @@ else
   echo "[omniroute] ставлю через npm (это надолго, минут 5–15)"
   PATH="${NODE22_DIR}/bin:$PATH" "$NPM_BIN" install -g omniroute --no-fund --no-audit
 fi
-NPM_PREFIX="$("$NPM_BIN" prefix -g | tr -d '\r')"
-BIN_JS="$NPM_PREFIX/lib/node_modules/omniroute/bin/omniroute.mjs"
-if [ ! -f "$BIN_JS" ]; then
-  echo "[ошибка] не нашёл $BIN_JS после установки" >&2
+# npm prefix -g здесь врёт: выдаёт /usr, хотя пакет уходит в /opt/node22/lib/node_modules.
+# Проверено на боевом сервере. Поэтому берём путь из симлинки npm-bin — она не врёт.
+BIN_JS=""
+if [ -x "/opt/node22/bin/omniroute" ]; then
+  BIN_JS="$(readlink -f /opt/node22/bin/omniroute 2>/dev/null || true)"
+elif command -v omniroute >/dev/null 2>&1; then
+  BIN_JS="$(readlink -f "$(command -v omniroute)" 2>/dev/null || true)"
+fi
+[ -n "$BIN_JS" ] && [ -f "$BIN_JS" ] || BIN_JS=""
+if [ -z "$BIN_JS" ]; then
+  for c in /opt/node22/lib/node_modules/omniroute/bin/omniroute.mjs \
+           /usr/lib/node_modules/omniroute/bin/omniroute.mjs \
+           /usr/local/lib/node_modules/omniroute/bin/omniroute.mjs; do
+    [ -f "$c" ] && BIN_JS="$c" && break
+  done
+fi
+if [ -z "$BIN_JS" ]; then
+  echo "[ошибка] не нашёл точку входа omniroute — проверь /opt/node22/bin/omniroute" >&2
   exit 1
 fi
 echo "[omniroute] точка входа: $BIN_JS"
@@ -1508,6 +1529,12 @@ for i in $(seq 1 30); do
   case "$code" in 200|30[0-9]|401|403) echo "[omniroute] отвечает (HTTP $code)"; break;; esac
   sleep 2
 done
+if [ -n "\${COMPONENT_PASSWORD:-}" ]; then
+  echo "[пароль] задаю пароль администратора OmniRoute…"
+  DATA_DIR=/root/.omniroute "$NODE_BIN" "$BIN_JS" setup --password "$COMPONENT_PASSWORD" --non-interactive 2>&1 | tail -6
+else
+  echo "[пароль] не задан — шлюз спросит его при первом входе"
+fi
 [ -n "$DOM" ] && echo "[omniroute] веб-интерфейс: https://$DOM"
 echo "[omniroute] готово. Первый вход: Dashboard → настрой пароль и подключи провайдера."`,
     uninstall: `systemctl stop omniroute 2>/dev/null; systemctl disable omniroute 2>/dev/null; rm -f /etc/systemd/system/omniroute.service; systemctl daemon-reload; ${NODE22_DIR}/bin/npm uninstall -g omniroute 2>/dev/null; echo '[omniroute удалён] (данные ${OMNIROUTE_HOME} и Node 22 в ${NODE22_DIR} оставлены — они могут пригодиться другим компонентам)'`,
@@ -1750,12 +1777,20 @@ app.post('/api/data/import', async (req, res) => {
 app.get('/api/components', async (_, res) => res.json({ components: await discoverComponents() }))
 
 app.post('/api/components/install', (req, res) => {
-  const { id } = req.body || {}
+  const { id, domain, password } = req.body || {}
   const def = COMPONENTS_DEF.find(c => c.id === id)
   if (!def) return res.status(404).json({ error: 'компонент не найден' })
   if (installs[id]?.state === 'running') return res.json({ ok: true, state: 'running' })
   installs[id] = { state: 'running', log: '' }
-  execS(def.install, { timeout: def.timeout || 900000, shell: '/bin/bash' })
+  // Домен и пароль пользователь вводит в диалоге ДО установки. Секрет в лог не пишем.
+  const env = {
+    ...process.env,
+    COMPONENT_DOMAIN: String(domain || '').trim(),
+    COMPONENT_PASSWORD: String(password || ''),
+  }
+  installs[id].log += `[домен] ${env.COMPONENT_DOMAIN || 'определится автоматически'}\n`
+  installs[id].log += `[пароль] ${env.COMPONENT_PASSWORD ? 'будет задан (в лог не пишется)' : 'не задан — спросит при первом входе'}\n`
+  execS(def.install, { timeout: def.timeout || 900000, shell: '/bin/bash', env })
     .then(r => {
       installs[id].state = 'done'
       installs[id].log += (r?.stdout || '') + (r?.stderr || '') + '\n[установка завершена]'
