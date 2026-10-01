@@ -244,7 +244,16 @@ fn read_system_theme() -> Option<SystemTheme> {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
     let t = omarchy::read_theme(&home)?;
     if !t.usable() {
+        eprintln!("[lifeos] colors.toml найден, но без background — тему не беру");
         return None;
+    }
+    // Путь логируем локально и на сервер не отдаём: это домашний каталог пользователя.
+    if let Some(p) = &t.path {
+        eprintln!(
+            "[lifeos] тема Омachi: {} ({})",
+            p.display(),
+            t.name.as_deref().unwrap_or("имя неизвестно")
+        );
     }
     Some(SystemTheme {
         name: t.name,
