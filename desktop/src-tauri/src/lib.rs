@@ -11,6 +11,7 @@
 //    горячий ключ создавал бы новую копию приложения.
 
 mod util;
+mod omarchy;
 
 use tauri::{
     menu::{Menu, MenuBuilder, MenuItem, PredefinedMenuItem},
@@ -123,6 +124,13 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Мост «тема Омachi → панель»: скрипт выполняется только в настольном окне.
+        // Окно создаётся из tauri.conf.json, поэтому внедряем при загрузке страницы.
+        .on_page_load(move |webview, _payload| {
+            if webview.label() == "main" {
+                let _ = webview.eval(include_str!("../../theme-bridge.js"));
+            }
+        })
         .setup(move |app| {
             let handle = app.handle().clone();
 
@@ -223,9 +231,32 @@ pub fn run() {
             desktop_info,
             set_autostart,
             server_url,
+            read_system_theme,
         ])
         .run(tauri::generate_context!())
         .expect("не удалось запустить Life OS");
+}
+
+/// Палитра темы Omarchy с этого компьютера. `None` — темы нет (не установлена или
+/// файл не найден): это НЕ ошибка, приложение должно работать и без неё.
+#[tauri::command]
+fn read_system_theme() -> Option<SystemTheme> {
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from)?;
+    let t = omarchy::read_theme(&home)?;
+    if !t.usable() {
+        return None;
+    }
+    Some(SystemTheme {
+        name: t.name,
+        colors: t.colors,
+    })
+}
+
+#[derive(serde::Serialize)]
+struct SystemTheme {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    colors: std::collections::BTreeMap<String, String>,
 }
 
 /// Строка вида "CTRL+ALT+Space" → Shortcut. Разбор намеренно свой и узкий: поддерживаем
