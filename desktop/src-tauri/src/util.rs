@@ -47,6 +47,16 @@ pub fn notify_title(provided: &str) -> String {
     if t.is_empty() { "Life OS".to_string() } else { t }
 }
 
+/// Сочетание по умолчанию. Оно тоже обязано пройти normalize_shortcut: раньше дефолт
+/// подставлялся «как есть», минуя нормализацию, и приложение падало при старте с
+/// «не удалось разобрать горячую клавишу: Ctrl+Alt+Space».
+pub const DEFAULT_SHORTCUT: &str = "Ctrl+Alt+Space";
+
+/// Готовое к регистрации сочетание по умолчанию (в формате Tauri: "CTRL+ALT+Space").
+pub fn default_shortcut() -> String {
+    normalize_shortcut(DEFAULT_SHORTCUT).unwrap_or_else(|| "CTRL+ALT+Space".to_string())
+}
+
 /// Нормализация сочетания клавиш из настроек в формат Tauri.
 /// Принимаем «Ctrl+Alt+Space», «Control+Shift+L» и т.п. Нераспознанное отбрасываем,
 /// чтобы приложение не падало из-за одной неверной строки в конфиге.
@@ -151,6 +161,14 @@ mod tests {
         assert_eq!(normalize_shortcut("Meta+1").unwrap(), "SUPER+Digit1");
         // порядок модификаторов не должен зависеть от порядка в строке
         assert_eq!(normalize_shortcut("Alt+Ctrl+K").unwrap(), normalize_shortcut("Ctrl+Alt+K").unwrap());
+    }
+
+    #[test]
+    fn дефолтный_хоткей_проходит_нормализацию() {
+        // Ровно тот случай, который ронял приложение: дефолт без нормализации не парсится.
+        let d = default_shortcut();
+        assert_eq!(d, "CTRL+ALT+Space");
+        assert!(normalize_shortcut(DEFAULT_SHORTCUT).is_some());
     }
 
     #[test]

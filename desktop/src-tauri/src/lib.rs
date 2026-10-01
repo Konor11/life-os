@@ -19,8 +19,6 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 
-const DEFAULT_SHORTCUT: &str = "Ctrl+Alt+Space";
-
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -98,10 +96,15 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // И переменная окружения, и дефолт проходят через normalize_shortcut. Раньше дефолт
+    // подставлялся «как есть» (Ctrl+Alt+Space вместо CTRL+ALT+Space), и приложение падало
+    // на старте — ровно на этом шаге.
     let shortcut = std::env::var("LIFEOS_HOTKEY")
         .ok()
+        .filter(|s| !s.trim().is_empty())
         .and_then(|s| util::normalize_shortcut(&s))
-        .unwrap_or_else(|| DEFAULT_SHORTCUT.to_string());
+        .unwrap_or_else(util::default_shortcut);
+    eprintln!("[lifeos] горячая клавиша: {shortcut}");
 
     let mut builder = tauri::Builder::default();
 
@@ -166,26 +169,39 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
-                let parsed = parse_tauri_shortcut(&shortcut).ok_or_else(|| {
-                    std::io::Error::other(format!("не удалось разобрать горячую клавишу: {shortcut}"))
-                })?;
-                app.handle().plugin(
-                    tauri_plugin_global_shortcut::Builder::new()
-                        .with_handler(move |app, _sc, event| {
-                            if event.state() == ShortcutState::Pressed {
-                                if let Some(w) = app.get_webview_window("main") {
-                                    match w.is_visible() {
-                                        Ok(true) if w.is_focused().unwrap_or(false) => {
-                                            let _ = w.hide();
+                // Неудача с горячей клавишей НЕ должна ронять приложение: это удобство,
+                // а не условие работы. Раньше ошибка разбора или занятая клавиша валили
+                // setup hook, и окно не открывалось вообще.
+                match parse_tauri_shortcut(&shortcut) {
+                    None => eprintln!(
+                        "[lifeos] не понял сочетание «{shortcut}» — приложение запустится без него"
+                    ),
+                    Some(parsed) => {
+                        let handler = app.handle().plugin(
+                            tauri_plugin_global_shortcut::Builder::new()
+                                .with_handler(move |app, _sc, event| {
+                                    if event.state() == ShortcutState::Pressed {
+                                        if let Some(w) = app.get_webview_window("main") {
+                                            match w.is_visible() {
+                                                Ok(true) if w.is_focused().unwrap_or(false) => {
+                                                    let _ = w.hide();
+                                                }
+                                                _ => show_main(app),
+                                            }
                                         }
-                                        _ => show_main(app),
                                     }
-                                }
-                            }
-                        })
-                        .build(),
-                )?;
-                app.global_shortcut().register(parsed)?;
+                                })
+                                .build(),
+                        );
+                        if let Err(e) = handler {
+                            eprintln!("[lifeos] плагин горячих клавиш не загрузился: {e}");
+                        } else if let Err(e) = app.global_shortcut().register(parsed) {
+                            eprintln!("[lifeos] не смог занять {shortcut} (занято другим?): {e}");
+                        } else {
+                            eprintln!("[lifeos] горячая клавиша {shortcut} занята приложением");
+                        }
+                    }
+                }
             }
 
             // ---- Автозапуск ----
