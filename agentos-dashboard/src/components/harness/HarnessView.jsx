@@ -270,11 +270,11 @@ export function HarnessView() {
             <h3 className="text-lg font-semibold text-text">Установка {installOpts.name}</h3>
             <div className="space-y-2">
               <p className="text-sm text-text-muted">Что установить:</p>
-              {[
+              {!components.some(c => c.id === installOpts.id) && [
                 { v: 'tui', label: '💻 Только TUI', hint: 'терминальный интерфейс' },
                 { v: 'web', label: '🌐 Только Web UI', hint: 'веб-интерфейс на своём домене' },
                 { v: 'both', label: '💻🌐 Всё вместе', hint: 'TUI + Web UI' },
-              ].map(o => (
+              ].filter(Boolean).map(o => (
                 <button key={o.v} onClick={() => setInstallOpts(p => ({ ...p, mode: o.v }))}
                   className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${installOpts.mode === o.v ? 'border-accent bg-accent/10' : 'border-border hover:bg-bg-elevated'}`}>
                   <div className="text-sm font-medium text-text">{o.label}</div>
@@ -282,7 +282,7 @@ export function HarnessView() {
                 </button>
               ))}
             </div>
-            {installOpts.mode !== 'tui' && (
+            {(installOpts.mode !== 'tui' || components.some(c => c.id === installOpts.id)) && (
               <div>
                 <label className="text-sm text-text-muted block mb-1">Домен для Web UI:</label>
                 <input value={installOpts.domain}
@@ -293,7 +293,9 @@ export function HarnessView() {
                 <p className="text-xs text-text-muted mt-1">
                   {installOpts.id === 'hermes'
                     ? 'Добавится в Caddy → reverse_proxy на dashboard Hermes (:9119).'
-                    : 'Добавится в Caddy → reverse_proxy на opencode (:4096).'}
+                    : installOpts.id === 'omniroute'
+                      ? 'Добавится в Caddy → reverse_proxy на шлюз OmniRoute (:20128).'
+                      : 'Добавится в Caddy → reverse_proxy на opencode (:4096).'}
                 </p>
               </div>
             )}
