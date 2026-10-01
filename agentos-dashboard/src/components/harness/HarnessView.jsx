@@ -298,7 +298,8 @@ export function HarnessView() {
               </div>
             )}
             {installOpts.id !== 'hermes' && (
-              <div className="space-y-2">
+              <>
+                <div>
                   <label className="text-sm text-text-muted block mb-1">Пароль администратора шлюза:</label>
                   <input value={installOpts.password} type="text" autoComplete="new-password"
                     onChange={e => setInstallOpts(p => ({ ...p, password: e.target.value }))}
@@ -306,11 +307,11 @@ export function HarnessView() {
                     className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
                   <p className="text-xs text-text-muted mt-1">
                     Задаётся официальной командой <code>omniroute setup</code>. В журнал установки не попадает.
- </p>
- </div>
- </div>
- )}
- {installOpts.id === 'hermes' && installOpts.mode !== 'tui' && (
+                  </p>
+                </div>
+              </>
+            )}
+            {installOpts.id === 'hermes' && installOpts.mode !== 'tui' && (
               <div className="space-y-2">
                 <p className="text-sm text-text-muted">Защита Web UI:</p>
                 {[
