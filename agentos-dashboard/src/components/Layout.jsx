@@ -77,7 +77,10 @@ export function AppShell({ sidebarRender, mainRender, onOpenPalette }) {
               ? `absolute inset-y-0 left-0 transform transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`
               : 'relative'
           )}
-          style={{ background: 'rgb(var(--cx-bg-card) / 0.98)', backdropFilter: 'blur(8px)', borderRight: '1px solid rgb(var(--cx-border))' }}
+          style={{ background: 'rgb(var(--cx-bg-card) / 0.72)',
+                   backdropFilter: 'blur(18px) saturate(1.4)',
+                   WebkitBackdropFilter: 'blur(18px) saturate(1.4)',
+                   borderRight: '1px solid rgb(var(--cx-border))' }}
         >
           {sidebarEl}
         </aside>
@@ -130,9 +133,12 @@ export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme,
       {/* Desktop header: brand + theme toggle. Mobile has its own top bar,
           so here the brand row is hidden to save vertical space in the drawer. */}
       <div className="hidden lg:flex p-4 border-b border-border items-center justify-between">
-        <h2 className="font-semibold text-lg flex items-center gap-2">
-          <Mascot size={22} className="text-accent" title="Life OS" />
-          Life OS
+        {/* Маскот рисует собственную скруглённую подложку, поэтому градиентную плитку
+            вокруг него НЕ ставим — иначе квадрат в квадрате. Подложка самого маскота
+            красится градиентом через currentColor и уже меняется вместе с темой. */}
+        <h2 className="font-semibold text-lg flex items-center gap-2.5">
+          <Mascot size={24} className="text-accent shrink-0" title="Life OS" />
+          <span>Life OS</span>
         </h2>
         <button
           onClick={onToggleTheme}
@@ -158,8 +164,8 @@ export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme,
             onClick={() => onViewChange(v.id)}
             className={`w-full px-3 py-2.5 rounded-lg transition-all flex items-center gap-3 text-sm font-medium ${
               activeView === v.id
-                ? 'bg-accent text-white shadow-sm'
-                : 'text-text-muted hover:text-text hover:bg-bg-elevated'
+                ? 'accent-gradient text-white shadow-card'
+                : 'text-text-muted hover:text-text hover:bg-bg-card/70'
               }`}
           >
             <Icon name={v.icon} size={20} />
