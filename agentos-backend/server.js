@@ -2513,17 +2513,37 @@ async function autoSleepSweep() {
   }
 }
 
+// Разрушительный путь ТОЛЬКО по явному намерению.
+//
+// Что было: `idleMinutes` отсутствовал или приходил как NaN → порог становился 0 →
+// срабатывало «без порога» и закрывались ВСЕ сессии. Мой же тест так и закрыл три
+// сессии пользователя: пустое тело запроса выглядело как команда «усыпить всех».
+// Теперь без явного `all: true` и без валидного порога эндпоинт не делает ничего.
 app.post('/api/sessions/sleep-all', auth.requireAdmin, async (req, res) => {
-  const idleMs = Number(req.body?.idleMinutes) > 0 ? Number(req.body.idleMinutes) * 60000 : 0
+  const body = req.body || {}
+  const wantAll = body.all === true
+  const minutes = Number(body.idleMinutes)
+  const hasMinutes = Number.isFinite(minutes) && minutes > 0
+
+  if (!wantAll && !hasMinutes) {
+    return res.status(400).json({
+      error: 'не указано, кого усыплять: передай idleMinutes (минуты) или all: true',
+    })
+  }
+
+  const idleMs = hasMinutes ? minutes * 60000 : 0
   const snap = await sessionSnapshot()
   const now = Date.now()
+  const dryRun = body.dryRun === true
   const victims = snap.filter(s => {
     if (!SLEEPABLE(s)) return false
-    // Без указания времени кладём всех; с временем — только молчащих дольше порога.
     if (!idleMs) return true
     const last = s.idleMs != null ? now - s.idleMs : (s.ageMs != null ? now - s.ageMs : 0)
     return last >= idleMs
   })
+  if (dryRun) {
+    return res.json({ ok: true, dryRun: true, wouldClose: victims.map(s => s.tmux), total: snap.length })
+  }
   const closed = []
   for (const s of victims) {
     try { const r = await closeSession(s.tmux); if (r.ok) closed.push(s.tmux) } catch {}

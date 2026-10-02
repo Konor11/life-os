@@ -55,12 +55,24 @@ function AgentsPulse({ onOpenShell, canAdmin }) {
     if (!window.confirm('Усыпить всех агентов? Диалоги сохранятся и откроются заново.')) return
     setSleeping(true)
     try {
+      // Сначала спрашиваем у сервера, КОГО он усыпит, и только потом подтверждаем.
+      // Раньше подтверждение было неотличимо от «усыпить вообще всех» — сервер у
+      // себя различал, а интерфейс нет.
+      const pre = await fetch('/api/sessions/sleep-all', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true, dryRun: true }),
+      }).then(r => r.json()).catch(() => null)
+      if (pre && Array.isArray(pre.wouldClose) && pre.wouldClose.length === 0) {
+        toast('Усыплять некого', 'info'); return
+      }
+      if (pre?.error) { toast(pre.error, 'error'); return }
       const r = await fetch('/api/sessions/sleep-all', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
       })
       const j = await r.json()
       if (j?.closed?.length) {
-        toast(`Усыплено: ${j.closed.join(', ')}`, 'success')
+        toast(`Усыплено: ${j.closed.length} ${plural(j.closed.length, 'сессия', 'сессии', 'сессий')}`, 'success')
       } else {
         toast('Усыплять было некого', 'info')
       }
