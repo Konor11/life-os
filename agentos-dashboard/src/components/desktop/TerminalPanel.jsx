@@ -157,7 +157,9 @@ export function TerminalPanel({ cwd, onCwdChange }) {
 
   // Кегль: применяется к живому терминалу, переподключать ради этого незачем.
   useEffect(() => {
-    try { termRef.current?.options.fontSize = fontSize } catch {}
+    // `termRef.current?.options.fontSize = x` не собирается: опциональная цепочка не
+    // может быть целью присваивания. Нужен явный тернарный/if-разбор.
+    try { const t = termRef.current; if (t) t.options.fontSize = fontSize } catch {}
     try { localStorage.setItem('lifeos.terminal.font', String(fontSize)) } catch {}
   }, [fontSize])
 
