@@ -56,7 +56,10 @@ export function TerminalPanel({ cwd, onCwdChange }) {
   const hostRef = useRef(null)
   const termRef = useRef(null)
   const wsRef = useRef(null)
-  const [session, setSession] = useState('__shell')      // какая сессия шелла открыта
+  // Сессия, выбранная с дашборда (или ранее использованная), — иначе после клика по
+  // «шелл 2» на карточке открывалась бы главная.
+  const [session, setSession] = useState(() =>
+    (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('lifeos.shellSession')) || '__shell')
   const [allShells, setAllShells] = useState([])        // список для переключателя
   const [conn, setConn] = useState('idle')     // idle | connecting | live | closed
   const [dir, setDir] = useState(cwd || '/root/workspace')

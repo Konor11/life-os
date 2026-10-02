@@ -343,6 +343,13 @@ function App() {
                   notes={notes.slice(0, 3)}
                   status={sysStatus}
                   onQuickAction={(id) => handleQuickAction(id)}
+                  onOpenShell={(tmux) => {
+                    // Нажали на сессию терминала прямо с дашборда: запоминаем её и
+                    // открываем вкладку Terminal уже на ней — иначе пришлось бы снова
+                    // искать её в выпадающем списке.
+                    sessionStorage.setItem('lifeos.shellSession', tmux)
+                    setView('terminal')
+                  }}
                 />
                 </>
               )}

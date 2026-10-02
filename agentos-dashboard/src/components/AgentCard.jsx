@@ -34,7 +34,7 @@ const plural = (n, one, few, many) => {
   return many
 }
 
-function AgentsPulse() {
+function AgentsPulse({ onOpenShell }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
   const [closing, setClosing] = useState('')
@@ -84,7 +84,10 @@ function AgentsPulse() {
   // Мусор (движок удалён или профиля нет) в «работающих агентах» считаться не должен: из-за него
   // дашборд показывал шесть сессий, когда реально работали три.
   const all = data || []
-  const list = all.filter(s => !s.orphan)
+  // Сессии шелла — не агенты. Раньше они попадали в общий список, и карточка писала
+  // «Живут 5 сессий», из которых два — просто терминалы: считать их агентами нельзя.
+  const list = all.filter(s => !s.orphan && s.kind !== 'terminal')
+  const shells = all.filter(s => s.kind === 'terminal')
   const orphans = all.filter(s => s.orphan)
   const writing = list.filter(s => s.idleMs !== null && s.idleMs < 15000)
   const mood = writing.length > 0 ? 'work' : (list.length > 0 ? 'idle' : 'sleep')
@@ -125,6 +128,26 @@ function AgentsPulse() {
               })}
             </div>
           )}
+          {/* Сессии терминала — отдельно от агентов: переключение прямо отсюда. */}
+          {shells.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-border/60">
+              <div className="text-[11px] text-text-muted mb-1">
+                Терминал ({shells.length} {plural(shells.length, 'сессия', 'сессии', 'сессий')}):
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {shells.map((s, i) => (
+                  <button key={s.key}
+                    onClick={() => onOpenShell?.(s.tmux)}
+                    title={`${s.tmux} · живёт ${fmtAge(s.ageMs)} · ${s.attached ? 'вкладка открыта' : 'вкладка закрыта'}`}
+                    className={`text-[11px] px-1.5 py-0.5 rounded ${
+                      s.attached ? 'bg-accent/20 text-accent' : 'bg-bg-elevated text-text-muted'}`}>
+                    шелл {i + 1}
+                    <span className="ml-1 opacity-70">{fmtAge(s.ageMs)}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Мусор отдельным блоком: он не агент, но висит и занимает место в списке. */}
           {orphans.length > 0 && (
             <div className="mt-2 pt-2 border-t border-border/60">
@@ -157,13 +180,13 @@ function AgentsPulse() {
 
 
 
-export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = null }) {
+export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = null, onOpenShell }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
       {/* ============ COLUMN 1 ============ */}
       <div className="space-y-4">
         <SystemCard status={status} />
-        <AgentsPulse />
+        <AgentsPulse onOpenShell={onOpenShell} />
         <QuickActions onAction={onQuickAction} />
         <button onClick={() => onQuickAction && onQuickAction('new-note')}
           className="card-surface rounded-2xl p-4 w-full text-left hover:border-accent/40 transition-all">
