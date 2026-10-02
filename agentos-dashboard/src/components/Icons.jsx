@@ -445,6 +445,12 @@ export function Icon({ name, size = 20, className = '', style }) {
       </svg>
     ),
     // Шлюз со многими входами и одним выходом — нарисовано под OmniRoute.
+    ArrowUp: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
+        <line x1="12" y1="19" x2="12" y2="5" />
+        <polyline points="5 12 12 5 19 12" />
+      </svg>
+    ),
     ExternalLink: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
         <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />

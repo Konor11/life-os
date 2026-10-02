@@ -9,6 +9,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import { attachTuiServer, sessionSnapshot, closeSession } from './tui-ws.js'
+import { attachShellWss, shellSessions, killShellSession, sandboxRoots, DEFAULT_CWD } from './shell-ws.js'
 import { listProcesses, killProcess, killProcessForced } from './procs.js'
 import * as auth from './auth.js'
 import { spawn as ptySpawn } from 'node-pty'
@@ -18,7 +19,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Переопределяется переменной окружения только для тестов на отдельном экземпляре (тест ролей,
 // экспорт/импорт): иначе проверка ходила бы по боевым данным и затирала их.
 const DATA_DIR = process.env.LIFEOS_DATA_DIR || '/root/agentos-data'
-const ALLOWED_ROOTS = ['/root', '/tmp', '/home']  // terminal/fs sandbox
+// '/' разрешён по требованию пользователя: файловый менеджер должен показывать
+// настоящий корень. Запрещены только системные поддеревья (/proc, /sys, /dev,
+// /run) — они мёртвые или опасные и в списке файлов бесполезны.
+const DENY_PREFIXES = ['/proc', '/sys', '/dev', '/run', '/var/lib/docker', '/snap']
+const ALLOWED_ROOTS = ['/', '/tmp', '/home']  // terminal/fs sandbox; /root входит в /
 const execP = promisify(execFile)
 const execS = promisify(exec)
 
@@ -116,6 +121,9 @@ const PROFILE_MODELS = {
 // --- FS safety: resolve & ensure path under an allowed root ---
 function safeResolve(p) {
   const abs = path.resolve(p || '/root')
+  for (const d of DENY_PREFIXES) {
+    if (full === d || full.startsWith(d + '/')) return null
+  }
   for (const root of ALLOWED_ROOTS) {
     if (abs === root || abs.startsWith(root + path.sep)) return abs
   }
@@ -159,6 +167,8 @@ function desktopTheme() {
 // Guard стоит ДО всех /api-маршрутов: статику (окно входа) отдаёт отдельный процесс `serve`,
 // поэтому без пароля статика открыта, а данные и TUI — нет. Пока файл auth.json не создан,
 // авторизация выключена, и панель показывает экран первоначальной настройки.
+// Настоящий терминал вкладки Terminal: отдельный WebSocket с node-pty + tmux.
+// Поднимается после authGuard, доступ проверяется самой точкой подключения.
 app.use(auth.authGuard)
 
 // GET /api/theme — текущий выбор пользователя + последняя палитра с ПК
@@ -2703,6 +2713,20 @@ app.get('/api/status', async (_, res) => {
 const PORT = process.env.PORT || 3004
 const server = createServer(app)
 attachTuiServer(app, server)
+attachShellWss(server)
+
+// --- Терминал вкладки: служебные эндпоинты ---
+app.get('/api/shell/roots', (req, res) => {
+  res.json({ roots: sandboxRoots(), cwd: DEFAULT_CWD })
+})
+app.get('/api/shell/sessions', async (req, res) => {
+  res.json({ sessions: await shellSessions() })
+})
+app.post('/api/shell/kill', async (req, res) => {
+  const { name } = req.body || {}
+  const ok = await killShellSession(String(name || ''))
+  res.json({ ok })
+})
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`AgentOS backend + TUI WS listening on 0.0.0.0:${PORT}`)
   console.log(`Data dir: ${DATA_DIR}`)

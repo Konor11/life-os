@@ -1,138 +1,235 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Terminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
+import { Unicode11Addon } from '@xterm/addon-unicode11'
 import { TermKeypad } from './TermKeypad'
+import { Icon } from '../Icons'
 
-const API = '/api'
+// Настоящий интерактивный терминал.
+//
+// Раньше вкладка была одноразовым исполнителем команд: поле ввода + кнопка Run →
+// POST /api/terminal → `bash -c` → напечатанный вывод. Ни PTY, ни сессии: `cd` не
+// удерживался, `top`/`vim`/`hermes` в интерактиве не запускались. Шапка с тремя
+// кружками «macOS» и кнопкой Run ничего не делала — это была декорация.
+//
+// Теперь это xterm.js поверх node-pty в tmux: закрыл вкладку или перезапустил панель —
+// вернулся, тот же экран. Соединение — WebSocket /ws/shell.
+//
+// Цвета терминала берутся из палитры панели: --term-* в index.css ссылаются на --cx-*,
+// поэтому терминал всегда в цветах выбранной темы.
+
+const RESIZE_TAG = '\u0001'   // служебный префикс, с клавиатуры не набирается
+
+function readTermTheme() {
+  const cs = getComputedStyle(document.documentElement)
+  const c = (n, f) => (cs.getPropertyValue(n) || '').trim() || f
+  return {
+    background: c('--term-bg', '#111'),
+    foreground: c('--term-text', '#eee'),
+    cursor: c('--term-text', '#eee'),
+    cursorAccent: c('--term-bg', '#111'),
+    selectionBackground: c('--term-accent', '#58a6ff'),
+    black: c('--term-text', '#111'),
+    brightBlack: c('--term-muted', '#666'),
+    green: c('--term-prompt', '#3fb950'),
+    brightGreen: c('--term-prompt', '#3fb950'),
+    red: c('--term-err', '#f85149'),
+    brightRed: c('--term-err', '#f85149'),
+    blue: c('--term-cmd', '#58a6ff'),
+    brightBlue: c('--term-cmd', '#58a6ff'),
+    cyan: c('--term-accent', '#58a6ff'),
+    magenta: c('--term-accent', '#bc8cff'),
+    yellow: c('--term-muted', '#d29922'),
+  }
+}
+
+const ROOTS = [
+  { p: '/', label: '/ — корень' },
+  { p: '/root', label: '/root' },
+  { p: '/root/workspace', label: '/root/workspace' },
+  { p: '/tmp', label: '/tmp' },
+  { p: '/home', label: '/home' },
+]
 
 export function TerminalPanel({ cwd, onCwdChange }) {
-  const [lines, setLines] = useState([
-    { text: '┌─ Terminal Linux Shell ────────────────────────────┐', type: 'muted' },
-    { text: '│ sandbox: /root • /tmp • /home                       │', type: 'muted' },
-    { text: '│ команды: ls, cd, cat, pwd, echo, mkdir...           │', type: 'muted' },
-    { text: '└──────────────────────────────────────────────────────┘', type: 'muted' },
-    { text: '', type: 'muted' },
-  ])
-  const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [dir, setDir] = useState(cwd || '/root')
+  const hostRef = useRef(null)
+  const termRef = useRef(null)
+  const wsRef = useRef(null)
+  const [conn, setConn] = useState('idle')     // idle | connecting | live | closed
+  const [dir, setDir] = useState(cwd || '/root/workspace')
   const [fontSize, setFontSize] = useState(13)
-  const [keypadOn, setKeypadOn] = useState(true)
-  const [hist, setHist] = useState([])
-  const [histIdx, setHistIdx] = useState(-1)
-  const bottomRef = useRef(null)
-  const inputRef = useRef(null)
+  const [keypad, setKeypad] = useState(() => {
+    try { return localStorage.getItem('lifeos.terminal.keypad') === '1' } catch { return false }
+  })
+  const [err, setErr] = useState('')
+  const lastPalette = useRef(null)
 
-  useEffect(() => { if (bottomRef.current) bottomRef.current.scrollIntoView({ behavior: 'smooth' }) }, [lines])
+  const connect = useCallback((startCwd) => {
+    const term = termRef.current
+    if (!term) return
+    try { wsRef.current?.close() } catch {}
+    setConn('connecting')
+    setErr('')
 
-  const runCmd = async (rawCmd) => {
-    const cmd = rawCmd.trim()
-    if (!cmd || busy) return
-    if (cmd !== 'clear') {
-      setLines(prev => [...prev, { text: `${dir}$ ${cmd}`, type: 'cmd' }])
-      setHist(prev => [...prev, cmd])
-      setHistIdx(-1)
-    } else {
-      setLines([]); setInput(''); setBusy(false); return
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    const mode = document.documentElement.getAttribute('data-mode')
+    const ws = new WebSocket(
+      `${proto}://${location.host}/ws/shell` +
+      `?cwd=${encodeURIComponent(startCwd || '/root/workspace')}` +
+      `&cols=${term.cols || 80}&rows=${term.rows || 24}&theme=${mode}`
+    )
+    wsRef.current = ws
+
+    ws.onopen = () => setConn('live')
+    ws.onmessage = (ev) => { if (typeof ev.data === 'string') term.write(ev.data) }
+    ws.onerror = () => { setConn('closed'); setErr('соединение с терминалом оборвалось') }
+    ws.onclose = () => setConn((s) => (s === 'idle' ? s : 'closed'))
+  }, [])
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+
+    const term = new Terminal({
+      fontFamily: '"JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace',
+      fontSize, lineHeight: 1.25, cursorBlink: true, cursorStyle: 'bar',
+      allowProposedApi: true, scrollback: 10000, theme: readTermTheme(),
+    })
+    termRef.current = term
+
+    let fit = null
+    try { fit = new FitAddon(); term.loadAddon(fit) } catch { /* подгонка необязательна */ }
+    try { term.loadAddon(new Unicode11Addon()) } catch {}
+    try { new WebglAddon().activate(term) } catch { /* без GPU — обычный рендер */ }
+
+    term.open(host)
+    // Подгоняем размер ДО подключения: иначе сервер откроет сессию 80x24, а окно уже —
+    // строки начнут переноситься.
+    requestAnimationFrame(() => { try { fit?.fit() } catch {} })
+
+    const applyTheme = () => { try { term.options.theme = readTermTheme() } catch {} }
+    const obs = new MutationObserver((muts) => {
+      if (muts.some(m => m.attributeName === 'data-mode' || m.attributeName === 'data-theme')) applyTheme()
+    })
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-mode', 'data-theme'] })
+    applyTheme()
+
+    const pushResize = () => {
+      try { fit?.fit() } catch {}
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(`${RESIZE_TAG}RESIZE ${term.cols}:${term.rows}`)
     }
-    setInput('')
-    setBusy(true)
-    if (cmd.startsWith('cd ')) {
-      const target = cmd.slice(3).trim() || '/root'
-      const next = target.startsWith('/') ? target : `${dir}/${target}`.replace(/\/+/g,'/')
-      setDir(next); onCwdChange?.(next)
-      setLines(prev => [...prev, { text: '', type: 'out' }])
-      setBusy(false)
-      return
+    term.onData((d) => {
+      const ws = wsRef.current
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(d)
+    })
+    let ro
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(pushResize); ro.observe(host) }
+
+    const start = cwd || '/root/workspace'
+    setDir(start)
+    const t = setTimeout(() => connect(start), 60)
+
+    return () => {
+      clearTimeout(t)
+      try { obs.disconnect() } catch {}
+      try { ro?.disconnect() } catch {}
+      try { wsRef.current?.close() } catch {}
+      try { term.dispose() } catch {}
+      termRef.current = null
     }
-    try {
-      const r = await fetch(`${API}/terminal`, { method: 'POST', headers: { 'Content-Type':'application/json' }, body: JSON.stringify({ command: cmd, cwd: dir }) })
-      const d = await r.json()
-      setLines(prev => [...prev, { text: d.output || '(no output)', type: 'out' }])
-    } catch (e) {
-      setLines(prev => [...prev, { text: `ERROR: ${e.message}`, type: 'err' }])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cwd])
+
+  // Сервер задаёт цвета терминала при старте сессии, поэтому на смену ПАЛИТРЫ проще
+  // переподключиться, чем полагаться на обновление цветов внутри живой сессии.
+  useEffect(() => {
+    const check = () => {
+      const p = document.documentElement.getAttribute('data-theme')
+      if (lastPalette.current === null) { lastPalette.current = p; return }
+      if (p !== lastPalette.current) { lastPalette.current = p; connect(dir) }
     }
-    setBusy(false)
+    check()
+    const id = setInterval(check, 1500)
+    return () => clearInterval(id)
+  }, [connect, dir])
+
+  // Кегль: применяется к живому терминалу, переподключать ради этого незачем.
+  useEffect(() => {
+    try { termRef.current?.options.fontSize = fontSize } catch {}
+    try { localStorage.setItem('lifeos.terminal.font', String(fontSize)) } catch {}
+  }, [fontSize])
+
+  const go = (p) => { setDir(p); onCwdChange?.(p); connect(p) }
+  const up = () => {
+    const parent = dir.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/'
+    go(parent)
   }
-
-  const onKeyDown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); runCmd(input) }
-    else if (e.key === 'ArrowUp') {
-      e.preventDefault(); const ni = histIdx < 0 ? hist.length - 1 : Math.max(0, histIdx - 1)
-      if (hist[ni] !== undefined) { setHistIdx(ni); setInput(hist[ni]) }
-    } else if (e.key === 'ArrowDown') {
-      e.preventDefault(); const ni = histIdx + 1
-      if (ni >= hist.length) { setHistIdx(-1); setInput('') }
-      else { setHistIdx(ni); setInput(hist[ni]) }
-    }
+  const send = (data) => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(data)
+    else termRef.current?.write(data)
   }
-
-  const sendToInput = (data) => {
-    if (data === '\r' || data === '\n') return runCmd(input)
-    if (data === '\x7f') return setInput(input.slice(0, -1))
-    if (data === '\t') return setInput(input + '  ')
-    if (data === '\x1b[A') return null
-    // plain letters / symbols: append + refocus
-    setInput(input + data)
-    inputRef.current?.focus()
-  }
-
-  const changeFont = (delta) => setFontSize(prev => Math.min(28, Math.max(9, prev + delta)))
+  const toggleKeypad = () => setKeypad(v => {
+    const n = !v
+    try { localStorage.setItem('lifeos.terminal.keypad', n ? '1' : '0') } catch {}
+    return n
+  })
 
   return (
     <div className="flex flex-col h-full rounded-xl overflow-hidden border font-mono"
-      style={{ background: 'rgb(var(--term-bg))', minHeight: '300px', borderColor:'rgb(var(--term-border))' }}>
-      {/* header */}
-      <div className="flex items-center justify-between px-3 py-2"
+      style={{ background: 'rgb(var(--term-bg))', borderColor: 'rgb(var(--term-border))' }}>
+      {/* Шапка: только то, что что-то делает. Раньше здесь стояли три нарисованных
+          кружка «macOS», не связанные ни с чем. */}
+      <div className="flex items-center gap-2 px-3 py-2 flex-wrap shrink-0"
         style={{ background: 'var(--term-header)', borderBottom: '1px solid rgb(var(--term-border))' }}>
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background:'#ff5f56' }} />
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background:'#ffbd2e' }} />
-          <span className="w-2.5 h-2.5 rounded-full" style={{ background:'#27c93f' }} />
-          <span className="ml-2 text-xs" style={{ color:'rgb(var(--term-muted))' }}>bash — {dir}</span>
+        <span className={`w-2 h-2 rounded-full shrink-0 ${
+          conn === 'live' ? 'bg-success' : conn === 'connecting' ? 'bg-warning' : 'bg-danger'}`} />
+        <span className="text-xs truncate" style={{ color: 'rgb(var(--term-muted))' }}>{dir}</span>
+        <span className="text-[11px] hidden sm:inline" style={{ color: 'rgb(var(--term-muted))' }}>
+          {conn === 'live' ? 'живой шелл в tmux' : conn === 'connecting' ? 'подключение…' : 'нет связи'}
+        </span>
+        <div className="ml-auto flex items-center gap-1.5">
+          <button onClick={up} title="На уровень выше"
+            className="px-2 py-0.5 rounded border"
+            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
+            <Icon name="ArrowUp" size={13} />
+          </button>
+          <select value={dir} onChange={e => go(e.target.value)}
+            className="px-2 py-1 rounded border text-xs"
+            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
+            {ROOTS.map(r => <option key={r.p} value={r.p}>{r.label}</option>)}
+          </select>
+          <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f - 1)))} title="Мельче"
+            className="px-2 py-0.5 rounded border text-sm font-semibold"
+            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>−</button>
+          <span className="text-xs" style={{ color: 'rgb(var(--term-text))' }}>{fontSize}</span>
+          <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f + 1)))} title="Крупнее"
+            className="px-2 py-0.5 rounded border text-sm font-semibold"
+            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>+</button>
+          <button onClick={() => connect(dir)} title="Переподключиться"
+            className="px-2 py-0.5 rounded border"
+            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
+            <Icon name="RefreshCw" size={13} />
+          </button>
+          <button onClick={toggleKeypad}
+            className={`px-2 py-0.5 rounded text-xs border font-semibold ${keypad ? 'text-white' : ''}`}
+            style={keypad
+              ? { background: 'rgb(var(--term-accent))', borderColor: 'rgb(var(--term-accent))' }
+              : { color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}
+            title="Клавиатура">⌨</button>
         </div>
-        <div className="flex items-center gap-1.5">
-          <button onClick={() => changeFont(-1)} className="px-2 py-0.5 rounded border text-sm font-semibold"
-            style={{ color:'rgb(var(--term-text))', borderColor:'rgb(var(--term-border))', background:'rgb(var(--term-bg))' }} title="Меньше">−</button>
-          <span className="text-xs px-1 font-semibold" style={{ color:'rgb(var(--term-text))' }}>{fontSize}</span>
-          <button onClick={() => changeFont(1)} className="px-2 py-0.5 rounded border text-sm font-semibold"
-            style={{ color:'rgb(var(--term-text))', borderColor:'rgb(var(--term-border))', background:'rgb(var(--term-bg))' }} title="Больше">+</button>
-          <button onClick={() => setKeypadOn(!keypadOn)} className={`ml-1 px-2 py-0.5 rounded text-xs border font-semibold ${keypadOn ? 'text-white' : ''}`}
-            style={keypadOn ? { background:'rgb(var(--term-accent))', borderColor:'rgb(var(--term-accent))' } : { color:'rgb(var(--term-text))', borderColor:'rgb(var(--term-border))', background:'rgb(var(--term-bg))' }} title="Клавиатура">⌨</button>
-        </div>
       </div>
 
-      {/* output */}
-      <div className="flex-1 overflow-y-auto px-3 py-2" style={{ minHeight:'200px' }}>
-        {lines.map((l, i) => (
-          <div key={i} className="whitespace-pre-wrap break-words" style={{
-            fontSize,
-            lineHeight: 1.35,
-            color: l.type==='cmd' ? 'rgb(var(--term-cmd))' : l.type==='err' ? 'rgb(var(--term-err))' : l.type==='muted' ? 'rgb(var(--term-muted))' : 'rgb(var(--term-text))'
-          }}>{l.text || '\u00A0'}</div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
+      {err && (
+        <div className="px-3 py-1.5 text-[11px] text-danger shrink-0"
+          style={{ borderBottom: '1px solid rgb(var(--term-border))' }}>{err}</div>
+      )}
 
-      {/* input row */}
-      <div className="flex items-center gap-2 px-3 py-2" style={{ borderTop:'1px solid rgb(var(--term-border))', background:'rgb(var(--term-bg))' }}>
-        <span style={{ color:'rgb(var(--term-prompt))' }} className="select-none">{dir}$</span>
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          className="flex-1 bg-transparent outline-none"
-          style={{ color:'rgb(var(--term-text))', fontSize }}
-          placeholder="введите команду..."
-          disabled={busy}
-          autoFocus
-        />
-        <button onClick={() => runCmd(input)} disabled={busy}
-          className="px-3 py-1 rounded text-xs text-white disabled:opacity-50"
-          style={{ background:'rgb(var(--term-accent))' }}>{busy ? '…' : 'Run'}</button>
-      </div>
+      <div ref={hostRef} className="flex-1 min-h-0 px-2 py-1 overflow-hidden" />
 
-      {/* keypad */}
-      {keypadOn && <TermKeypad onSend={sendToInput} />}
+      {keypad && <TermKeypad onSend={send} />}
     </div>
   )
 }
