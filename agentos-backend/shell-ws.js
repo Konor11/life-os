@@ -12,6 +12,7 @@ import { spawn } from 'node-pty'
 import { WebSocketServer } from 'ws'
 import url from 'url'
 import { execFile } from 'child_process'
+import { writeFileSync, rmSync, existsSync as fsExists } from 'fs'
 import { promisify } from 'util'
 import { wsAllowed } from './auth.js'
 
@@ -108,11 +109,22 @@ export function attachShellWss(server) {
     let pty = null
 
     // Сессия в tmux: переживает переподключение и перезапуск панели.
+    // bash сам сообщает панели текущий каталог через OSC 7 (последовательность
+    // печатается в промпте, а не пишется во вход — иначе bash пытается её выполнить).
+    const rcfile = `/tmp/lifeos-shellrc-${process.pid}-${name}`
+    try {
+      writeFileSync(rcfile,
+        "PROMPT_COMMAND='printf \"\\033]7;file://$PWD\\007\";'\n" +
+        "case \"$PROMPT_COMMAND\" in *';'*) ;; *) PROMPT_COMMAND=\"$PROMPT_COMMAND\"; ;; esac\n" +
+        "PS1=\"\\[\\e]0;\\u@\\h:\\W\\a\\]${PS1}\"\n" +
+        "[ -f ~/.bashrc ] && . ~/.bashrc\n", { mode: 0o644 })
+    } catch { /* без rcfile шелл просто не будет сообщать путь */ }
+
     const tmuxArgs = [
       '-L', 'lifeos', 'new-session', '-A', '-s', name,
       '-c', cwd,
       '-x', String(cols), '-y', String(rows),
-      'bash', '-l',
+      'bash', '--rcfile', rcfile, '-i',
     ]
 
     try {
@@ -154,6 +166,7 @@ export function attachShellWss(server) {
     })
 
     const bye = () => {
+      try { if (fsExists(rcfile)) rmSync(rcfile) } catch {}
       // Саму tmux-сессию НЕ убиваем: вернёмся — тот же экран. Убивает её /api/shell/kill
       // или перезагрузка сервера с keeper'ом.
       try { ws.close() } catch {}

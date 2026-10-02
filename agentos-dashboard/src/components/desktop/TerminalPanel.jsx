@@ -85,11 +85,23 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     )
     wsRef.current = ws
 
-    ws.onopen = () => setConn('live')
+    ws.onopen = () => { setConn('live'); setErr('') }
     ws.onmessage = (ev) => { if (typeof ev.data === 'string') term.write(ev.data) }
-    ws.onerror = () => { setConn('closed'); setErr('соединение с терминалом оборвалось') }
-    ws.onclose = () => setConn((s) => (s === 'idle' ? s : 'closed'))
+    ws.onerror = () => {
+      // Сокет, который закрыли МЫ (смена вкладки, размонтирование), ошибкой не является.
+      if (ws.__closing) return
+      setConn('closed')
+      setErr('соединение с терминалом оборвалось — переподключаюсь')
+    }
+    ws.onclose = () => {
+      if (ws.__closing) return
+      setConn((s) => (s === 'idle' ? s : 'closed'))
+    }
   }, [])
+
+  // Каталог для первого подключения. Дальше он меняется только через `cd` внутри
+  // сессии, поэтому в зависимостях эффекта его быть НЕ должно.
+  const initialCwd = useRef(cwd || '/root/workspace')
 
   useEffect(() => {
     const host = hostRef.current
@@ -126,6 +138,16 @@ export function TerminalPanel({ cwd, onCwdChange }) {
       const ws = wsRef.current
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(`${RESIZE_TAG}RESIZE ${term.cols}:${term.rows}`)
     }
+    // OSC 7: bash сообщает настоящий каталог. Раньше шапка показывала путь, заданный при
+    // подключении, и после `cd` руками она врала.
+    term.parser?.registerOscHandler(7, (payload) => {
+      try {
+        const path = decodeURIComponent(String(payload).replace(/^file:\/\//, ''))
+        if (path && path.startsWith('/')) { setDir(path); onCwdChange?.(path) }
+      } catch {}
+      return true
+    })
+
     term.onData((d) => {
       const ws = wsRef.current
       if (ws && ws.readyState === WebSocket.OPEN) ws.send(d)
@@ -133,7 +155,7 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     let ro
     if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(pushResize); ro.observe(host) }
 
-    const start = cwd || '/root/workspace'
+    const start = initialCwd.current
     setDir(start)
     const t = setTimeout(() => connect(start), 60)
 
@@ -141,12 +163,15 @@ export function TerminalPanel({ cwd, onCwdChange }) {
       clearTimeout(t)
       try { obs.disconnect() } catch {}
       try { ro?.disconnect() } catch {}
+      // Закрываем сокет МЯГКО: пометка, что закрытие намеренное, иначе onerror
+      // покажет «соединение оборвалось» на следующем же соединении.
+      try { if (wsRef.current) wsRef.current.__closing = true } catch {}
       try { wsRef.current?.close() } catch {}
       try { term.dispose() } catch {}
       termRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd])
+  }, [])
 
   // Смену палитры НЕ делаем поводом для переподключения: цвета применяются к живому
   // xterm через MutationObserver (см. ниже). Переподключение при смене темы раньше
@@ -160,7 +185,15 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     try { localStorage.setItem('lifeos.terminal.font', String(fontSize)) } catch {}
   }, [fontSize])
 
-  const go = (p) => { setDir(p); onCwdChange?.(p); connect(p) }
+  // Смена каталога — обычная команда `cd` в живой сессии. Раньше здесь вызывался
+  // connect(), то есть терминал пересоздавался: терялась история и плодились сокеты.
+  const go = (p) => {
+    const target = p.startsWith('/') ? p : `/${p}`
+    setDir(target)
+    onCwdChange?.(target)
+    const q = target.replace(/'/g, `'\\''`)
+    send(`cd '${q}'\n`)
+  }
   const up = () => {
     const parent = dir.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/'
     go(parent)
