@@ -124,7 +124,11 @@ export function attachShellWss(server) {
     }
 
     ws.send(`\x1b[2m[сессия ${name}]\x1b[0m\r\n`)
-    try { pty.write(`\x1b]7;file://${cwd}\x07`) } catch {}   // OSC 7: сообщить терминалу путь
+    // Здесь была отправка OSC 7 в pty.write() — это ОШИБКА: escape-последовательность,
+    // записанная во вход, попадает в bash как команда («command not found»), а
+    // file:///root/workspacepwd склеивался со следующим вводом и ломал шелл.
+    // OSC 7 должен печатать сам шелл через PROMPT_COMMAND, а панель его не подменяет.
+    // Каталог и так виден в промпте и в шапке вкладки.
 
     pty.onData((d) => { try { ws.send(d) } catch {} })
     pty.onExit(({ exitCode, signal }) => {
