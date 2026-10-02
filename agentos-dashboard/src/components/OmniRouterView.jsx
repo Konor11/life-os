@@ -18,6 +18,34 @@ export function OmniRouterView() {
   const [err, setErr] = useState('')
   const [showLog, setShowLog] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [busy, setBusy] = useState(false)      // идёт запуск/остановка службы
+
+  // Запуск и остановка службы компонента. Само по себе включение OmniRoute занимает
+  // ~590 МБ, поэтому по умолчанию он не поднимается вместе с системой.
+  const serviceAction = async () => {
+    if (busy) return
+    const action = info?.running ? 'stop' : 'start'
+    setBusy(true)
+    setErr('')
+    try {
+      const r = await fetch('/api/components/service', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'omniroute', action }),
+      })
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}))
+        setErr(j?.error || 'не удалось выполнить действие')
+        return
+      }
+      // Служба поднимается не мгновенно: даём ей секунды и перечитываем состояние.
+      setTimeout(() => setReloadKey(k => k + 1), 3000)
+    } catch (e) {
+      setErr('сервер недоступен')
+    } finally {
+      setBusy(false)
+    }
+  }
 
   useEffect(() => {
     fetch('/api/components', { cache: 'no-store' })
@@ -80,6 +108,17 @@ export function OmniRouterView() {
               <Icon name="ExternalLink" size={14} />
             </a>
           )}
+          {/* Компонент по требованию: OmniRoute сам по себе занимает ~590 МБ, а нужен
+              только когда в него заходят. Поэтому запуск и остановка — руками. */}
+          <button
+            onClick={serviceAction}
+            disabled={busy}
+            title={info?.running ? 'Остановить шлюз — освободит память' : 'Запустить шлюз'}
+            className={`px-2.5 py-2 border rounded-lg flex items-center gap-1.5 transition-colors disabled:opacity-50 ${
+              info?.running ? 'border-border hover:bg-bg-card' : 'border-accent/50 text-accent hover:bg-accent/10'}`}>
+            <Icon name={info?.running ? 'Square' : 'Play'} size={14} />
+            <span className="hidden sm:inline">{busy ? '…' : info?.running ? 'Остановить' : 'Запустить'}</span>
+          </button>
           <button onClick={() => setReloadKey(k => k + 1)} title="Перезагрузить шлюз"
             className="p-2 border border-border rounded-lg hover:bg-bg-card flex items-center">
             <Icon name="RefreshCw" size={14} />

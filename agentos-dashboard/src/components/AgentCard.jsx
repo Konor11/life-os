@@ -34,10 +34,43 @@ const plural = (n, one, few, many) => {
   return many
 }
 
-function AgentsPulse({ onOpenShell }) {
+function AgentsPulse({ onOpenShell, canAdmin }) {
   const [data, setData] = useState(null)
   const [err, setErr] = useState('')
   const [closing, setClosing] = useState('')
+  const [sleeping, setSleeping] = useState(false)
+  const [autoSleepMinutes, setAutoSleepMinutes] = useState(0)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    if (!canAdmin) return
+    fetch('/api/sleep/auto').then(r => r.ok ? r.json() : null)
+      .then(j => { if (j) setAutoSleepMinutes(j.minutes ?? 0) }).catch(() => {})
+  }, [canAdmin])
+
+  const sleepAll = async () => {
+    if (sleeping) return
+    // Это закрывает процессы агентов. Подтверждаем явно: действие необратимо для сессии,
+    // хотя разговор и остаётся в базе.
+    if (!window.confirm('Усыпить всех агентов? Диалоги сохранятся и откроются заново.')) return
+    setSleeping(true)
+    try {
+      const r = await fetch('/api/sessions/sleep-all', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      })
+      const j = await r.json()
+      if (j?.closed?.length) {
+        toast(`Усыплено: ${j.closed.join(', ')}`, 'success')
+      } else {
+        toast('Усыплять было некого', 'info')
+      }
+    } catch {
+      toast('Не получилось усыпить', 'error')
+    } finally {
+      setSleeping(false)
+      setRefreshKey(k => k + 1)
+    }
+  }
 
   // Закрытие осиротевшей сессии — действие администратора; при отказе по правам честно говорим об этом
   const closeOrphan = async (s) => {
@@ -79,7 +112,7 @@ function AgentsPulse({ onOpenShell }) {
     tick()
     const t = setInterval(tick, 4000)
     return () => { alive = false; clearInterval(t) }
-  }, [])
+  }, [refreshKey])   // refreshKey — чтобы «Усыпить всех» сразу перерисовала список
 
   // Мусор (движок удалён или профиля нет) в «работающих агентах» считаться не должен: из-за него
   // дашборд показывал шесть сессий, когда реально работали три.
@@ -126,6 +159,22 @@ function AgentsPulse({ onOpenShell }) {
                   </span>
                 )
               })}
+            </div>
+          )}
+          {/* Сон агентов: те, что молчат, занимают больше гигабайта впустую. Разговоры
+              не теряются — они в базе движка, и следующий разговор поднимет сессию. */}
+          {canAdmin && list.length > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                onClick={sleepAll}
+                disabled={sleeping}
+                className="text-[11px] px-2 py-1 rounded border border-border text-text-muted hover:text-text"
+                title="Закрыть все сессии агентов. Диалоги сохранятся и откроются заново.">
+                {sleeping ? 'Усыпляю…' : `Усыпить всех (${list.length})`}
+              </button>
+              <span className="text-[10px] text-text-muted/80">
+                автосон: {autoSleepMinutes ? `${autoSleepMinutes} мин простоя` : 'выключен'}
+              </span>
             </div>
           )}
           {/* Сессии терминала — отдельно от агентов: переключение прямо отсюда. */}
@@ -180,13 +229,13 @@ function AgentsPulse({ onOpenShell }) {
 
 
 
-export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = null, onOpenShell }) {
+export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = null, onOpenShell, canAdmin }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
       {/* ============ COLUMN 1 ============ */}
       <div className="space-y-4">
         <SystemCard status={status} />
-        <AgentsPulse onOpenShell={onOpenShell} />
+        <AgentsPulse onOpenShell={onOpenShell} canAdmin={canAdmin} />
         <QuickActions onAction={onQuickAction} />
         <button onClick={() => onQuickAction && onQuickAction('new-note')}
           className="card-surface rounded-2xl p-4 w-full text-left hover:border-accent/40 transition-all">

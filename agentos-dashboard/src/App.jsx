@@ -343,6 +343,7 @@ function App() {
                   notes={notes.slice(0, 3)}
                   status={sysStatus}
                   onQuickAction={(id) => handleQuickAction(id)}
+                  canAdmin={!!auth?.isAdmin}
                   onOpenShell={(tmux) => {
                     // Нажали на сессию терминала прямо с дашборда: запоминаем её и
                     // открываем вкладку Terminal уже на ней — иначе пришлось бы снова

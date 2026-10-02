@@ -1530,6 +1530,18 @@ const COMPONENTS_DEF = [
     detect: `test -f /etc/systemd/system/omniroute.service`,
     desc: 'OmniRoute — единый шлюз ИИ: 350+ провайдеров через один OpenAI-совместимый эндпоинт (порт 20128).',
     webPort: 20128,
+    // Компонент по требованию: сам по себе он занимает ~590 МБ, а нужен только когда
+    // в него заходят. Автозапуск при старте машины ВЫКЛЮЧЕН — стартует при открытии
+    // вкладки, глушится вручную.
+    service: 'omniroute.service',
+    start: `systemctl start omniroute.service
+sleep 3
+systemctl is-active omniroute.service || true
+exit 0`,
+    stop: `systemctl stop omniroute.service
+sleep 1
+systemctl is-active omniroute.service || true
+exit 0`,
     install: `
 set -e
 # Домен пользователь вводит в диалоге установки (панель передаёт его в COMPONENT_DOMAIN).
@@ -1746,9 +1758,21 @@ async function discoverComponents() {
       // Флаг диалога ОБЯЗАТЕЛЬНО едет в ответ. Раньше он остался в COMPONENTS_DEF, ответа до
       // интерфейса не доходил, и установка начиналась сразу — без ввода домена и пароля.
       needsInstallOptions: !!c.needsInstallOptions,
+      // Управляемый компонент: панель показывает «Запустить»/«Остановить» и само знает,
+      // работает ли служба сейчас. Без этого поля кнопки появлялись бы вслепую.
+      service: c.service || null,
+      canControl: !!c.service && !!c.start && !!c.stop,
+      running: c.service ? await serviceRunning(c.service) : null,
     })
   }
   return out
+}
+
+async function serviceRunning(unit) {
+  try {
+    const r = await execS(`systemctl is-active ${unit} 2>/dev/null || true`, { shell: '/bin/bash' })
+    return String(r?.stdout || '').trim() === 'active'
+  } catch { return false }
 }
 
 // ---- Лента чата: история движка структурой, а не экраном терминала ----
@@ -1898,6 +1922,30 @@ app.post('/api/data/import', async (req, res) => {
 })
 
 app.get('/api/components', async (_, res) => res.json({ components: await discoverComponents() }))
+
+// ── Запуск и остановка компонента ──────────────────────────────────────────────
+// Компонент по требованию: пользователь сам решает, когда он работает. Действие
+// требует админа — это запуск и остановка системной службы.
+app.post('/api/components/service', auth.requireAdmin, (req, res) => {
+  const { id, action } = req.body || {}
+  const def = COMPONENTS_DEF.find(c => c.id === id)
+  if (!def) return res.status(404).json({ error: 'компонент не найден' })
+  const cmd = action === 'start' ? def.start : action === 'stop' ? def.stop : null
+  if (!cmd) return res.status(400).json({ error: 'действие не поддерживается' })
+  if (!def.service) return res.status(400).json({ error: 'компонент не управляется службой' })
+  const run = action === 'start' ? 'start' : 'stop'
+  installs[id] = { state: 'running', log: `[${run}] ${def.service}\n` }
+  execS(cmd, { timeout: 120000, shell: '/bin/bash', env: agentEnv(process.env) })
+    .then(r => {
+      installs[id].state = 'done'
+      installs[id].log += (r?.stdout || '') + (r?.stderr || '') + `\n[готово] ${def.service}: ${run}`
+    })
+    .catch(e => {
+      installs[id].state = 'error'
+      installs[id].log += (e?.stdout || '') + (e?.stderr || '') + `\n[ошибка] ${e?.message || ''}`
+    })
+  res.json({ ok: true, state: 'running', service: def.service })
+})
 
 app.post('/api/components/install', (req, res) => {
   const { id, domain, password } = req.body || {}
@@ -2422,6 +2470,73 @@ app.post('/api/sessions/close', auth.requireAdmin, async (req, res) => {
   res.json({ ok: true })
 })
 
+// ── Сон агентов ────────────────────────────────────────────────────────────────
+// Пользователь попросил: агенты не должны молотить впустую. Три агента молчали
+// по 2–6 часов и держали больше гигабайта. Сессия закрывается, но РАЗГОВОР НЕ ТЕРЯЕТСЯ:
+// он лежит в базе движка, и следующий разговор поднимает сессию заново.
+// Сессии шелла (__shell*) и служебная __keeper сном не трогаются — это не агенты.
+const SLEEPABLE = s => s && s.kind === 'agent' && !s.orphan && s.tmux && s.tmux !== '__keeper'
+
+// Автосон по простою. Порог задаёт пользователь в настройках; по умолчанию 2 часа —
+// столько выбрал он. Порог 0 выключает автосон совсем.
+const AUTO_SLEEP_DEFAULT_MIN = 120
+let autoSleepMinutes = AUTO_SLEEP_DEFAULT_MIN
+let autoSleepBusy = false
+
+export function getAutoSleepMinutes() { return autoSleepMinutes }
+export function setAutoSleepMinutes(n) {
+  const v = Number(n)
+  autoSleepMinutes = Number.isFinite(v) && v >= 0 ? Math.round(v) : AUTO_SLEEP_DEFAULT_MIN
+  return autoSleepMinutes
+}
+
+async function autoSleepSweep() {
+  if (autoSleepBusy || autoSleepMinutes <= 0) return
+  autoSleepBusy = true
+  try {
+    const idleMs = autoSleepMinutes * 60000
+    const snap = await sessionSnapshot()
+    const now = Date.now()
+    for (const s of snap) {
+      if (!SLEEPABLE(s)) continue
+      // Подключённую вкладку не трогаем: человек смотрит на неё прямо сейчас.
+      if (s.attached) continue
+      const last = s.idleMs != null ? now - s.idleMs : (s.ageMs != null ? now - s.ageMs : 0)
+      if (last < idleMs) continue
+      console.log(`[сон] закрываю ${s.tmux}: молчит ${Math.round(last / 60000)} мин (порог ${autoSleepMinutes})`)
+      try { await closeSession(s.tmux) } catch {}
+    }
+  } catch (e) {
+    console.error('[сон] ошибка прохода:', e?.message || e)
+  } finally {
+    autoSleepBusy = false
+  }
+}
+
+app.post('/api/sessions/sleep-all', auth.requireAdmin, async (req, res) => {
+  const idleMs = Number(req.body?.idleMinutes) > 0 ? Number(req.body.idleMinutes) * 60000 : 0
+  const snap = await sessionSnapshot()
+  const now = Date.now()
+  const victims = snap.filter(s => {
+    if (!SLEEPABLE(s)) return false
+    // Без указания времени кладём всех; с временем — только молчащих дольше порога.
+    if (!idleMs) return true
+    const last = s.idleMs != null ? now - s.idleMs : (s.ageMs != null ? now - s.ageMs : 0)
+    return last >= idleMs
+  })
+  const closed = []
+  for (const s of victims) {
+    try { const r = await closeSession(s.tmux); if (r.ok) closed.push(s.tmux) } catch {}
+  }
+  res.json({ ok: true, closed, total: snap.length })
+})
+
+// Настройка порога простоя (0 = выключить автосон)
+app.get('/api/sleep/auto', auth.requireAdmin, (_, res) => res.json({ minutes: autoSleepMinutes }))
+app.post('/api/sleep/auto', auth.requireAdmin, (req, res) => {
+  res.json({ minutes: setAutoSleepMinutes((req.body || {}).minutes) })
+})
+
 app.get('/api/lbrain/status', async (_, res) => {
   const idx = await readLbrainIndex()
   if (!idx) {
@@ -2727,8 +2842,14 @@ app.post('/api/shell/kill', async (req, res) => {
   const ok = await killShellSession(String(name || ''))
   res.json({ ok })
 })
+// Автосон: раз в 5 минут. Чаще нет смысла — порог считается часами.
+const autoSleepTimer = setInterval(autoSleepSweep, 5 * 60 * 1000)
+autoSleepTimer.unref?.()
+setTimeout(autoSleepSweep, 30 * 1000).unref?.()
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`AgentOS backend + TUI WS listening on 0.0.0.0:${PORT}`)
   console.log(`Data dir: ${DATA_DIR}`)
   console.log(`OpenRouter key configured: ${OPENROUTER_KEY ? 'yes' : 'NO'}`)
+  console.log(`[сон] автосон по простою: ${autoSleepMinutes ? autoSleepMinutes + ' мин' : 'выключен'}`)
 })
