@@ -253,17 +253,19 @@ export function TerminalPanel({ cwd, onCwdChange }) {
           {conn === 'live' ? 'живой шелл в tmux' : conn === 'connecting' ? 'подключение…' : 'нет связи'}
         </span>
         <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          {/* Кнопки верхнего ряда крупные: 31×23 пикселя мимо пальцем не попасть,
+              и на телефоне их можно просто не заметить. */}
           <button onClick={() => connect(dir)} title="Переподключиться"
-            className="px-2 py-1 rounded border"
+            className="w-9 h-9 flex items-center justify-center rounded-lg border shrink-0"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
-            <Icon name="RefreshCw" size={13} />
+            <Icon name="RefreshCw" size={16} />
           </button>
           <button onClick={toggleKeypad}
-            className={`px-2 py-1 rounded text-xs border font-semibold ${keypad ? 'text-white' : ''}`}
+            className={`w-9 h-9 flex items-center justify-center rounded-lg border shrink-0 ${keypad ? 'text-white' : ''}`}
             style={keypad
               ? { background: 'rgb(var(--term-accent))', borderColor: 'rgb(var(--term-accent))' }
               : { color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}
-            title="Клавиатура">⌨</button>
+            title="Клавиатура"><Icon name="Keyboard" size={15} /></button>
         </div>
       </div>
       <div className="flex items-center gap-1.5 px-3 py-2 flex-wrap shrink-0"

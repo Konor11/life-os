@@ -8,6 +8,16 @@ export function Icon({ name, size = 20, className = '', style }) {
         <rect x="14" y="14" width="7" height="7" rx="1" />
       </svg>
     ),
+    Keyboard: (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
+        <rect x="2" y="6" width="20" height="12" rx="2" />
+        <line x1="6" y1="10" x2="6" y2="10" />
+        <line x1="10" y1="10" x2="10" y2="10" />
+        <line x1="14" y1="10" x2="14" y2="10" />
+        <line x1="18" y1="10" x2="18" y2="10" />
+        <line x1="7" y1="14" x2="17" y2="14" />
+      </svg>
+    ),
     Desktop: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={className} style={style}>
         <rect x="2" y="3" width="20" height="14" rx="2" />
