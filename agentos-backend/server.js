@@ -1903,7 +1903,7 @@ app.post('/api/components/install', (req, res) => {
   }
   installs[id].log += `[домен] ${env.COMPONENT_DOMAIN || 'определится автоматически'}\n`
   installs[id].log += `[пароль] ${env.COMPONENT_PASSWORD ? 'будет задан (в лог не пишется)' : 'не задан — спросит при первом входе'}\n`
-  execS(def.install, { timeout: def.timeout || 900000, shell: '/bin/bash', env })
+  execS(def.install, { timeout: def.timeout || 900000, shell: '/bin/bash', env: agentEnv(env) })
     .then(r => {
       installs[id].state = 'done'
       installs[id].log += (r?.stdout || '') + (r?.stderr || '') + '\n[установка завершена]'
@@ -2645,6 +2645,30 @@ app.post('/api/fs/write', async (req, res) => {
 })
 
 // ---- Terminal (command exec, sandboxed + timeout) ----
+// PATH для команд, которые пользователь вводит руками (вкладка Terminal).
+//
+// Раньше здесь стоял `shell: '/bin/bash'` БЕЗ флага -l. Логин-шелл читает
+// /root/.profile, где добавляется $HOME/.local/bin; обычный -c — нет. В итоге
+// `hermes` в терминале панели давал «command not found», хотя на сервере он есть и
+// работает. То же касалось opencode и всего, что ставится в ~/.local/bin и
+// ~/.hermes/bin. Тот же список, что и у TUI (tui-ws.js), — чтобы терминал и
+// TUI вели себя одинаково.
+const AGENT_BIN_DIRS = [
+  '/root/.local/bin',
+  '/root/.hermes/bin',
+  '/root/.hermes/hermes-agent/.hermes/bin',
+  '/root/.opencode/bin',
+  '/root/.dsh/bin',
+]
+function agentEnv(extra = {}) {
+  return {
+    ...process.env,
+    HOME: process.env.HOME || '/root',
+    PATH: [...AGENT_BIN_DIRS, process.env.PATH || '/usr/local/bin:/usr/bin:/bin'].join(':'),
+    ...extra,
+  }
+}
+
 app.post('/api/terminal', async (req, res) => {
   const { command = '' } = req.body || {}
   if (!command.trim()) return res.json({ output: '' })
@@ -2652,7 +2676,7 @@ app.post('/api/terminal', async (req, res) => {
     return res.status(400).json({ output: 'Blocked: unsafe command\n' })
   }
   try {
-    const env = { ...process.env, TERM: 'xterm-256color' }
+    const env = agentEnv({ TERM: 'xterm-256color' })
     const { stdout, stderr } = await execS(command, { env, timeout: 20000, shell: '/bin/bash', cwd: safeResolve(req.body.cwd || '/root') })
     res.json({ output: (stdout || '') + (stderr ? '\n' + stderr : '') })
   } catch (e) {
