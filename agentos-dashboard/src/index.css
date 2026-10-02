@@ -25,30 +25,21 @@ html, body, #root {
 html[data-mode="light"] { color-scheme: light; }
 html[data-mode="dark"] { color-scheme: dark; }
 
-html[data-mode="light"] {
-  /* terminal palette (light) */
-  --term-bg: 255 255 255;
-  --term-header: linear-gradient(180deg,#f4f6fa,#eef1f6);
-  --term-border: 226 232 240;
-  --term-text: 24 28 40;
-  --term-prompt: 16 122 87;
-  --term-cmd: 88 101 242;
-  --term-err: 220 38 38;
-  --term-muted: 100 116 139;
-  --term-accent: 47 129 247;
-}
-
-html[data-mode="dark"] {
-  /* terminal palette (dark) */
-  --term-bg: 11 14 20;
-  --term-header: linear-gradient(180deg,#161b26,#10141d);
-  --term-border: 35 42 58;
-  --term-text: 230 237 243;
-  --term-prompt: 63 185 80;
-  --term-cmd: 88 166 255;
-  --term-err: 248 81 73;
-  --term-muted: 139 148 158;
-  --term-accent: 47 129 247;
+/* Терминал красится из палитры панели — тем же CSS, без единого числа.
+   Задавать --term-* отдельно для 14 палитр × 2 режима означало бы 28 блоков,
+   которые разъезжаются при правке палитры. Ссылка на --cx-* работает сама:
+   какую бы палитру ни выбрали, терминал окажется в её цветах. */
+html[data-mode="light"], html[data-mode="dark"] {
+  --term-bg: rgb(var(--cx-bg-card));
+  --term-border: rgb(var(--cx-border));
+  --term-text: rgb(var(--cx-text));
+  --term-muted: rgb(var(--cx-text-muted));
+  --term-cmd: rgb(var(--cx-accent));
+  --term-err: rgb(var(--cx-danger));
+  --term-prompt: rgb(var(--cx-success));
+  --term-accent: rgb(var(--cx-accent-2));
+  --term-header: linear-gradient(180deg,
+    rgb(var(--cx-bg-card)), rgb(var(--cx-bg-elevated)));
 }
 
 body {

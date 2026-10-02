@@ -127,6 +127,25 @@ function LookSection({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPa
         </div>
       </Group>
 
+      {/* Palitra Omarchy живёт на ПК: пока приложение Life OS Desktop её не прислало,
+          панель не может знать цветов. Раньше это было только мелкой строкой под карточкой,
+          и выглядело как «переключил — ничего не произошло». Теперь — заметный блок. */}
+      {st.palette === 'omarchy' && !st.desktop && (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 px-4 py-3">
+          <div className="text-sm font-medium text-text">Тема с компьютера ещё не пришла</div>
+          <p className="text-xs text-text-muted mt-1 leading-relaxed">
+            Palitra Omarchy не хранит цветов в панели — она читает тему с твоего ПК
+            (<code>~/.config/omarchy/current/colors.toml</code>) и присылает её приложение
+            Life OS Desktop. Пока оно не запущено на компьютере, панель показывает обычное
+            «Стекло» и выдумывать цвета не станет.
+          </p>
+          <p className="text-xs text-text-muted mt-2">
+            Что сделать: обнови приложение до <b>0.1.3</b> и запусти его на ПК. Палитра придёт
+            в течение 15 секунд, сама.
+          </p>
+        </div>
+      )}
+
       <Group title="Палитра" hint="Цвета — как в редакторе кода. Выбор хранится на сервере: телефон и компьютер показывают одно и то же.">
         <div className="flex items-center gap-2 mb-3">
           <div className="relative flex-1">
@@ -167,8 +186,7 @@ function LookSection({ theme, onToggleTheme, themeState, onSetThemeMode, onSetPa
               </span>
               {p.id === 'omarchy' && !st.desktop && (
                 <div className="text-[11px] text-warning mt-1">
-                  Тема с ПК ещё не приходила — пока показывается обычное «Стекло».
-                  Запусти на компьютере Life OS Desktop, и панель подхватит цвета сама.
+                  ждём тему с ПК — см. выше
                 </div>
               )}
               {p.id === 'omarchy' && st.desktop && (

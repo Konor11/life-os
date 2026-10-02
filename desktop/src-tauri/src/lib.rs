@@ -124,7 +124,7 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
-        // Мост «тема Омachi → панель»: скрипт выполняется только в настольном окне.
+        // Мост «тема Omarchy → панель»: скрипт выполняется только в настольном окне.
         // Окно создаётся из tauri.conf.json, поэтому внедряем при загрузке страницы.
         .on_page_load(move |webview, _payload| {
             if webview.label() == "main" {
@@ -250,7 +250,7 @@ fn read_system_theme() -> Option<SystemTheme> {
     // Путь логируем локально и на сервер не отдаём: это домашний каталог пользователя.
     if let Some(p) = &t.path {
         eprintln!(
-            "[lifeos] тема Омachi: {} ({})",
+            "[lifeos] тема Omarchy: {} ({})",
             p.display(),
             t.name.as_deref().unwrap_or("имя неизвестно")
         );

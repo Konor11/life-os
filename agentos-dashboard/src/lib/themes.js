@@ -36,10 +36,10 @@ export const THEMES = [
     sw: ['#f3f5f9', '#6ca5ff', '#181e2d'], dark: ['#0a0e1e', '#6ca5ff', '#dbe2f5'] },
 ]
 
-// Омachi не в списке: у неё нет фиксированных цветов, она приходит с компьютера.
+// Omarchy не в списке: у неё нет фиксированных цветов, она приходит с компьютера.
 // Живёт отдельно — см. /api/theme и lib/theme.js.
 export const OMARCHY = {
-  id: 'omarchy', label: 'Омachi', hint: 'берёт цвета из темы твоей системы на ПК',
+  id: 'omarchy', label: 'Omarchy', hint: 'берёт цвета из темы твоей системы на ПК',
   sw: ['#1c1c1c', '#c8c093', '#f0f0f0'], dark: ['#1c1c1c', '#c8c093', '#f0f0f0'],
 }
 
