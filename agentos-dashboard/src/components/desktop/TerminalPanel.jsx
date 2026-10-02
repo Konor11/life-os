@@ -241,15 +241,34 @@ export function TerminalPanel({ cwd, onCwdChange }) {
       style={{ background: 'rgb(var(--term-bg))', borderColor: 'rgb(var(--term-border))' }}>
       {/* Шапка: только то, что что-то делает. Раньше здесь стояли три нарисованных
           кружка «macOS», не связанные ни с чем. */}
-      <div className="flex items-center gap-2 px-3 py-2 flex-wrap shrink-0"
-        style={{ background: 'var(--term-header)', borderBottom: '1px solid rgb(var(--term-border))' }}>
+      {/* Шапка в ДВА ряда. Раньше всё в один ряд: на телефоне перезагрузка и клавиатура
+          (последние в списке) уезжали за край и были не видны. Наверх вынесено то, чем
+          пользуются чаще всего. */}
+      <div className="flex items-center gap-2 px-3 pt-2 shrink-0"
+        style={{ background: 'var(--term-header)' }}>
         <span className={`w-2 h-2 rounded-full shrink-0 ${
           conn === 'live' ? 'bg-success' : conn === 'connecting' ? 'bg-warning' : 'bg-danger'}`} />
-        <span className="text-xs truncate" style={{ color: 'rgb(var(--term-muted))' }}>{dir}</span>
-        <span className="text-[11px] hidden sm:inline" style={{ color: 'rgb(var(--term-muted))' }}>
+        <span className="text-xs truncate min-w-0" style={{ color: 'rgb(var(--term-muted))' }}>{dir}</span>
+        <span className="text-[11px] hidden sm:inline shrink-0" style={{ color: 'rgb(var(--term-muted))' }}>
           {conn === 'live' ? 'живой шелл в tmux' : conn === 'connecting' ? 'подключение…' : 'нет связи'}
         </span>
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          <button onClick={() => connect(dir)} title="Переподключиться"
+            className="px-2 py-1 rounded border"
+            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
+            <Icon name="RefreshCw" size={13} />
+          </button>
+          <button onClick={toggleKeypad}
+            className={`px-2 py-1 rounded text-xs border font-semibold ${keypad ? 'text-white' : ''}`}
+            style={keypad
+              ? { background: 'rgb(var(--term-accent))', borderColor: 'rgb(var(--term-accent))' }
+              : { color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}
+            title="Клавиатура">⌨</button>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 px-3 py-2 flex-wrap shrink-0"
+        style={{ background: 'var(--term-header)', borderBottom: '1px solid rgb(var(--term-border))' }}>
+        <div className="flex items-center gap-1.5">
           <button onClick={up} title="На уровень выше"
             className="px-2 py-0.5 rounded border"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
@@ -284,17 +303,6 @@ export function TerminalPanel({ cwd, onCwdChange }) {
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
             +
           </button>
-          <button onClick={() => connect(dir)} title="Переподключиться"
-            className="px-2 py-0.5 rounded border"
-            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
-            <Icon name="RefreshCw" size={13} />
-          </button>
-          <button onClick={toggleKeypad}
-            className={`px-2 py-0.5 rounded text-xs border font-semibold ${keypad ? 'text-white' : ''}`}
-            style={keypad
-              ? { background: 'rgb(var(--term-accent))', borderColor: 'rgb(var(--term-accent))' }
-              : { color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}
-            title="Клавиатура">⌨</button>
         </div>
       </div>
 
