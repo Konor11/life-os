@@ -59,8 +59,19 @@ export const RESIZE_TAG = '\u0001'
 
 let seq = 0
 
-// Сессия шелла. Имя — с уникальным суффиксом, чтобы несколько вкладок не делили экран.
-function newSessionName() { return `__shell-${process.pid}-${++seq}` }
+// Сессия шелла — ИМЕНОВАННАЯ, как у движков.
+//
+// С уникальным суффиксом на каждое подключение (как было сначала) сессии копились
+// вечно: `new-session -A` создавал новую, а закрытие сокета её намеренно не убивало —
+// после нескольких переподключений оставалось 14 живых шеллов, и вернуться в прежний
+// было нельзя. Теперь вкладка всегда присоединяется к СВОЕЙ сессии, как терминал на
+// рабочем столе: закрыл вкладку — вернулся, тот же экран и тот же каталог.
+const SHELL_MAIN = '__shell'
+
+function sessionNameFor(reset) {
+  if (!reset) return SHELL_MAIN
+  return `${SHELL_MAIN}-${++seq}`
+}
 
 export function attachShellWss(server) {
   const wss = new WebSocketServer({ noServer: true })
@@ -92,7 +103,8 @@ export function attachShellWss(server) {
       HERMES_TUI_THEME: dark ? 'dark' : 'light',
     }
 
-    const name = newSessionName()
+    // reset=1 просит новую сессию (кнопка «новая»). Обычное подключение — та же самая.
+    const name = sessionNameFor(q.reset === '1' || q.reset === 'true')
     let pty = null
 
     // Сессия в tmux: переживает переподключение и перезапуск панели.
@@ -112,6 +124,7 @@ export function attachShellWss(server) {
     }
 
     ws.send(`\x1b[2m[сессия ${name}]\x1b[0m\r\n`)
+    try { pty.write(`\x1b]7;file://${cwd}\x07`) } catch {}   // OSC 7: сообщить терминалу путь
 
     pty.onData((d) => { try { ws.send(d) } catch {} })
     pty.onExit(({ exitCode, signal }) => {

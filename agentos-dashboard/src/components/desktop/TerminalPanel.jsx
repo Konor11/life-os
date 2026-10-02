@@ -63,9 +63,9 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     try { return localStorage.getItem('lifeos.terminal.keypad') === '1' } catch { return false }
   })
   const [err, setErr] = useState('')
-  const lastPalette = useRef(null)
+  
 
-  const connect = useCallback((startCwd) => {
+  const connect = useCallback((startCwd, fresh = false) => {
     const term = termRef.current
     if (!term) return
     try { wsRef.current?.close() } catch {}
@@ -74,10 +74,14 @@ export function TerminalPanel({ cwd, onCwdChange }) {
 
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const mode = document.documentElement.getAttribute('data-mode')
+    // reset=1 — попросить у сервера НОВУЮ сессию. Обычное подключение присоединяется к
+    // той же самой: иначе каждая переподключка плодила бы живую tmux-сессию (проверено:
+    // накопилось 14 за полчаса тестов).
     const ws = new WebSocket(
       `${proto}://${location.host}/ws/shell` +
       `?cwd=${encodeURIComponent(startCwd || '/root/workspace')}` +
-      `&cols=${term.cols || 80}&rows=${term.rows || 24}&theme=${mode}`
+      `&cols=${term.cols || 80}&rows=${term.rows || 24}&theme=${mode}` +
+      (fresh ? '&reset=1' : '')
     )
     wsRef.current = ws
 
@@ -108,7 +112,9 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     // строки начнут переноситься.
     requestAnimationFrame(() => { try { fit?.fit() } catch {} })
 
-    const applyTheme = () => { try { term.options.theme = readTermTheme() } catch {} }
+    const applyTheme = () => {
+      try { term.options.theme = readTermTheme() } catch {}
+    }
     const obs = new MutationObserver((muts) => {
       if (muts.some(m => m.attributeName === 'data-mode' || m.attributeName === 'data-theme')) applyTheme()
     })
@@ -142,18 +148,9 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])
 
-  // Сервер задаёт цвета терминала при старте сессии, поэтому на смену ПАЛИТРЫ проще
-  // переподключиться, чем полагаться на обновление цветов внутри живой сессии.
-  useEffect(() => {
-    const check = () => {
-      const p = document.documentElement.getAttribute('data-theme')
-      if (lastPalette.current === null) { lastPalette.current = p; return }
-      if (p !== lastPalette.current) { lastPalette.current = p; connect(dir) }
-    }
-    check()
-    const id = setInterval(check, 1500)
-    return () => clearInterval(id)
-  }, [connect, dir])
+  // Смену палитры НЕ делаем поводом для переподключения: цвета применяются к живому
+  // xterm через MutationObserver (см. ниже). Переподключение при смене темы раньше
+  // плодило по сессии на каждый переход. Раньше на сервере копились остатки.
 
   // Кегль: применяется к живому терминалу, переподключать ради этого незачем.
   useEffect(() => {
@@ -210,6 +207,11 @@ export function TerminalPanel({ cwd, onCwdChange }) {
           <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f + 1)))} title="Крупнее"
             className="px-2 py-0.5 rounded border text-sm font-semibold"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>+</button>
+          <button onClick={() => connect(dir, true)} title="Новая сессия шелла"
+            className="px-2 py-0.5 rounded border"
+            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
+            +
+          </button>
           <button onClick={() => connect(dir)} title="Переподключиться"
             className="px-2 py-0.5 rounded border"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
