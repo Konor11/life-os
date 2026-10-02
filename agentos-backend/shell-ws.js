@@ -75,7 +75,7 @@ function sessionNameFor(reset) {
   return `${SHELL_MAIN}-${++seq}`
 }
 
-export function attachShellWS(server) {
+export function attachShellWss(server) {
   const wss = new WebSocketServer({ noServer: true })
 
   wss.on('connection', (ws, req) => {
