@@ -13,6 +13,7 @@ import { WebSocketServer } from 'ws'
 import url from 'url'
 import { execFile } from 'child_process'
 import { writeFileSync, rmSync, existsSync as fsExists } from 'fs'
+import { markShellAttached } from './tui-ws.js'
 import { promisify } from 'util'
 import { wsAllowed } from './auth.js'
 
@@ -74,7 +75,7 @@ function sessionNameFor(reset) {
   return `${SHELL_MAIN}-${++seq}`
 }
 
-export function attachShellWss(server) {
+export function attachShellWS(server) {
   const wss = new WebSocketServer({ noServer: true })
 
   wss.on('connection', (ws, req) => {
@@ -104,8 +105,11 @@ export function attachShellWss(server) {
       HERMES_TUI_THEME: dark ? 'dark' : 'light',
     }
 
-    // reset=1 просит новую сессию (кнопка «новая»). Обычное подключение — та же самая.
-    const name = sessionNameFor(q.reset === '1' || q.reset === 'true')
+    // name=__shell-1 — переключиться на конкретную сессию (список приходит из /api/shell/sessions).
+    // reset=1 — попросить новую. Обычное подключение — главная сессия.
+    const want = typeof q.name === 'string' ? q.name : ''
+    const name = /^__shell(-\d+)?$/.test(want) ? want
+      : sessionNameFor(q.reset === '1' || q.reset === 'true')
     let pty = null
 
     // Сессия в tmux: переживает переподключение и перезапуск панели.
@@ -165,7 +169,9 @@ export function attachShellWss(server) {
       try { pty.write(s) } catch {}
     })
 
+    try { markShellAttached(name, true) } catch {}
     const bye = () => {
+      try { markShellAttached(name, false) } catch {}
       try { if (fsExists(rcfile)) rmSync(rcfile) } catch {}
       // Саму tmux-сессию НЕ убиваем: вернёмся — тот же экран. Убивает её /api/shell/kill
       // или перезагрузка сервера с keeper'ом.
@@ -196,11 +202,14 @@ export async function shellSessions() {
     return String(r.stdout || '')
       .split('\n')
       .map(s => s.trim())
-      .filter(s => s.startsWith('__shell-'))
+      // Раньше фильтр был startsWith('__shell-') — с дефисом, из-за чего ГЛАВНАЯ сессия
+      // __shell выпадала из списка и её нельзя было закрыть. Ровно то, что смутило
+      // пользователя: в списке «2 сессии», а на деле их три, и одна из них главная.
+      .filter(s => /^__shell(-\d+)?$/.test(s))
   } catch { return [] }
 }
 
 export async function killShellSession(name) {
-  if (!name || !name.startsWith('__shell-')) return false
+  if (!/^__shell(-\d+)?$/.test(String(name || ''))) return false
   try { await execF('tmux', ['-L', 'lifeos', 'kill-session', '-t', name]); return true } catch { return false }
 }

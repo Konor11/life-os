@@ -56,6 +56,8 @@ export function TerminalPanel({ cwd, onCwdChange }) {
   const hostRef = useRef(null)
   const termRef = useRef(null)
   const wsRef = useRef(null)
+  const [session, setSession] = useState('__shell')      // какая сессия шелла открыта
+  const [allShells, setAllShells] = useState([])        // список для переключателя
   const [conn, setConn] = useState('idle')     // idle | connecting | live | closed
   const [dir, setDir] = useState(cwd || '/root/workspace')
   const [fontSize, setFontSize] = useState(13)
@@ -65,7 +67,7 @@ export function TerminalPanel({ cwd, onCwdChange }) {
   const [err, setErr] = useState('')
   
 
-  const connect = useCallback((startCwd, fresh = false) => {
+  const connect = useCallback((startCwd, fresh = false, sess = null) => {
     const term = termRef.current
     if (!term) return
     try { wsRef.current?.close() } catch {}
@@ -77,15 +79,22 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     // reset=1 — попросить у сервера НОВУЮ сессию. Обычное подключение присоединяется к
     // той же самой: иначе каждая переподключка плодила бы живую tmux-сессию (проверено:
     // накопилось 14 за полчаса тестов).
+    const wantSess = sess || session
+    if (sess && sess !== session) setSession(sess)
     const ws = new WebSocket(
       `${proto}://${location.host}/ws/shell` +
       `?cwd=${encodeURIComponent(startCwd || '/root/workspace')}` +
       `&cols=${term.cols || 80}&rows=${term.rows || 24}&theme=${mode}` +
-      (fresh ? '&reset=1' : '')
+      (fresh ? '&reset=1' : '') +
+      (fresh ? '' : `&name=${encodeURIComponent(wantSess)}`)
     )
     wsRef.current = ws
 
-    ws.onopen = () => { setConn('live'); setErr('') }
+    ws.onopen = () => {
+      setConn('live'); setErr('')
+      fetch('/api/shell/sessions').then(r => r.ok ? r.json() : null)
+        .then(j => { if (j?.sessions) setAllShells(j.sessions) }).catch(() => {})
+    }
     ws.onmessage = (ev) => { if (typeof ev.data === 'string') term.write(ev.data) }
     ws.onerror = () => {
       // Сокет, который закрыли МЫ (смена вкладки, размонтирование), ошибкой не является.
@@ -127,6 +136,13 @@ export function TerminalPanel({ cwd, onCwdChange }) {
       try { fit?.fit() } catch {}
       try { term.focus() } catch {}
     })
+    // Список живых сессий шелла — чтобы их можно было переключать, а не только создавать.
+    ;(async () => {
+      try {
+        const r = await fetch('/api/shell/sessions')
+        if (r.ok) setAllShells(await r.json())
+      } catch {}
+    })()
     // Возврат фокуса после смены вкладки: мобильный браузер его снимает.
     const onVis = () => { if (!document.hidden) { try { term.focus() } catch {} } }
     document.addEventListener('visibilitychange', onVis)
@@ -248,6 +264,18 @@ export function TerminalPanel({ cwd, onCwdChange }) {
           <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f + 1)))} title="Крупнее"
             className="px-2 py-0.5 rounded border text-sm font-semibold"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>+</button>
+          {allShells.length > 1 && (
+            <select
+              value={allShells.includes(session) ? session : ''}
+              onChange={(e) => { if (e.target.value) connect(dir, false, e.target.value) }}
+              title="Переключить сессию шелла"
+              className="px-1 py-0.5 rounded border text-[11px] max-w-[9rem]"
+              style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
+              {allShells.map((s, i) => (
+                <option key={s} value={s}>{i === 0 ? 'шелл 1' : `шелл ${i + 1}`}</option>
+              ))}
+            </select>
+          )}
           <button onClick={() => connect(dir, true)} title="Новая сессия шелла"
             className="px-2 py-0.5 rounded border"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>

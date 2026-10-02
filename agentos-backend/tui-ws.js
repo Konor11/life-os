@@ -310,6 +310,13 @@ export function orphanReason(s) {
   return ''
 }
 
+// Подключён ли сейчас браузер к конкретной сессии шелла.
+const shellClients = new Map()
+export function markShellAttached(name, on) {
+  if (on) shellClients.set(name, Date.now()); else shellClients.delete(name)
+}
+function shellAttached(name) { return shellClients.has(name) }
+
 export async function sessionSnapshot() {
   const out = []
   const now = Date.now()
@@ -322,6 +329,24 @@ export async function sessionSnapshot() {
     for (const line of String(r.out || '').split('\n')) {
       const [name, created, attached] = line.split('\t')
       if (!name || name === '__keeper') continue      // keeper — служебная, агентом не считается
+      // Сессии шелла (вкладка Terminal) — не агенты и не мусор: у них нет движка по
+      // определению. Раньше они попадали в общий список, проходили проверку
+      // «движок установлен ли» и получали ярлык «движок удалён» — хотя шелл был живой.
+      if (name.startsWith('__shell')) {
+        out.push({
+          key: `shell:${name}`,
+          tmux: name,
+          kind: 'terminal',
+          engine: 'терминал',
+          profile: 'default',
+          attached: !!shellAttached(name),
+          idleMs: null,
+          since: created ? Number(created) * 1000 : null,
+          ageMs: created ? now - Number(created) * 1000 : null,
+          orphan: '',
+        })
+        continue
+      }
       const { engine, profile } = parseTmuxName(name)
       const mem = sessions.get(`${engine}:${profile}`)
       out.push({
@@ -337,6 +362,7 @@ export async function sessionSnapshot() {
         ageMs: created ? now - Number(created) * 1000 : null,
         // Мусор: движок удалили или профиль исчез. Такие сессии показываем отдельно и
         // предлагаем закрыть — иначе дашборд врёт про «работающих агентов».
+        kind: 'agent',
         orphan: orphanReason({ engine, profile }),
       })
     }
