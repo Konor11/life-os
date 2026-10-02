@@ -275,23 +275,29 @@ export function TerminalPanel({ cwd, onCwdChange }) {
             <Icon name="ArrowUp" size={13} />
           </button>
           <select value={dir} onChange={e => go(e.target.value)}
-            className="px-2 py-1 rounded border text-xs"
+            className="px-1.5 py-1 rounded border text-xs min-w-0 flex-1"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
             {ROOTS.map(r => <option key={r.p} value={r.p}>{r.label}</option>)}
           </select>
-          <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f - 1)))} title="Мельче"
-            className="px-2 py-0.5 rounded border text-sm font-semibold"
-            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>−</button>
-          <span className="text-xs" style={{ color: 'rgb(var(--term-text))' }}>{fontSize}</span>
-          <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f + 1)))} title="Крупнее"
-            className="px-2 py-0.5 rounded border text-sm font-semibold"
-            style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>+</button>
+          {/* Кегль одним сегментом: три отдельные кнопки плюс число занимали ~130px и
+              выдавливали остальное за экран телефона. */}
+          <div className="flex items-center shrink-0 rounded border overflow-hidden"
+            style={{ borderColor: 'rgb(var(--term-border))' }}>
+            <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f - 1)))} title="Мельче"
+              className="px-1.5 py-1 text-sm font-semibold"
+              style={{ color: 'rgb(var(--term-text))', background: 'rgb(var(--term-bg))' }}>−</button>
+            <span className="px-1 text-xs tabular-nums"
+              style={{ color: 'rgb(var(--term-text))', background: 'rgb(var(--term-bg))' }}>{fontSize}</span>
+            <button onClick={() => setFontSize(f => Math.min(24, Math.max(10, f + 1)))} title="Крупнее"
+              className="px-1.5 py-1 text-sm font-semibold"
+              style={{ color: 'rgb(var(--term-text))', background: 'rgb(var(--term-bg))' }}>+</button>
+          </div>
           {allShells.length > 1 && (
             <select
               value={allShells.includes(session) ? session : ''}
               onChange={(e) => { if (e.target.value) connect(dir, false, e.target.value) }}
               title="Переключить сессию шелла"
-              className="px-1 py-0.5 rounded border text-[11px] max-w-[9rem]"
+              className="px-1 py-1 rounded border text-[11px] shrink-0 max-w-[6.5rem]"
               style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
               {allShells.map((s, i) => (
                 <option key={s} value={s}>{i === 0 ? 'шелл 1' : `шелл ${i + 1}`}</option>
@@ -299,7 +305,7 @@ export function TerminalPanel({ cwd, onCwdChange }) {
             </select>
           )}
           <button onClick={() => connect(dir, true)} title="Новая сессия шелла"
-            className="px-2 py-0.5 rounded border"
+            className="px-2 py-1 rounded border shrink-0"
             style={{ color: 'rgb(var(--term-text))', borderColor: 'rgb(var(--term-border))', background: 'rgb(var(--term-bg))' }}>
             +
           </button>
