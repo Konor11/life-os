@@ -114,6 +114,8 @@ export function TerminalPanel({ cwd, onCwdChange }) {
   // Каталог для первого подключения. Дальше он меняется только через `cd` внутри
   // сессии, поэтому в зависимостях эффекта его быть НЕ должно.
   const initialCwd = useRef(cwd || '/root/workspace')
+  // FitAddon нужен вне эффекта монтирования: им же пересчитывается сетка при смене кегля.
+  const fitRef = useRef(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -181,6 +183,7 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     let ro
     if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(pushResize); ro.observe(host) }
 
+    fitRef.current = fit
     const start = initialCwd.current
     setDir(start)
     const t = setTimeout(() => connect(start), 60)
@@ -208,7 +211,15 @@ export function TerminalPanel({ cwd, onCwdChange }) {
   useEffect(() => {
     // `termRef.current?.options.fontSize = x` не собирается: опциональная цепочка не
     // может быть целью присваивания. Нужен явный тернарный/if-разбор.
-    try { const t = termRef.current; if (t) t.options.fontSize = fontSize } catch {}
+    const t = termRef.current
+    if (t) {
+      t.options.fontSize = fontSize
+      // ВАЖНО: без пересчёта сетки менялся только размер символа, а число колонок и строк
+      // оставалось прежним — блок терминала сжимался, и выглядело это как «уменьшается сам
+      // терминал, а не шрифт». fit() пересчитывает cols/rows под новый размер символа,
+      // поэтому текст просто становится мельче, а терминал занимает ту же площадь.
+      try { fitRef.current?.fit() } catch {}
+    }
     try { localStorage.setItem('lifeos.terminal.font', String(fontSize)) } catch {}
   }, [fontSize])
 
