@@ -120,9 +120,16 @@ export function TerminalPanel({ cwd, onCwdChange }) {
     try { new WebglAddon().activate(term) } catch { /* без GPU — обычный рендер */ }
 
     term.open(host)
-    // Подгоняем размер ДО подключения: иначе сервер откроет сессию 80x24, а окно уже —
-    // строки начнут переноситься.
-    requestAnimationFrame(() => { try { fit?.fit() } catch {} })
+    // Фокус сразу: без него на телефоне не поднимается клавиатура, и ввод невозможен —
+    // терминал выглядит живым, но не печатает. Проверено: пока не кликнули по экрану,
+    // команда не уходила.
+    requestAnimationFrame(() => {
+      try { fit?.fit() } catch {}
+      try { term.focus() } catch {}
+    })
+    // Возврат фокуса после смены вкладки: мобильный браузер его снимает.
+    const onVis = () => { if (!document.hidden) { try { term.focus() } catch {} } }
+    document.addEventListener('visibilitychange', onVis)
 
     const applyTheme = () => {
       try { term.options.theme = readTermTheme() } catch {}
@@ -161,6 +168,7 @@ export function TerminalPanel({ cwd, onCwdChange }) {
 
     return () => {
       clearTimeout(t)
+      try { document.removeEventListener('visibilitychange', onVis) } catch {}
       try { obs.disconnect() } catch {}
       try { ro?.disconnect() } catch {}
       // Закрываем сокет МЯГКО: пометка, что закрытие намеренное, иначе onerror
@@ -264,7 +272,8 @@ export function TerminalPanel({ cwd, onCwdChange }) {
           style={{ borderBottom: '1px solid rgb(var(--term-border))' }}>{err}</div>
       )}
 
-      <div ref={hostRef} className="flex-1 min-h-0 px-2 py-1 overflow-hidden" />
+      <div ref={hostRef} className="flex-1 min-h-0 px-2 py-1 overflow-hidden"
+        onPointerDown={() => { try { termRef.current?.focus() } catch {} }} />
 
       {keypad && <TermKeypad onSend={send} />}
     </div>
