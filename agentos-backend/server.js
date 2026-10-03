@@ -844,6 +844,14 @@ function cspAllowSnippet(domExpr = '"$DOM"') {
 function componentDomainPrelude(id, port) {
   const { file: caddyFile, reload: caddyReload } = caddyTarget()
   return [
+    // Домен, введённый в диалоге установки. Раньше он ПРОСТО ТЕРЯЛСЯ: прелюдия читала
+    // только файл, а при отсутствии файла выводила домен автоматически. Пользователь
+    // вводил свой, а получал чужой — и узнавал об этом последним, уже увидев неверный
+    // адрес. Читает его только OmniRoute со своим собственным блоком, а на прелюдию
+    // опираются ещё n8n, Coder и Vaultwarden — там домен подставлялся мимо ввода.
+    // Протокол отрезаем на всякий случай: пользователю естественно вставить https://.
+    `DOM_IN="\${COMPONENT_DOMAIN:-}"; DOM_IN="\${DOM_IN#http://}"; DOM_IN="\${DOM_IN#https://}"; DOM_IN="\${DOM_IN%%/*}"`,
+    `if [ -n "$DOM_IN" ]; then printf '%s' "$DOM_IN" > /root/.${id}-domain; echo "[домен] $DOM_IN (из диалога)"; fi`,
     `DOM="$(cat /root/.${id}-domain 2>/dev/null || true)"`,
     // the header holds the Life OS site domain (lifeos.example.com) — use its parent
     `if [ -z "$DOM" ]; then B="$(grep -oP 'base domain:\\s*\\K\\S+' ${caddyFile} 2>/dev/null | head -1)"; case "$B" in *.*.*) B="${'$'}{B#*.}";; esac; [ -n "$B" ] && DOM="${id}.$B"; fi`,
