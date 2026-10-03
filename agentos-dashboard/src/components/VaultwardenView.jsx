@@ -11,6 +11,8 @@ export function VaultwardenView() {
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
+  const [signups, setSignups] = useState(null)   // true — регистрация открыта
+  const [signupsBusy, setSignupsBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -29,6 +31,41 @@ export function VaultwardenView() {
       .catch(() => { if (alive) setErr('сервер недоступен') })
     return () => { alive = false }
   }, [reloadKey])
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/components/vaultwarden/signups')
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (alive && j) setSignups(j.enabled) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [reloadKey])
+
+  // Закрыть регистрацию после регистрации своего аккаунта обязательно: на публичном
+  // домене иначе заводит аккаунт кто угодно.
+  const toggleSignups = async () => {
+    if (signupsBusy || signups === null) return
+    const next = !signups
+    if (next) {
+      const ok = window.confirm('Открыть регистрацию? На публичном домене сможет завести аккаунт кто угодно.')
+      if (!ok) return
+    }
+    setSignupsBusy(true)
+    try {
+      const r = await fetch('/api/components/vaultwarden/signups', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { setErr(j?.error || 'не удалось переключить'); return }
+      setSignups(next)
+      setReloadKey(k => k + 1)
+    } catch {
+      setErr('сервер недоступен')
+    } finally {
+      setSignupsBusy(false)
+    }
+  }
 
   // Служба поднимается не мгновенно — после действия даём пару секунд и перечитываем.
   const serviceAction = async () => {
@@ -93,6 +130,22 @@ export function VaultwardenView() {
             </a>
           )}
         </div>
+
+        {/* Регистрация — одной кнопкой. Пока она открыта, на публичном домене заведёт
+            аккаунт кто угодно; после регистрации своего её надо закрыть. */}
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/60">
+          <span className={`text-[11px] px-2 py-1 rounded-lg ${
+            signups ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
+            {signups === null ? 'неизвестно' : signups ? 'регистрация открыта' : 'регистрация закрыта'}
+          </span>
+          <button
+            onClick={toggleSignups}
+            disabled={signupsBusy || signups === null}
+            title={signups ? 'Закрыть регистрацию' : 'Открыть регистрацию'}
+            className="px-2.5 py-1.5 border border-border rounded-lg text-[12px] hover:bg-bg-card disabled:opacity-50">
+            {signupsBusy ? 'Переключаю…' : signups ? 'Закрыть регистрацию' : 'Открыть регистрацию'}
+          </button>
+        </div>
       </div>
 
       {err && <div className="text-xs text-danger px-1">{err}</div>}
@@ -102,11 +155,8 @@ export function VaultwardenView() {
         <ol className="list-decimal pl-4 space-y-1">
           <li>Открой «Хранилище» и зарегистрируй свой аккаунт.</li>
           <li>
-            Сразу после этого <b className="text-text">закрой регистрацию</b> — на публичном
-            домене иначе заведёт аккаунт кто угодно:
-            <code className="block mt-1 text-[11px] px-2 py-1 rounded bg-bg-card overflow-x-auto whitespace-nowrap">
-              sed -i 's/^SIGNUPS_ALLOWED=.*/SIGNUPS_ALLOWED=false/' /root/.vaultwarden.env &amp;&amp; systemctl restart vaultwarden
-            </code>
+            Потом нажми <b className="text-text">«Закрыть регистрацию»</b> — на публичном домене
+            иначе заведёт аккаунт кто угодно.
           </li>
           <li>
             Админка — <code className="text-[11px]">/admin</code>, токен лежит в

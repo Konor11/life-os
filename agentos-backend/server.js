@@ -2059,6 +2059,39 @@ app.get('/api/components', async (_, res) => res.json({ components: await discov
 // ── Запуск и остановка компонента ──────────────────────────────────────────────
 // Компонент по требованию: пользователь сам решает, когда он работает. Действие
 // требует админа — это запуск и остановка системной службы.
+// ── Регистрация в Vaultwarden одной кнопкой ───────────────────────────────────
+// Закрывать регистрацию после регистрации своего аккаунта обязательно: на публичном
+// домене иначе заводит аккаунт кто угодно. Раньше это была ручная правка env-файла
+// через терминал — забыть можно было легко.
+const VW_ENV = '/root/.vaultwarden.env'
+
+function vaultwardenSignups() {
+  try {
+    const m = readFileSync(VW_ENV, 'utf8').match(/^SIGNUPS_ALLOWED=(true|false)/m)
+    return m ? m[1] === 'true' : null
+  } catch { return null }
+}
+
+app.get('/api/components/vaultwarden/signups', auth.requireAdmin, (_, res) => {
+  res.json({ enabled: vaultwardenSignups(), env: VW_ENV })
+})
+
+app.post('/api/components/vaultwarden/signups', auth.requireAdmin, async (req, res) => {
+  const enabled = (req.body || {}).enabled === true
+  if (!['true', 'false'].includes(String(vaultwardenSignups()))) {
+    return res.status(400).json({ error: 'в env-файле нет строки SIGNUPS_ALLOWED — компонент не установлен?' })
+  }
+  try {
+    let s = readFileSync(VW_ENV, 'utf8')
+    s = s.replace(/^SIGNUPS_ALLOWED=(true|false)/m, `SIGNUPS_ALLOWED=${enabled}`)
+    writeFileSync(VW_ENV, s, { mode: 0o600 })
+    await execS('systemctl restart vaultwarden.service', { shell: '/bin/bash', timeout: 60000 })
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || 'не удалось применить' })
+  }
+  res.json({ ok: true, enabled })
+})
+
 app.post('/api/components/service', auth.requireAdmin, (req, res) => {
   const { id, action } = req.body || {}
   const def = COMPONENTS_DEF.find(c => c.id === id)
