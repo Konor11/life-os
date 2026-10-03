@@ -1699,6 +1699,131 @@ echo "[n8n установлен и запущен]${'$'}{DOM:+ — https://\$DOM
     timeout: 900000,
   },
   {
+    id: 'vaultwarden', name: 'Vaultwarden', needsInstallOptions: true,
+    // Истина — наш собственный юнит, как у n8n и OmniRoute.
+    detect: `test -f /etc/systemd/system/vaultwarden.service`,
+    desc: 'Vaultwarden — менеджер паролей, совместимый с Bitwarden: веб-морда и API на своём домене.',
+    webPort: 8222,
+    service: 'vaultwarden.service',
+    // Компонент по требованию, как OmniRoute: автозапуск выключен, стартует по кнопке.
+    start: `systemctl start vaultwarden.service
+sleep 3
+systemctl is-active vaultwarden.service || true
+exit 0`,
+    stop: `systemctl stop vaultwarden.service
+sleep 1
+systemctl is-active vaultwarden.service || true
+exit 0`,
+    install: `
+set -e
+${componentDomainPrelude('vaultwarden', 8222).join('\n')}
+
+# ── Откуда берём бинарник ────────────────────────────────────────────────────
+# С 2026 года Vaultwarden НЕ публикует отдельных бинарников: в релизе 1.37.3 ассетов
+# нет вообще, а latest/download отдаёт 404. Официальный путь (вики проекта,
+# «Pre-built binaries») — распаковать статический бинарник из официального Alpine-образа.
+# Скрипт docker-image-extract работает БЕЗ демона docker — он ходит в реестр сам.
+VW_TAG="$(curl -fsS --max-time 30 https://api.github.com/repos/dani-garcia/vaultwarden/releases/latest \
+  | python3 -c "import json,sys;print(json.load(sys.stdin)['tag_name'])" 2>/dev/null || true)"
+[ -n "$VW_TAG" ] || VW_TAG=1.37.3
+echo "[версия] $VW_TAG"
+
+INSTALL_DIR=/opt/vaultwarden
+DATA_DIR=/root/vaultwarden-data
+TMPD="$(mktemp -d)"
+trap 'rm -rf "$TMPD"' EXIT
+
+curl -fsSL --max-time 90 -o "$TMPD/die" https://raw.githubusercontent.com/jjlin/docker-image-extract/main/docker-image-extract
+chmod +x "$TMPD/die"
+( cd "$TMPD" && timeout 900 ./die "vaultwarden/server:$VW_TAG-alpine" ) || {
+  echo "[ошибка] не удалось распаковать образ — установка прервана"; exit 1; }
+
+SRC_BIN="$(find "$TMPD" -maxdepth 4 -type f -name vaultwarden | head -1)"
+[ -n "$SRC_BIN" ] || { echo "[ошибка] в образе нет бинарника vaultwarden"; exit 1; }
+
+mkdir -p "$INSTALL_DIR" "$DATA_DIR"
+install -m 0755 "$SRC_BIN" "$INSTALL_DIR/vaultwarden"
+
+# Веб-морда лежит в образе рядом с бинарником и нужна для входа из браузера.
+SRC_VAULT="$(dirname "$SRC_BIN")/web-vault"
+if [ -d "$SRC_VAULT" ]; then
+  rm -rf "$INSTALL_DIR/web-vault"
+  cp -a "$SRC_VAULT" "$INSTALL_DIR/web-vault"
+  echo "[веб-морда] скопирована в $INSTALL_DIR/web-vault"
+else
+  echo "[веб-морда] в образе не найдена — будет использована встроенная"
+fi
+
+# Хранилище паролей: 700. Внутри база и RSA-ключи, читать их никому кроме root не надо.
+chmod 700 "$DATA_DIR"
+
+# Токен админ-панели генерируем САМИ и пишем в файл с правами 600. В лог установки он
+# НЕ попадает: лог показывается в интерфейсе.
+TOK_FILE=/root/.vaultwarden-admin-token
+if [ ! -f "$TOK_FILE" ]; then
+  openssl rand -hex 32 > "$TOK_FILE"
+  chmod 600 "$TOK_FILE"
+fi
+echo "[токен админки] создан в $TOK_FILE (в лог не выводится)"
+
+# Пароль первого пользователя пользователь вводит в диалоге установки.
+ENV_FILE=/root/.vaultwarden.env
+{
+  # Протокол ОБЯЗАТЕЛЕН. Проверено запуском: с голым доменом Vaultwarden не стартует —
+  # «DOMAIN variable needs to contain the protocol (http, https)».
+  echo "DOMAIN=https://$DOM"
+  echo "ROCKET_ADDRESS=127.0.0.1"
+  echo "ROCKET_PORT=8222"
+  echo "WEB_VAULT_FOLDER=$INSTALL_DIR/web-vault"
+  echo "ADMIN_FILE=$TOK_FILE"
+  echo "I_REALLY_WANT_VOLATILE_STORAGE=false"
+  echo "LOG_FILE=$DATA_DIR/vaultwarden.log"
+  # Регистрация открыта, иначе невозможно завести первый аккаунт. Это НЕ связано с паролем
+  # из диалога: у Vaultwarden нет пароля администратора, только токен выше.
+  # После регистрации выключи одной командой — команда напечатана в конце установки.
+  echo "SIGNUPS_ALLOWED=true"
+} > "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+cat > /etc/systemd/system/vaultwarden.service <<UNIT
+[Unit]
+Description=Vaultwarden (менеджер паролей, совместим с Bitwarden)
+After=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=$ENV_FILE
+ExecStart=$INSTALL_DIR/vaultwarden
+Restart=on-failure
+RestartSec=5
+# Запуск от root — по решению владельца сервера, как и остальные компоненты.
+User=root
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+# Автозапуск при старте машины НЕ включаем: компонент работает по требованию.
+systemctl disable vaultwarden.service >/dev/null 2>&1 || true
+systemctl start vaultwarden.service
+sleep 4
+echo "[служба] $(systemctl is-active vaultwarden.service)"
+echo "[данные] $DATA_DIR (не удаляются при удалении компонента)"
+echo "[внимание] Регистрация СЕЙЧАС ОТКРЫТА — на публичном домене зарегистрируется любой."
+echo "[внимание] После того как заведёшь свой аккаунт, закрой её:"
+echo "  sed -i 's/^SIGNUPS_ALLOWED=.*/SIGNUPS_ALLOWED=false/' $ENV_FILE && systemctl restart vaultwarden"`,
+    // Удаление компонента НЕ трогает хранилище: там лежат пароли и ключи.
+    uninstall: `systemctl stop vaultwarden.service 2>/dev/null || true
+systemctl disable vaultwarden.service 2>/dev/null || true
+rm -f /etc/systemd/system/vaultwarden.service
+systemctl daemon-reload
+rm -rf /opt/vaultwarden
+echo '[vaultwarden удалён] ХРАНИЛИЩЕ СОХРАНЕНО: /root/vaultwarden-data — пароли и ключи целы'
+echo '[токен админки] /root/.vaultwarden-admin-token — тоже на месте'`,
+    timeout: 1200000,
+  },
+  {
     id: 'coder', name: 'Coder',
     // see n8n note above: same "inactive"-matches-"active" false positive
     detect: `test -f /etc/systemd/system/coder.service`,
