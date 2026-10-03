@@ -14,10 +14,19 @@ export function VaultwardenView() {
 
   useEffect(() => {
     let alive = true
-    fetch('/api/components/vaultwarden/status')
+    // Именно /api/components: он отдаёт всё нужное разом — installed, running, webUrl,
+    // canControl. Маршрута /api/components/vaultwarden/status НЕ СУЩЕСТВУЕТ (я на него
+    // сначала сослался, и экран показывал «сервер недоступен» при работающем сервисе),
+    // а /api/components/status?id=... не отдаёт webUrl — домен было бы негде взять.
+    fetch('/api/components')
       .then(r => r.json())
-      .then(j => { if (alive) setInfo(j) })
-      .catch(e => { if (alive) setErr('сервер недоступен') })
+      .then(j => {
+        if (!alive) return
+        const c = (j?.components || []).find(x => x.id === 'vaultwarden')
+        if (c) setInfo(c)
+        else setErr('компонент не найден в списке')
+      })
+      .catch(() => { if (alive) setErr('сервер недоступен') })
     return () => { alive = false }
   }, [reloadKey])
 
@@ -40,6 +49,9 @@ export function VaultwardenView() {
     }
   }
 
+  // Пока компонент не установлен, webUrl не вычисляется. Тогда показываем «остановлен»
+  // и просьбу поставить, а не выдуманное «домен не задан».
+  const installed = info?.installed !== false
   const url = info?.webUrl || null
 
   return (
@@ -54,7 +66,8 @@ export function VaultwardenView() {
               Vaultwarden<span className="hidden sm:inline"> — менеджер паролей</span>
             </h3>
             <p className="text-[11px] text-text-muted truncate">
-              {url ? url.replace('https://', '') : 'домен не задан'}
+              {url ? url.replace('https://', '')
+                : installed ? 'домен не задан' : 'не установлен — поставь в разделе «Установка»'}
             </p>
           </div>
         </div>
