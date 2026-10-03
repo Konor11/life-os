@@ -1785,6 +1785,10 @@ ENV_FILE=/root/.vaultwarden.env
   echo "WEB_VAULT_FOLDER=$INSTALL_DIR/web-vault"
   echo "ADMIN_FILE=$TOK_FILE"
   echo "I_REALLY_WANT_VOLATILE_STORAGE=false"
+  # Без DATA_FOLDER Vaultwarden кладёт базу в ./data ОТНОСИТЕЛЬНО рабочего каталога.
+  # У юнита его нет, и база оказывалась в /data — то есть в корне файловой системы,
+  # мимо каталога, который мы обещали пользователю. Перенос ключа и базы здесь.
+  echo "DATA_FOLDER=$DATA_DIR"
   echo "LOG_FILE=$DATA_DIR/vaultwarden.log"
   # Регистрация открыта, иначе невозможно завести первый аккаунт. Это НЕ связано с паролем
   # из диалога: у Vaultwarden нет пароля администратора, только токен выше.
@@ -1801,6 +1805,8 @@ After=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=$ENV_FILE
+# Без рабочего каталога Vaultwarden пишет ./data от корня — база уезжает в /data.
+WorkingDirectory=$DATA_DIR
 ExecStart=$INSTALL_DIR/vaultwarden
 Restart=on-failure
 RestartSec=5
