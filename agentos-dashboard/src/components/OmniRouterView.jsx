@@ -80,8 +80,23 @@ export function OmniRouterView() {
         setErr(j?.error || 'не удалось выполнить действие')
         return
       }
-      // Служба поднимается не мгновенно: даём ей секунды и перечитываем состояние.
-      setTimeout(() => setReloadKey(k => k + 1), 3000)
+      // Пока идёт подъём, опрашиваем состояние и правда: человек должен видеть
+      // «запускается…», а не молчащее «…». Один запрос сюда не годится — он вернётся
+      // уже после того, как служба поднялась, и человек решит, что ничего не произошло.
+      const t0 = Date.now()
+      const tick = async () => {
+        try {
+          const s = await fetch('/api/components/status?id=omniroute', { cache: 'no-store' })
+          if (s.ok) {
+            const j = await s.json()
+            setInfo(j)
+            const done = action === 'start' ? j.running : !j.running && !j.starting
+            if (!done && Date.now() - t0 < 180000) setTimeout(tick, 3000)
+            else setReloadKey(k => k + 1)
+          } else setTimeout(tick, 3000)
+        } catch { setTimeout(tick, 4000) }
+      }
+      setTimeout(tick, 1500)
     } catch (e) {
       setErr('сервер недоступен')
     } finally {
