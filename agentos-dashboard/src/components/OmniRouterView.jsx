@@ -12,6 +12,48 @@ import { EmptyState } from './PanelUX'
 // встроить шлюз (в нём ключи от 350+ провайдеров — защита от кликджекинга не снята).
 // Если Caddy перезалить старым конфигом, кадр снова опустеет — это ожидаемо.
 
+// ── Состояние службы, говоримое человеческим языком ───────────────────────────
+// Раньше было всего два состояния: «работает» и «не отвечает». Второе одинаково
+// выглядело и для службы, которая ещё поднимается, и для остановленной, и для
+// перегруженной. Человек не мог понять: ждать или нажимать ещё раз.
+function stateOf(info) {
+  if (!info) return 'unknown'
+  if (info.starting) return 'starting'
+  if (info.stopping) return 'stopping'
+  if (info.running) return 'ok'
+  if (info.serviceState === 'inactive' || info.serviceState === 'failed') return 'stopped'
+  return 'unreachable'   // служба есть, но порт не отвечает — вот это уже поломка
+}
+function stateLabel(info) {
+  return {
+    starting: 'запускается…',
+    stopping: 'останавливается…',
+    ok: 'работает',
+    stopped: 'остановлен',
+    unreachable: 'не отвечает',
+    unknown: 'проверяю…',
+  }[stateOf(info)]
+}
+function stateTone(info) {
+  return {
+    starting: 'bg-warning/15 text-warning',
+    stopping: 'bg-warning/15 text-warning',
+    ok: 'bg-success/15 text-success',
+    stopped: 'bg-bg-card text-text-muted',
+    unreachable: 'bg-danger/15 text-danger',
+    unknown: 'bg-bg-card text-text-muted',
+  }[stateOf(info)]
+}
+function stateHint(info) {
+  const s = stateOf(info)
+  if (s === 'starting') return 'OmniRoute поднимается 15–30 секунд. Это нормально — просто жди, он сам перейдёт в «работает».'
+  if (s === 'stopping') return 'Служба останавливается.'
+  if (s === 'stopped') return 'Служба остановлена. Нажми «Запустить».'
+  if (s === 'unreachable') return 'Служба запущена, но порт не отвечает. Журнал: journalctl -u omniroute'
+  if (s === 'ok') return 'Служба отвечает.'
+  return ''
+}
+
 export function OmniRouterView() {
   const [url, setUrl] = useState(null)     // null = выясняем, '' = домен не задан
   const [info, setInfo] = useState(null)   // { running, status, version, providers, error }
@@ -47,19 +89,37 @@ export function OmniRouterView() {
     }
   }
 
+  // Состояние спрашиваем повторно, пока служба запускается: OmniRoute поднимается
+  // 15–30 секунд, и раньше всё это время интерфейс писал «не отвечает» — выглядело
+  // как поломка, хотя служба как раз поднималась. Теперь видно «запускается», а по
+  // мере готовности — «работает», само без перезагрузки страницы.
   useEffect(() => {
+    let alive = true
+    let timer = null
+
+    const poll = async () => {
+      try {
+        const r = await fetch('/api/components/status?id=omniroute', { cache: 'no-store' })
+        if (!r.ok) return
+        const j = await r.json()
+        if (!alive) return
+        setInfo(j)
+        if (j.starting || j.stopping) timer = setTimeout(poll, 4000)
+      } catch { /* сеть моргнула — следующий опрос сам поправит */ }
+    }
+
     fetch('/api/components', { cache: 'no-store' })
       .then(r => r.json())
       .then(d => {
+        if (!alive) return
         const c = (d.components || []).find(x => x.id === 'omniroute')
         setUrl(c?.webUrl || '')
         if (!c?.installed) { setErr('not-installed'); return }
-        fetch('/api/components/status?id=omniroute', { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null)
-          .then(j => { if (j) setInfo(j) })
-          .catch(() => {})
+        poll()
       })
       .catch(() => setUrl(''))
+
+    return () => { alive = false; clearTimeout(timer) }
   }, [])
 
   if (err === 'not-installed') {
@@ -97,9 +157,11 @@ export function OmniRouterView() {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {info && (
-            <span className={`text-[11px] px-2 py-1 rounded-lg whitespace-nowrap ${
-              info.running ? 'bg-success/15 text-success' : 'bg-bg-card text-text-muted'}`}>
-              {info.running ? 'работает' : 'не отвечает'}
+            <span
+              title={stateHint(info)}
+              className={`text-[11px] px-2 py-1 rounded-lg whitespace-nowrap ${
+                stateTone(info)}`}>
+              {stateLabel(info)}
             </span>
           )}
           {url && (

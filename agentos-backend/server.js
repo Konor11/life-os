@@ -2174,11 +2174,32 @@ app.get('/api/components/status', async (req, res) => {
     return res.json({ ok: true, running: false, status: null, note: 'у компонента нет собственного CLI' })
   }
   const out = { ok: true, running: false, status: null, version: null, providers: null, error: null }
+
+  // Состояние службы — ПЕРВЫМ делом и отдельно от проверки порта. Иначе во время подъёма
+  // (OmniRoute стартует 15–30 секунд) интерфейс писал «не отвечает», и человек решал,
+  // что всё сломалось. На самом деле служба запускается.
+  if (def.service) {
+    try {
+      const { stdout } = await execS(
+        `systemctl show ${def.service} -p ActiveState -p SubState --value 2>/dev/null || true`,
+        { shell: '/bin/bash', timeout: 20000 })
+      const states = String(stdout || '').trim().split('\n').map(s => s.trim())
+      out.serviceState = states[0] || null
+      out.serviceSubState = states[1] || null
+      out.starting = out.serviceState === 'activating'
+      out.stopping = out.serviceState === 'deactivating'
+    } catch {}
+  }
+
   const port = def.webPort
   if (port) {
     try {
-      const { stdout } = await execS(`curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:${port}/`, { shell: '/bin/bash' })
-      out.running = /^2|^3|^401|^403/.test(String(stdout).trim())
+      // 3 секунды — слишком мало: узел на 590 МБ под нагрузкой отвечает дольше, и
+      // проверка объявляла «не отвечает» живой службе. 12 секунд — честный запас.
+      const { stdout } = await execS(
+        `curl -s -o /dev/null -w '%{http_code}' --max-time 12 http://127.0.0.1:${port}/`,
+        { shell: '/bin/bash', timeout: 20000 })
+      out.running = /^(2|3|401|403)/.test(String(stdout).trim())
     } catch { out.running = false }
   }
   try {
