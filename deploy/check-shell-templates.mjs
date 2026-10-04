@@ -15,6 +15,7 @@
 // Запуск: node deploy/check-shell-templates.mjs
 
 import fs from 'fs'
+import { spawnSync } from 'child_process'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -31,6 +32,19 @@ const jsConsts = new Set([
 
 // Известные вызовы-подстановки вида ${что-то(...)} — это JS, а не переменная bash.
 const callPattern = /^[A-Za-z_$][\w$]*\(.*\)$/
+
+// Обратная кавычка в комментарии внутри install/uninstall закрывает template-литерал и
+// делает ФАЙЛ синтаксически невалидным. Свой сканер тут бессилен: чтобы увидеть такой
+// литерал, его надо сначала разобрать, а он не разбирается. Ответ даёт сам Node —
+// тот же приём сработал бы и на любой другой поломке синтаксиса.
+const syntax = spawnSync(process.execPath, ['--check', serverPath], { encoding: 'utf8' })
+if (syntax.status !== 0) {
+  console.error('\nОШИБКА СИНТАКСИСА server.js — backend не запустится:')
+  console.error(syntax.stderr.split('\n').filter(Boolean).slice(0, 5).map(l => '  ' + l).join('\n'))
+  console.error('\nЧастая причина: неэкранированная обратная кавычка в комментарии внутри')
+  console.error('install/uninstall — она закрывает литерал.')
+  process.exit(1)
+}
 
 let checked = 0
 let broken = 0
@@ -66,7 +80,7 @@ while ((m = literalRe.exec(src)) !== null) {
 
 if (broken) {
   console.error(`\nПровалено подстановок: ${broken} из ${checked} литералов.`)
-  console.error('Экранируй переменные bash как \\${ПЕРЕМЕННАЯ} (и не пиши ${...} в комментариях).')
+  console.error('Экранируй переменные bash как \\${ПЕРЕМЕННАЯ}; не пиши ${...} и обратные кавычки в комментариях.')
   process.exit(1)
 }
 console.log(`Ок: ${checked} shell-литералов, неэкранированных подстановок нет.`)

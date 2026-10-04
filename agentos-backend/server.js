@@ -1652,7 +1652,10 @@ Environment=DATA_DIR=${OMNIROUTE_HOME}
 Environment=NODE_ENV=production
 WorkingDirectory=/root
 ExecStart=\${NODE_BIN} \${BIN_JS} --no-open
-Restart=always
+# Restart=always у компонента «по требованию» противоречит самой идее: остановив шлюз
+# кнопкой, человек ожидает, что он и останется остановленным, а always в принципе может
+# поднять его обратно. on-failure поднимает только при реальном падении.
+Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
