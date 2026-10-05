@@ -254,6 +254,14 @@ export function HarnessView() {
       <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide flex items-center gap-2">
         <Icon name="Wrench" size={14} /> Движки (агенты)
       </h2>
+      {/* Tmux и Zellij раньше попадали сюда как движки — но ими нельзя пользоваться как
+          агентом. Tmux это ТРАНСПОРТ: внутри него живут сессии и вкладки Chat, и вкладки
+          Terminal. Он уже установлен и ставится вместе с системой; сносить его нельзя,
+          иначе пропадут все сессии. Поэтому в списке агентов его нет. */}
+      <p className="text-xs text-text-muted -mt-1">
+        Агенты, с которыми ты общаешься. Транспорт для них (tmux) — служебное, ставится
+        автоматически и в список не входит.
+      </p>
       {harnesses.map(h => (
         <ItemCard key={h.id} item={h} keys={keys} busyId={busyId} busyOp={busyOp}
           logs={logs} onInstall={install} onUninstall={uninstall} onUpdate={update} onKey={sendKey} onSetup={openSetup} />

@@ -667,6 +667,11 @@ for (const a of ORCA_AGENTS) {
   if (existingNames.has(a.name.toLowerCase())) continue  // duplicate name (e.g. claude vs claude-code)
   if (a.category === 'lifeos') continue  // LifeOS profiles are Hermes profiles, not separate engines
   if (a.category === 'infrastructure' && a.isComponent) continue  // n8n/Coder are components
+  // Tmux и Zellij — мультиплексоры, а НЕ агенты. Их нельзя выбрать движком: tmux это
+  // транспорт, внутри которого живут сессии и вкладки Chat, и вкладки Terminal. Раньше эта
+  // категория не была исключена, и в списке движков появлялись «Tmux» и «Zellij» с
+  // кнопкой «Установить» — выглядело так, будто это агенты, которых можно общаться.
+  if (a.category === 'utility') continue
   if (!a.launch?.tui?.cmd) continue  // only engines with TUI command
   
   const harnessDef = {
@@ -729,6 +734,8 @@ async function discoverHarnesses() {
     out.push({
       id: h.id, name: h.name, installed,
       desc: h.desc, provider: h.provider, key: h.key,
+      // Категория нужна интерфейсу, чтобы не смешивать агентов с инфраструктурой.
+      category: h.category || 'engine',
       installCmd: installed ? null : h.install,
       uninstallCmd: h.uninstall || null,
       updateCmd: h.update || null,
