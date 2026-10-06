@@ -2076,7 +2076,7 @@ app.get('/api/components', async (_, res) => res.json({ components: await discov
 // «Служебное» в настройках. Отдаём роль, статус установки и честные отличия.
 app.get('/api/tools', async (_, res) => {
   const tools = []
-  for (const a of AGENT_DEFS.filter(a => a.category === 'utility')) {
+  for (const a of ORCA_AGENTS.filter(a => a.category === 'utility')) {
     let installed = false
     for (const b of (a.detect?.bin || [])) {
       if (await binExists(b)) { installed = true; break }
