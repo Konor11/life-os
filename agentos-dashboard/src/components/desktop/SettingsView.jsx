@@ -628,9 +628,40 @@ function DesktopDownloadsGroup() {
 // показываются в списке движков; здесь — их честное место и чем они отличаются.
 function ToolsSection() {
   const [tools, setTools] = useState(null)
+  const [transport, setTransport] = useState(null)   // null = ещё читаю
+  const [herdrInstalled, setHerdrInstalled] = useState(true)
+  const [tErr, setTErr] = useState('')
   useEffect(() => {
     fetch('/api/tools').then(r => r.json()).then(d => setTools(d.tools || [])).catch(() => setTools([]))
+    fetch('/api/transport').then(r => r.json()).then(d => { setTransport(d.transport); setHerdrInstalled(!!d.herdrInstalled) }).catch(() => setTransport('tmux'))
   }, [])
+  const [toolBusy, setToolBusy] = useState(null)
+  const [toolMsg, setToolMsg] = useState(null)
+  const toolOp = async (id, op) => {
+    setToolBusy(id); setToolMsg(null)
+    try {
+      const r = await fetch(`/api/tools/${op}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+      const d = await r.json().catch(() => ({}))
+      setToolMsg({ id, text: r.ok ? (op === 'install' ? 'готово' : 'удалено') : (d.error || 'ошибка') })
+      const fresh = await fetch('/api/tools').then(x => x.json()).catch(() => null)
+      if (fresh) setTools(fresh.tools || [])
+      if (id === 'herdr') setHerdrInstalled((fresh?.tools || []).find(x => x.id === 'herdr')?.installed ?? herdrInstalled)
+    } catch { setToolMsg({ id, text: 'ошибка сети' }) }
+    setToolBusy(null)
+  }
+  const pickTransport = async (t) => {
+    setTErr('')
+    const prev = transport
+    setTransport(t)
+    try {
+      const r = await fetch('/api/transport', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ transport: t }) })
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}))
+        setTErr(d.error || 'не сохранилось')
+        setTransport(prev)
+      }
+    } catch { setTErr('не сохранилось'); setTransport(prev) }
+  }
   if (!tools) return <div className="text-sm text-text-muted">Читаю служебные утилиты…</div>
   if (!tools.length) return <div className="text-sm text-text-muted">Служебных утилит нет.</div>
   return (
@@ -640,6 +671,25 @@ function ToolsSection() {
         сессии живыми: отвечают за то, чтобы вкладка Chat и вкладка Terminal не умирали при
         обрыве связи.
       </p>
+      <Group title="Транспорт сессий">
+        <div className="space-y-2">
+          {['tmux', 'herdr'].map(t => (
+            <button key={t} onClick={() => pickTransport(t)} disabled={!herdrInstalled && t === 'herdr'}
+              className={`w-full text-left rounded-xl border p-3 transition ${transport === t ? 'border-accent bg-accent/10' : 'border-border bg-surface hover:bg-surface-hover'} ${!herdrInstalled && t === 'herdr' ? 'opacity-40' : ''}`}>
+              <div className="font-semibold">{t === 'tmux' ? 'tmux' : 'herdr'} {transport === t && <span className="text-xs text-accent">· выбран</span>}</div>
+              <div className="text-xs text-text-muted">
+                {t === 'tmux'
+                  ? 'Классика. Всё отлажено, скриптуется идеально.'
+                  : herdrInstalled
+                    ? 'Молодой мультиплексор с socket API и статусами агентов. Сессии, открытые в tmux, остаются в tmux.'
+                    : 'не установлен — кнопка установки ниже'}
+              </div>
+            </button>
+          ))}
+          {tErr && <p className="text-xs text-danger">{tErr}</p>}
+          <p className="text-xs text-text-muted">Выбор действует на новые сессии агентов; существующие продолжают жить в своём транспорте.</p>
+        </div>
+      </Group>
       {tools.map(t => (
         <div key={t.id} className="rounded-xl border border-border bg-surface p-4 space-y-2">
           <div className="flex items-center gap-2">
@@ -654,6 +704,23 @@ function ToolsSection() {
           </div>
           <p className="text-sm">{t.role || t.description}</p>
           {t.description && <p className="text-xs text-text-muted">{t.description}</p>}
+          {(t.installCmd || t.uninstallCmd) && (
+            <div className="pt-1">
+              {!t.installed && t.installCmd && (
+                <button onClick={() => toolOp(t.id, 'install')} disabled={toolBusy === t.id}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-accent/15 text-accent hover:bg-accent/25 disabled:opacity-40">
+                  {toolBusy === t.id ? 'устанавливаю…' : 'Установить'}
+                </button>
+              )}
+              {t.installed && t.uninstallCmd && (
+                <button onClick={() => toolOp(t.id, 'uninstall')} disabled={toolBusy === t.id}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-danger/10 text-danger hover:bg-danger/20 disabled:opacity-40">
+                  {toolBusy === t.id ? 'удаляю…' : 'Удалить'}
+                </button>
+              )}
+              {toolMsg?.id === t.id && <span className="text-xs text-text-muted ml-2">{toolMsg.text}</span>}
+            </div>
+          )}
         </div>
       ))}
       <p className="text-xs text-text-muted">

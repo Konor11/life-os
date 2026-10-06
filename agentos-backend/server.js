@@ -9,6 +9,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
 import { attachTuiServer, sessionSnapshot, closeSession } from './tui-ws.js'
+import { resetTransportCache } from './herdr-transport.js'
 import { attachShellWss, shellSessions, killShellSession, sandboxRoots, DEFAULT_CWD } from './shell-ws.js'
 import { listProcesses, killProcess, killProcessForced } from './procs.js'
 import * as auth from './auth.js'
@@ -2074,6 +2075,29 @@ app.get('/api/components', async (_, res) => res.json({ components: await discov
 
 // Служебные утилиты (tmux, zellij): не агенты и не компоненты — отдельный раздел
 // «Служебное» в настройках. Отдаём роль, статус установки и честные отличия.
+// Транспорт сессий агентов: tmux (по умолчанию) | herdr. Значение для НОВЫХ сессий;
+// живые сессии остаются в своём мультиплексоре — перенос невозможен.
+const TRANSPORT_FILE = '/root/.lifeos/transport.json'
+app.get('/api/transport', (_, res) => {
+  let transport = 'tmux'
+  try {
+    const cfg = JSON.parse(readFileSync(TRANSPORT_FILE, 'utf8'))
+    if (cfg.transport === 'herdr' || cfg.transport === 'tmux') transport = cfg.transport
+  } catch { /* нет файла — tmux */ }
+  res.json({ transport, herdrInstalled: existsSync('/root/.local/bin/herdr') })
+})
+app.put('/api/transport', async (req, res) => {
+  const t = (req.body || {}).transport
+  if (t !== 'herdr' && t !== 'tmux') return res.status(400).json({ error: 'transport: tmux | herdr' })
+  if (t === 'herdr' && !existsSync('/root/.local/bin/herdr')) {
+    return res.status(409).json({ error: 'herdr не установлен — поставь его в «Служебном»' })
+  }
+  try { mkdirSync(path.dirname(TRANSPORT_FILE), { recursive: true }) } catch {}
+  writeFileSync(TRANSPORT_FILE, JSON.stringify({ transport: t }, null, 2) + '\n')
+  resetTransportCache()
+  res.json({ ok: true, transport: t })
+})
+
 app.get('/api/tools', async (_, res) => {
   const tools = []
   for (const a of ORCA_AGENTS.filter(a => a.category === 'utility')) {
@@ -2085,9 +2109,37 @@ app.get('/api/tools', async (_, res) => {
       id: a.id, name: a.name, description: a.description, role: a.role || null,
       noUninstall: !!a.noUninstall, installed,
       installCmd: a.detect?.install || null,
+      uninstallCmd: installed && !a.noUninstall ? (a.uninstall || null) : null,
     })
   }
   res.json({ tools })
+})
+
+// Установка/удаление служебной утилиты по её же команде из agent-definitions.json.
+// Только администратор: это shell-команды с сервера.
+app.post('/api/tools/install', async (req, res) => {
+  const id = (req.body || {}).id
+  const a = ORCA_AGENTS.find(x => x.id === id && x.category === 'utility')
+  if (!a || !a.detect?.install) return res.status(400).json({ error: 'неизвестная утилита' })
+  try {
+    const { stdout } = await execP('/bin/bash', ['-c', a.detect.install], { timeout: 900000, maxBuffer: 8 * 1024 * 1024 })
+    res.json({ ok: true, detail: (stdout || '').trim().split('\n').slice(-3).join(' | ') })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.stderr?.slice(-300) || e.message })
+  }
+})
+app.post('/api/tools/uninstall', async (req, res) => {
+  const id = (req.body || {}).id
+  const a = ORCA_AGENTS.find(x => x.id === id && x.category === 'utility')
+  if (!a) return res.status(400).json({ error: 'неизвестная утилита' })
+  if (a.noUninstall) return res.status(409).json({ error: 'удаление запрещено: утилита держит живые сессии' })
+  if (!a.uninstall) return res.status(400).json({ error: 'команда удаления не задана' })
+  try {
+    await execP('/bin/bash', ['-c', a.uninstall], { timeout: 120000, maxBuffer: 8 * 1024 * 1024 })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.stderr?.slice(-300) || e.message })
+  }
 })
 
 // ── Запуск и остановка компонента ──────────────────────────────────────────────

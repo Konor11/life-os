@@ -837,5 +837,28 @@
     "/usr/local/bin/hermes"
    ]
   }
+ },
+ {
+  "id": "herdr",
+  "name": "Herdr",
+  "provider": "herdr.dev",
+  "description": "Terminal workspace manager for AI coding agents.",
+  "keys": [],
+  "category": "utility",
+  "role": "Мультиплексор с socket API и статусами агентов (занят / ждёт тебя / закончил). Может стать транспортом сессий Life OS вместо tmux — выбор в этом разделе.",
+  "launch": {
+   "tui": {
+    "cmd": "herdr",
+    "args": []
+   },
+   "web": null
+  },
+  "detect": {
+   "bin": [
+    "herdr"
+   ],
+   "install": "curl -fsSL https://herdr.dev/install.sh | sh"
+  },
+  "uninstall": "rm -f /root/.local/bin/herdr"
  }
 ]

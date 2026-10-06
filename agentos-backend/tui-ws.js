@@ -6,6 +6,12 @@ import url from 'url'
 import { promisify } from 'util'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { wsAllowed } from './auth.js'
+import { currentTransport, herdrBin, herdrSessionName, ensureSession, runEngineInPane,
+  stopSession as herdrStop, listSessions as herdrList, herdrSessionUp } from './herdr-transport.js'
+
+async function herdrSessionUpSafe(name) {
+  try { return !!(await herdrSessionUp(name)).up } catch { return false }
+}
 
 const execS = promisify(exec)
 const HOME_BINS = ['/root/.opencode/bin', '/root/.codex/bin', '/root/.claude/local/bin',
@@ -237,8 +243,9 @@ function writeToPty(pty, data) {
 
 function killSession(s) {
   if (s.timer) { clearTimeout(s.timer); s.timer = null }
-  try { s.pty.kill() } catch {}
+  try { s.pty && s.pty.kill() } catch {}
   if (s.tmux) tmuxRun(`kill-session -t ${s.tmux} 2>/dev/null`)
+  if (s.hdr) herdrStop(s.hdr).catch(() => {})
 }
 
 // Ink-интерфейсы перерисовывают кадр целиком по SIGWINCH. При переподключении клиент
@@ -317,6 +324,16 @@ export function markShellAttached(name, on) {
 }
 function shellAttached(name) { return shellClients.has(name) }
 
+// herdr-имя `lifeos-<engine>[-profile]` обратно в {engine, profile}.
+function parseHerdrName(hname) {
+  const body = hname.replace(/^lifeos-/, '')
+  for (const e of Object.keys(ENGINES)) {
+    if (body === e) return { engine: e, profile: 'default' }
+    if (body.startsWith(`${e}-`)) return { engine: e, profile: body.slice(e.length + 1) }
+  }
+  return { engine: body, profile: 'default' }
+}
+
 export async function sessionSnapshot() {
   const out = []
   const now = Date.now()
@@ -370,6 +387,30 @@ export async function sessionSnapshot() {
     console.error('[tui] не удалось опросить tmux для снимка сессий:', e?.message || e)
   }
 
+  // 1.5) сессии herdr (второй транспорт): движок живёт в herdr-сессии lifeos-*
+  try {
+    const herdrNames = await herdrList()
+    for (const hname of herdrNames) {
+      const parsed = parseHerdrName(hname)
+      const mem = sessions.get(`${parsed.engine}:${parsed.profile}`)
+      if (out.some(x => x.key === `${parsed.engine}:${parsed.profile}`)) continue
+      out.push({
+        key: `${parsed.engine}:${parsed.profile}`,
+        hdr: hname,
+        engine: parsed.engine,
+        profile: parsed.profile,
+        attached: !!(mem && mem.ws && mem.ws.readyState === 1),
+        idleMs: mem && mem.lastDataAt ? now - mem.lastDataAt : null,
+        since: mem?.startedAt || null,
+        ageMs: mem?.startedAt ? now - mem.startedAt : null,
+        kind: 'agent',
+        orphan: orphanReason(parsed),
+      })
+    }
+  } catch (e) {
+    console.error('[tui] не удалось опросить herdr для снимка сессий:', e?.message || e)
+  }
+
   // 2) сессии, которые есть в памяти, но по какой-то причине не видны в tmux (гонка при старте)
   for (const [key, s] of sessions) {
     if (out.some(x => x.key === key)) continue
@@ -396,6 +437,14 @@ export async function closeSession(tmuxName) {
   if (!/^[A-Za-z0-9_-]{1,60}$/.test(name) || !name.startsWith('lifeos-') || name === '__keeper') {
     return { ok: false, error: 'некорректное имя сессии' }
   }
+  // herdr-сессии носят те же lifeos-* имена: если в herdr такая живёт — гасим её.
+  try {
+    const herdrNames = await herdrList()
+    if (herdrNames.includes(name)) {
+      const r2 = await herdrStop(name)
+      return r2.ok ? { ok: true } : { ok: false, error: r2.error || 'не удалось закрыть herdr-сессию' }
+    }
+  } catch { /* herdr нет — путь ниже (tmux) */ }
   const r = await tmuxRun(`kill-session -t ${name} 2>/dev/null`)
   return r && r.ok ? { ok: true } : { ok: false, error: 'не удалось закрыть сессию' }
 }
@@ -462,7 +511,67 @@ export function attachTuiServer(app, server) {
     delete ptyEnv.HERMES_TUI_GATEWAY_URL
     delete ptyEnv.HERMES_TUI_SIDECAR_URL
 
-    if (tmuxPath) {
+    // Транспорт сессии: herdr — только если выбран в настройках (или новая сессия при
+    // переключении) и herdr реально установлен. Сессия, созданная в tmux, продолжает жить
+    // в tmux: перенос живой сессии между мультиплексорами невозможен, движок остаётся там,
+    // где его запустили.
+    const herdrMode = (s && s.hdr) || (currentTransport() === 'herdr' && !!herdrBin() && !(s && s.tmux))
+
+    if (herdrMode) {
+      syncOpencodeTheme(u.query.theme)
+      const hname = (s && s.hdr) || herdrSessionName(engine, profile)
+      const up = await ensureSession(hname, { cols: qcols, rows: qrows })
+      if (!up.ok) {
+        ws.send(JSON.stringify({ type: 'exit', code: 1, error: `herdr: ${up.error}` }))
+        ws.close()
+        return
+      }
+      // Движок запускается в панель ОДИН раз за жизнь записи сессии: при переподключении
+      // панель уже живёт со своим содержимым, повторный pane run задублировал бы агент.
+      if (!s || !s.hdrRan) {
+        // build() бросается с понятной причиной, если движок не установлен — но только
+        // когда мы реально собираемся его запускать; при переподключении панель уже живёт.
+        let built
+        try {
+          built = eng.build(profile)
+        } catch (e) {
+          ws.send(JSON.stringify({ type: 'exit', code: 1, error: e?.message || String(e) }))
+          ws.close()
+          return
+        }
+        const run = await runEngineInPane(hname, [built.cmd, ...built.args], {
+          env: {
+            HERMES_PTY_HOST: 'dashboard',
+            HERMES_TUI_THEME: hermesTheme,
+            PATH: ptyEnv.PATH,
+            ...(ptyEnv.OPENROUTER_API_KEY ? { OPENROUTER_API_KEY: ptyEnv.OPENROUTER_API_KEY } : {}),
+          },
+          cwd: built.cwd || '/root',
+        })
+        if (!run.ok) {
+          ws.send(JSON.stringify({ type: 'exit', code: 1, error: `herdr: ${run.error}` }))
+          ws.close()
+          return
+        }
+      }
+      let pty
+      try {
+        pty = spawn(herdrBin(), ['session', 'attach', hname],
+          { name: 'xterm-256color', cols: qcols, rows: qrows, cwd: '/root', env: ptyEnv })
+      } catch (e) {
+        console.error(`[tui] herdr attach failed engine=${engine}: ${e.message}`)
+        ws.send(JSON.stringify({ type: 'exit', code: 1, error: e.message }))
+        ws.close()
+        return
+      }
+      if (!s) { s = { engine, profile, buffer: [], timer: null, ws: null } }
+      if (s.timer) { clearTimeout(s.timer); s.timer = null }
+      s.pty = pty; s.ws = ws; s.hdr = hname; s.hdrRan = true; s.tmux = null; s.buffer = []
+      s.startedAt = Date.now()
+      sessions.set(key, s)
+      active.set(ws, s)
+      console.log(`[tui] herdr attach h=${hname} ${qcols}x${qrows}`)
+    } else if (tmuxPath) {
       // Переподключение к живой сессии и запуск новой — одна и та же команда `new-session -A`.
       // `destroy-unattached off` в конфиге означает, что отключение клиента сессию не убивает.
       let built
@@ -573,8 +682,18 @@ export function attachTuiServer(app, server) {
       }
     })
     pty.onExit(async ({ exitCode }) => {
-      // С tmux выход клиента ≠ выход агента: клиент отключается, а сессия с движком продолжает
-      // жить — в этом весь смысл. Приложение действительно закончилось, только если сессии нет.
+      // С tmux и herdr выход клиента ≠ выход агента: клиент отключается, а сессия с движком
+      // продолжает жить — в этом весь смысл. Приложение закончилось, только если сессии нет.
+      if (s.hdr) {
+        const up = await herdrSessionUpSafe(s.hdr)
+        if (up) {
+          if (s.pty === pty) s.pty = null
+          if (s.ws === ws) s.ws = null
+          active.delete(ws)
+          console.log(`[tui] herdr client detached h=${s.hdr} (сессия жива)`)
+          return
+        }
+      }
       if (s.tmux && await tmuxAlive(s.tmux)) {
         if (s.pty === pty) s.pty = null
         if (s.ws === ws) s.ws = null
@@ -607,6 +726,7 @@ export function attachTuiServer(app, server) {
           // иначе сбрасывается только из консоли: убиваем сессию (её клиент выйдет сам), забываем
           // запись и просим панель подключиться заново.
           console.log(`[tui] restart requested engine=${engine} profile=${profile}`)
+          if (s.hdr) await herdrStop(s.hdr)
           if (s.tmux) await tmuxRun(`kill-session -t ${s.tmux} 2>/dev/null`)
           if (s.timer) { clearTimeout(s.timer); s.timer = null }
           sessions.delete(key)
@@ -628,8 +748,8 @@ export function attachTuiServer(app, server) {
     ws.on('close', () => {
       if (active.get(ws) === s) active.delete(ws)
       if (s.ws === ws) s.ws = null
-      if (s.tmux) {
-        // Гасим ТОЛЬКО клиента: агент в tmux продолжает работать. Саму сессию закрываем по
+      if (s.tmux || s.hdr) {
+        // Гасим ТОЛЬКО клиента: агент в tmux/herdr продолжает работать. Саму сессию закрываем по
         // длинному таймауту (по умолчанию 12 ч), чтобы брошенные сессии не копились вечно.
         try { pty.kill() } catch {}
         if (!s.timer) {
