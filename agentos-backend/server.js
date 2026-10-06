@@ -2079,7 +2079,7 @@ app.get('/api/tools', async (_, res) => {
   for (const a of ORCA_AGENTS.filter(a => a.category === 'utility')) {
     let installed = false
     for (const b of (a.detect?.bin || [])) {
-      if (await binExists(b)) { installed = true; break }
+      if (await binExists([b])) { installed = true; break }
     }
     tools.push({
       id: a.id, name: a.name, description: a.description, role: a.role || null,
