@@ -18,6 +18,7 @@ const SECTIONS = [
   { id: 'look', label: 'Внешний вид', icon: 'Sun' },
   { id: 'engines', label: 'Движки', icon: 'Terminal' },
   { id: 'security', label: 'Безопасность', icon: 'Key' },
+  { id: 'tools', label: 'Служебное', icon: 'Wrench' },
   { id: 'system', label: 'Система', icon: 'Settings' },
   { id: 'data', label: 'Данные', icon: 'Folder' },
   { id: 'about', label: 'О панели', icon: 'Brain' },
@@ -67,6 +68,7 @@ export function SettingsView({ theme, onToggleTheme, themeState, onSetThemeMode,
           {section === 'look' && <LookSection theme={theme} onToggleTheme={onToggleTheme}
                        themeState={themeState} onSetThemeMode={onSetThemeMode} onSetPalette={onSetPalette} />}
           {section === 'engines' && <EnginesSection harnesses={harnesses} />}
+          {section === 'tools' && <ToolsSection />}
           {section === 'security' && <SecuritySection />}
           {section === 'system' && <SystemSection status={status} />}
           {section === 'data' && <DataSection status={status} components={components} />}
@@ -616,6 +618,52 @@ function DesktopDownloadsGroup() {
         </div>
       )}
     </Group>
+  )
+}
+
+// ---------------------------------------------------------------- служебное ----
+
+// Tmux и Zellij — мультиплексоры терминала. Это НЕ агенты: им нельзя написать,
+// они ничего не решают. Их работа — держать сессии живыми. С 2026-09-29 они не
+// показываются в списке движков; здесь — их честное место и чем они отличаются.
+function ToolsSection() {
+  const [tools, setTools] = useState(null)
+  useEffect(() => {
+    fetch('/api/tools').then(r => r.json()).then(d => setTools(d.tools || [])).catch(() => setTools([]))
+  }, [])
+  if (!tools) return <div className="text-sm text-text-muted">Читаю служебные утилиты…</div>
+  if (!tools.length) return <div className="text-sm text-text-muted">Служебных утилит нет.</div>
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <p className="text-sm text-text-muted">
+        Это не агенты — им нельзя написать и ничего нельзя поручить. Они держат терминальные
+        сессии живыми: отвечают за то, чтобы вкладка Chat и вкладка Terminal не умирали при
+        обрыве связи.
+      </p>
+      {tools.map(t => (
+        <div key={t.id} className="rounded-xl border border-border bg-surface p-4 space-y-2">
+          <div className="flex items-center gap-2">
+            <Icon name="Wrench" size={15} />
+            <span className="font-semibold">{t.name}</span>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${t.installed ? 'bg-success/15 text-success' : 'bg-surface-hover text-text-muted'}`}>
+              {t.installed ? 'установлен' : 'не установлен'}
+            </span>
+            {t.noUninstall && t.installed && (
+              <span className="text-xs text-text-muted">· удалять нельзя — держит все сессии</span>
+            )}
+          </div>
+          <p className="text-sm">{t.role || t.description}</p>
+          {t.description && <p className="text-xs text-text-muted">{t.description}</p>}
+        </div>
+      ))}
+      <p className="text-xs text-text-muted">
+        Чем отличаются: tmux — старый и предельно простой стандарт (2007), меньше мегабайта,
+        про него написано всё. Zellij — современный (2020, Rust): подсказки клавиш прямо на
+        экране, плавающие окна, готовые раскладки, но тяжелее и экосистема меньше. Life OS
+        работает через tmux; Zellij можно поставить попробовать, транспортом сессий он пока
+        не становится.
+      </p>
+    </div>
   )
 }
 

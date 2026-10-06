@@ -2072,6 +2072,24 @@ app.post('/api/data/import', async (req, res) => {
 
 app.get('/api/components', async (_, res) => res.json({ components: await discoverComponents() }))
 
+// Служебные утилиты (tmux, zellij): не агенты и не компоненты — отдельный раздел
+// «Служебное» в настройках. Отдаём роль, статус установки и честные отличия.
+app.get('/api/tools', async (_, res) => {
+  const tools = []
+  for (const a of AGENT_DEFS.filter(a => a.category === 'utility')) {
+    let installed = false
+    for (const b of (a.detect?.bin || [])) {
+      if (await binExists(b)) { installed = true; break }
+    }
+    tools.push({
+      id: a.id, name: a.name, description: a.description, role: a.role || null,
+      noUninstall: !!a.noUninstall, installed,
+      installCmd: a.detect?.install || null,
+    })
+  }
+  res.json({ tools })
+})
+
 // ── Запуск и остановка компонента ──────────────────────────────────────────────
 // Компонент по требованию: пользователь сам решает, когда он работает. Действие
 // требует админа — это запуск и остановка системной службы.
