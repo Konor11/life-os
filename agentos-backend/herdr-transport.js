@@ -107,8 +107,11 @@ export async function runEngineInPane(name, cmdArgs, { env = {}, cwd = '/root' }
   const panes = (await herdrSessionUp(name)).panes || []
   const pane = panes.find((p) => p.focused) || panes[0]
   if (!pane) return { ok: false, error: 'в сессии herdr нет панелей' }
+  // herdr запускает движок через shell панели, а shell ОТОбражает введённую строку —
+  // пользователь видел простыню `PATH=... hermes --tui` при каждом старте. `clear` сразу
+  // после ввода стирает эхо команды, движок начинается с чистого экрана (как в tmux).
   const envPrefix = Object.entries(env).map(([k, v]) => `${k}=${shellQuote(String(v))}`).join(' ')
-  const line = `cd ${shellQuote(cwd)} && ${envPrefix ? `${envPrefix} ` : ''}${cmdArgs.map(shellQuote).join(' ')}`
+  const line = `cd ${shellQuote(cwd)} && clear; ${envPrefix ? `${envPrefix} ` : ''}${cmdArgs.map(shellQuote).join(' ')}`
   const r = await herdrCli(['--session', name, 'pane', 'run', pane.pane_id, line])
   return r.ok ? { ok: true, pane: pane.pane_id } : { ok: false, error: r.err || r.out || 'pane run не удался' }
 }
