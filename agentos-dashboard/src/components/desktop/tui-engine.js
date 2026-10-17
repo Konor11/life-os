@@ -63,10 +63,51 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
       term.unicode.activeVersion = '11'
     }).catch(() => {})
   } catch {}
+  // --- Аддоны. Грузим динамически и по одному: если какой-то не поднялся (нет GPU, старый
+  // браузер), терминал обязан работать дальше — аддон не критичен для самого рендера.
+  let search = null, serialize = null, webgl = null
+  // Поиск по выводу (Ctrl+F в UI). Полезно: в TUI много текста, искать нечем.
+  try {
+    import('@xterm/addon-search').then(({ SearchAddon }) => {
+      search = new SearchAddon(); term.loadAddon(search)
+    }).catch(() => {})
+  } catch {}
+  // Сериализация буфера в VT-поток: пригодится, чтобы отрисовать экран заново после
+  // переподключения (вместо сырогого реплея хвоста, который рвёт кадр).
+  try {
+    import('@xterm/addon-serialize').then(({ SerializeAddon }) => {
+      serialize = new SerializeAddon(); term.loadAddon(serialize)
+    }).catch(() => {})
+  } catch {}
+  // Кликабельные ссылки: в выводе агентов много URL.
+  try {
+    import('@xterm/addon-web-links').then(({ WebLinksAddon }) => {
+      term.loadAddon(new WebLinksAddon())
+    }).catch(() => {})
+  } catch {}
   term.open(el)
   el.style.background = theme.background
+  // WebGL-рендерер: ускоряет отрисовку крупных объёмов (TUI перерисовывает кадр целиком).
+  // ВАЖНО: официального WebGPU-рендера у xterm.js НЕТ — WebGL2 и есть ускоренный путь.
+  // Грузим ПОСЛЕ open() — иначе не подменит дефолтный DOM-рендер. При потере WebGL-контекста
+  // (OOM, сон) — отпускаем аддон, xterm сам падает на DOM-рендер, терминал живёт дальше.
+  try {
+    import('@xterm/addon-webgl').then(({ WebglAddon }) => {
+      try {
+        webgl = new WebglAddon()
+        webgl.onContextLoss(() => { try { webgl.dispose() } catch {} ; webgl = null })
+        term.loadAddon(webgl)
+      } catch { /* нет GPU — остаёмся на DOM-рендере */ }
+    }).catch(() => {})
+  } catch {}
   term.whenReady = (cb) => { try { cb() } catch {} }
-  return { term, fit, kind: 'xterm' }
+  return {
+    term, fit, kind: 'xterm',
+    // наружу — чтобы UI мог дёрнуть поиск/сериализацию, не зная про аддоны
+    getSearch: () => search,
+    getSerialize: () => serialize,
+    hasWebgl: () => !!webgl,
+  }
 }
 
 function ghosttyEngine(args) {
