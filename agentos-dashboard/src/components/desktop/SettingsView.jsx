@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icons'
 import { ALL_PALETTES } from '../../lib/themes'
 import { effectiveMode } from '../../lib/theme'
-import { preferredEngine, setPreferredEngine } from './tui-engine'
+import { preferredEngine, setPreferredEngine, lastFallbackReason, clearFallback } from './tui-engine'
 import { desktopInfo, setAutostart as setAutostartNative } from '../../lib/desktop'
 import { Mascot } from '../Mascot'
 import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanelEngines'
@@ -632,6 +632,9 @@ function ToolsSection() {
   // Рендер терминала Chat: ghostty-web (WebAssembly) или xterm.js. Движок создаётся один раз
   // при подключении вкладки Chat, поэтому смена требует перезагрузки страницы.
   const [termEngine, setTermEngine] = useState(() => preferredEngine())
+  // Если xterm включился АВАРИЙНО (ghostty не поднялся) — показываем причину, иначе это
+  // неотличимо от сознательного выбора.
+  const [fallbackWhy, setFallbackWhy] = useState(() => lastFallbackReason())
   const [transport, setTransport] = useState(null)   // null = ещё читаю
   const [herdrInstalled, setHerdrInstalled] = useState(true)
   const [tErr, setTErr] = useState('')
@@ -685,6 +688,8 @@ function ToolsSection() {
                 <span className="px-2 py-0.5 rounded text-xs bg-accent text-white">активен</span>
               ) : (
                 <button onClick={() => {
+                  clearFallback()
+                  setFallbackWhy('')
                   setPreferredEngine(o.id)
                   setTermEngine(o.id)
                   setTimeout(() => { try { window.location.reload() } catch {} }, 350)
@@ -695,6 +700,24 @@ function ToolsSection() {
               )}
             </div>
           ))}
+          {fallbackWhy && termEngine === 'xterm' && (
+            <div className="rounded-md border border-danger/40 bg-danger/10 p-2.5">
+              <p className="text-xs text-danger">
+                ghostty-web не поднялся и сработал аварийный переход на xterm.js.
+                Причина: <span className="font-mono">{fallbackWhy}</span>
+              </p>
+              <button onClick={() => {
+                clearFallback()
+                setFallbackWhy('')
+                setPreferredEngine('ghostty')
+                setTermEngine('ghostty')
+                setTimeout(() => { try { window.location.reload() } catch {} }, 350)
+              }}
+                className="mt-2 px-2 py-0.5 rounded text-xs bg-surface-hover text-text-muted hover:text-text transition-colors">
+                попробовать снова ghostty
+              </button>
+            </div>
+          )}
         </div>
       </Group>
       <p className="text-sm text-text-muted">

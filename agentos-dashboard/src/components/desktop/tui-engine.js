@@ -23,6 +23,17 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 
 export const TERM_KEY = 'lifeos.chat.term'
+// Причина последнего аварийного перехода на xterm. Без неё «активен xterm» выглядит как
+// настройка, хотя на самом деле ghostty просто не поднялся и надо знать, почему.
+export const FALLBACK_KEY = 'lifeos.chat.term.fallback'
+
+export function lastFallbackReason() {
+  try { return window.localStorage.getItem(FALLBACK_KEY) || '' } catch { return '' }
+}
+
+export function clearFallback() {
+  try { window.localStorage.removeItem(FALLBACK_KEY) } catch {}
+}
 
 export function preferredEngine() {
   try {
@@ -260,7 +271,9 @@ export function createTuiEngine(args) {
     ...args,
     onFallback: (why) => {
       // ghostty не поднялся — сообщаем и работаем на xterm.js: терминал обязан быть живым.
+      // Причину запоминаем отдельно: иначе «активен xterm» неотличим от сознательного выбора.
       try { console.warn('[tui] ghostty недоступен, переходим на xterm.js:', why) } catch {}
+      try { window.localStorage.setItem(FALLBACK_KEY, String(why || 'причина неизвестна').slice(0, 300)) } catch {}
       setPreferredEngine('xterm')
       try { args.el.innerHTML = '' } catch {}
       const fallback = xtermEngine(args)
