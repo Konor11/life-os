@@ -99,8 +99,17 @@ function ghosttyEngine(args) {
     try { renderer.render(t, full) } catch {}
     try { t.markClean() } catch {}
   }
-  // Размер сетки считаем по контейнеру и метрикам шрифта: у ghostty нет FitAddon, как у xterm.js.
+  // Размер сетки считаем по контейнеру и метрикам ЯЧЕЙКИ. Метрику берём у САМОГО рендерера
+  // (getMetrics), а не измеряем шрифт сами: measureText даёт 6x11 при кегле 11, а рендерер
+  // рисует ячейку 7x12 — сетка считалась шире, canvas вылезал за контейнер (+52px по ширине)
+  // и картинка выглядела раздутой. Своё измерение оставляем только до создания рендерера.
   const measureCell = () => {
+    if (renderer) {
+      try {
+        const m = renderer.getMetrics()
+        if (m && m.width > 0 && m.height > 0) return { w: m.width, h: m.height }
+      } catch {}
+    }
     const c = document.createElement('canvas')
     const g = c.getContext('2d')
     g.font = fontSize + 'px monospace'
