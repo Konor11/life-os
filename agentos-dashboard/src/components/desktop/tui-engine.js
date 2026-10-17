@@ -236,7 +236,14 @@ function ghosttyEngine(args) {
       whenReady(cb) { if (ready) { try { cb() } catch {} } else readyCbs.push(cb) },
       options: {
         get fontSize() { return fontSize },
-        set fontSize(n) { fontSize = n; refit() },
+        // Кегль обязан дойти до РЕНДЕРЕРА (setFontSize), а не только в локальную переменную:
+        // без этого getMetrics() продолжал отдавать старую ячейку, сетка не пересчитывалась
+        // и смена кегля не была видна вовсе.
+        set fontSize(n) {
+          fontSize = n
+          if (renderer) { try { renderer.setFontSize(n) } catch {} }
+          refit()
+        },
         get theme() { return theme },
         set theme(th) { theme = th; if (renderer) { try { renderer.theme = th } catch {} } refit() },
       },
