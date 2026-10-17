@@ -116,37 +116,15 @@ function ghosttyEngine(args) {
     return { w: Math.max(1, Math.round(g.measureText('M').width)), h: Math.max(1, Math.round(fontSize)) }
   }
 
-  // КАЛИБРОВКА под xterm.js. Один и тот же «кегль» у движков даёт разную ячейку
-  // (кегль 4: xterm 2.2x5, ghostty 3x6) — отсюда разный вид при переключении. Чтобы текст
-  // был одного размера, ghostty рисуем шрифтом, который даёт ТУ ЖЕ высоту ячейки, что
-  // xterm при этом кегле. Высоту xterm считаем по метрикам шрифта (ascent+descent), как
-  // делают терминалы, а под ghostty подбираем кегль с такой же высотой ячейки.
-  const xtermCellHeight = (n) => {
-    try {
-      const c = document.createElement('canvas')
-      const g = c.getContext('2d')
-      g.font = n + 'px monospace'
-      const tm = g.measureText('M')
-      const h = (tm.fontBoundingBoxAscent || 0) + (tm.fontBoundingBoxDescent || 0)
-      return h > 0 ? h : n
-    } catch { return n }
-  }
-  const ghosttyFontFor = (n) => {
-    if (!renderer) return n
-    const target = xtermCellHeight(n)
-    let best = n, bestDiff = Infinity
-    // перебор ближайших кеглей: монотонный рост высоты ячейки, минимум у границ
-    for (let f = Math.max(2, n - 6); f <= n + 6; f++) {
-      try {
-        renderer.setFontSize(f)
-        const h = renderer.getMetrics().height
-        const diff = Math.abs(h - target)
-        if (diff < bestDiff) { bestDiff = diff; best = f }
-        if (h >= target && diff <= bestDiff) break
-      } catch { break }
-    }
-    return best
-  }
+  // Отличие ghostty от xterm в МАСШТАБЕ: при одном кегле ghostty рисует ячейку крупнее
+  // (кегль 4: xterm 2.2x5, ghostty 3x6), потому что округляет ширину ячейки вверх и глиф не
+  // заполняет её целиком — отсюда «расстояние между буквами». Это свойство рендерера, а не
+  // ошибка сетки. На МЕЛКОМ кегле (4-6) зазор выглядит крупнее всего, потому что глиф крошечный:
+  // рекомендуемый рабочий кегль — 11 и выше.
+  //
+  // Раньше здесь была калибровка «подгоним ячейку под xterm» — она брала кегль МЕНЬШЕ (3 вместо
+  // 4), чтобы высота ячейки совпала, и текст становился микроскопическим («вообще ничего не
+  // видно»). Убрана: лучше чуть крупнее и видимее, чем точно в размер, но нечитаемо.
   const propose = () => {
     const m = measureCell()
     return {
@@ -189,8 +167,8 @@ function ghosttyEngine(args) {
       fontSize, fontFamily: 'monospace', cursorBlink: false, theme,
       devicePixelRatio: window.devicePixelRatio || 1,
     })
-    // калибровка под xterm: стартовый кегль тоже подгоняем под ячейку xterm
-    try { renderer.setFontSize(ghosttyFontFor(fontSize)) } catch {}
+    // стартовый кегль — как просил пользователь, без подгонки
+    try { renderer.setFontSize(fontSize) } catch {}
     // Ввод: свой приёмник — скрытый textarea (как .xterm-helper-textarea у xterm.js). Штатный
     // InputHandler слушает клавиши на контейнере, но Android отдаёт ввод через IME/input-события,
     // а не keydown: фокус на div клавиатуру не поднимает, и ввод теряется. textarea держит фокус и
@@ -275,10 +253,7 @@ function ghosttyEngine(args) {
         // и смена кегля не была видна вовсе.
         set fontSize(n) {
           fontSize = n
-          if (renderer) {
-            // рисуем кеглем, дающим ячейку как у xterm, чтобы движки выглядели одинаково
-            try { renderer.setFontSize(ghosttyFontFor(n)) } catch {}
-          }
+          if (renderer) { try { renderer.setFontSize(n) } catch {} }
           refit()
         },
         get theme() { return theme },
