@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Icon } from '../Icons'
 import { ALL_PALETTES } from '../../lib/themes'
 import { effectiveMode } from '../../lib/theme'
+import { preferredEngine, setPreferredEngine } from './tui-engine'
 import { desktopInfo, setAutostart as setAutostartNative } from '../../lib/desktop'
 import { Mascot } from '../Mascot'
 import { ENGINES, WEB_ENGINES, getEngineView, setEngineView } from './ChatPanelEngines'
@@ -628,6 +629,9 @@ function DesktopDownloadsGroup() {
 // показываются в списке движков; здесь — их честное место и чем они отличаются.
 function ToolsSection() {
   const [tools, setTools] = useState(null)
+  // Рендер терминала Chat: ghostty-web (WebAssembly) или xterm.js. Движок создаётся один раз
+  // при подключении вкладки Chat, поэтому смена требует перезагрузки страницы.
+  const [termEngine, setTermEngine] = useState(() => preferredEngine())
   const [transport, setTransport] = useState(null)   // null = ещё читаю
   const [herdrInstalled, setHerdrInstalled] = useState(true)
   const [tErr, setTErr] = useState('')
@@ -666,6 +670,33 @@ function ToolsSection() {
   if (!tools.length) return <div className="text-sm text-text-muted">Служебных утилит нет.</div>
   return (
     <div className="space-y-4 max-w-2xl">
+      <Group title="Рендер терминала Chat" hint="Чем рисуется вкладка Chat (TUI). Сравни, переключаясь между ними — переключение перезагружает страницу.">
+        <div className="flex flex-col gap-2 py-1">
+          {[
+            { id: 'ghostty', name: 'ghostty-web (WebAssembly)', note: 'VT-ядро Ghostty; свежее и быстрее, стоит по умолчанию' },
+            { id: 'xterm', name: 'xterm.js', note: 'проверенный запасной; поднимается сам, если ghostty не загрузился' },
+          ].map(o => (
+            <div key={o.id} className="flex items-center justify-between py-1.5 px-2 bg-surface rounded-md border border-border">
+              <span className="flex flex-col text-sm text-text">
+                {o.name}
+                <span className="text-xs text-text-muted">{o.note}</span>
+              </span>
+              {termEngine === o.id ? (
+                <span className="px-2 py-0.5 rounded text-xs bg-accent text-white">активен</span>
+              ) : (
+                <button onClick={() => {
+                  setPreferredEngine(o.id)
+                  setTermEngine(o.id)
+                  setTimeout(() => { try { window.location.reload() } catch {} }, 350)
+                }}
+                  className="px-2 py-0.5 rounded text-xs bg-surface-hover text-text-muted hover:text-text transition-colors">
+                  включить
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </Group>
       <p className="text-sm text-text-muted">
         Это не агенты — им нельзя написать и ничего нельзя поручить. Они держат терминальные
         сессии живыми: отвечают за то, чтобы вкладка Chat и вкладка Terminal не умирали при
