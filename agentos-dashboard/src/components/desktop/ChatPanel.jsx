@@ -4,6 +4,7 @@ import { TermKeypad } from './TermKeypad'
 import { 
   ENGINES, 
   WEB_ENGINES, 
+  WEB_ONLY, 
   ENGINE_VIEW_KEY, 
   getEngineView, 
   setEngineView 
@@ -886,8 +887,13 @@ export function ChatPanel({ fullscreen = false }) {
             {e.name}
           </button>
         ))}
-        {/* Web/TUI toggle for engines that support both; disabled (hint) for TUI-only */}
-        {hasWeb ? (
+        {/* Web/TUI toggle for engines that support both; web-only показывают бейдж без
+            переключателя — TUI у deepseek нет, и кнопка «💻 TUI» вела бы в ошибку */}
+        {hasWeb && WEB_ONLY.has(engine) ? (
+          <span className="ml-2 px-2 py-0.5 rounded text-xs border border-border bg-bg-card text-text-muted whitespace-nowrap">
+            🌐 Web
+          </span>
+        ) : hasWeb ? (
           <button
             onClick={() => setUseWeb(!useWeb)}
             className={`ml-2 px-2 py-0.5 rounded text-xs whitespace-nowrap transition-colors border ${useWeb ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}

@@ -182,7 +182,8 @@ export function HarnessView() {
   const install = async (id) => {
     const item = allItems.find(x => x.id === id)
     if (item?.needsInstallOptions) {
-      setInstallOpts({ id, name: item.name, mode: 'both', protection: 'basic', domain: '', password: '' })
+      setInstallOpts({ id, name: item.name, mode: item.id === 'deepseek' ? 'web' : 'both',
+        protection: 'basic', domain: '', password: '', basicUser: '', basicPass: '' })
       return
     }
     runInstall(id)
@@ -282,7 +283,8 @@ export function HarnessView() {
                 { v: 'tui', label: '💻 Только TUI', hint: 'терминальный интерфейс' },
                 { v: 'web', label: '🌐 Только Web UI', hint: 'веб-интерфейс на своём домене' },
                 { v: 'both', label: '💻🌐 Всё вместе', hint: 'TUI + Web UI' },
-              ].filter(Boolean).map(o => (
+                // deepseek: профили dsh — web/headless/sdk/acp, TUI нет; предлагаем только Web
+              ].filter(o => o && (installOpts.id !== 'deepseek' || o.v === 'web')).map(o => (
                 <button key={o.v} onClick={() => setInstallOpts(p => ({ ...p, mode: o.v }))}
                   className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${installOpts.mode === o.v ? 'border-accent bg-accent/10' : 'border-border hover:bg-bg-elevated'}`}>
                   <div className="text-sm font-medium text-text">{o.label}</div>
@@ -307,7 +309,28 @@ export function HarnessView() {
                 </p>
               </div>
             )}
-            {installOpts.id !== 'hermes' && (
+            {(installOpts.id === 'deepseek' || installOpts.id === 'openclaw') && installOpts.mode !== 'tui' && (
+              <div className="space-y-2">
+                <div>
+                  <label className="text-sm text-text-muted block mb-1">Логин для входа в Web UI:</label>
+                  <input value={installOpts.basicUser || ''}
+                    onChange={e => setInstallOpts(p => ({ ...p, basicUser: e.target.value }))}
+                    placeholder="admin"
+                    className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
+                </div>
+                <div>
+                  <label className="text-sm text-text-muted block mb-1">Пароль (минимум 8 символов):</label>
+                  <input value={installOpts.basicPass || ''} type="password" autoComplete="new-password"
+                    onChange={e => setInstallOpts(p => ({ ...p, basicPass: e.target.value }))}
+                    placeholder="пароль для входа в Web UI"
+                    className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
+                  <p className="text-xs text-text-muted mt-1">
+                    Basic-auth на уровне caddy: в конфиг попадает только bcrypt-хэш, пароль нигде не оседает.
+                  </p>
+                </div>
+              </div>
+            )}
+            {installOpts.id !== 'hermes' && installOpts.id !== 'deepseek' && installOpts.id !== 'openclaw' && (
               <>
                 <div>
                   <label className="text-sm text-text-muted block mb-1">Пароль администратора шлюза:</label>

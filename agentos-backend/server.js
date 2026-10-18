@@ -673,7 +673,10 @@ for (const a of ORCA_AGENTS) {
   // категория не была исключена, и в списке движков появлялись «Tmux» и «Zellij» с
   // кнопкой «Установить» — выглядело так, будто это агенты, которых можно общаться.
   if (a.category === 'utility') continue
-  if (!a.launch?.tui?.cmd) continue  // only engines with TUI command
+  // Движок попадает в список, если есть ХОТЯ БЫ один режим запуска. Раньше требовался TUI —
+  // web-only движки (deepseek: профили dsh — web/headless/sdk/acp, TUI нет) выпадали из списка
+  // целиком, хотя их Web UI полностью рабочий. TUI у web-only движка просто отсутствует.
+  if (!a.launch?.tui?.cmd && !a.launch?.web?.cmd) continue
   
   const harnessDef = {
     id: a.id,
@@ -741,7 +744,9 @@ async function discoverHarnesses() {
       uninstallCmd: h.uninstall || null,
       updateCmd: h.update || null,
       // engines with an install-time choice: mode (TUI/Web/both), Web UI domain, auth gate
-      needsInstallOptions: h.id === 'opencode' || h.id === 'hermes',
+      // Движки с Web UI на своём домене: у них есть выбор режима + домен + логин/пароль.
+      // deepseek и openclaw раньше ставились без окна — их Web UI оставался на localhost.
+      needsInstallOptions: ['opencode', 'hermes', 'deepseek', 'openclaw'].includes(h.id),
       interactive: !!h.interactive,   // UI shows the keystroke pad while installing
       // installed engines that expose an interactive setup wizard (Hermes: provider, tools)
       setupAvailable: installed && !!h.setupAvailable,
@@ -1376,6 +1381,79 @@ app.post('/api/harness/install', async (req, res) => {
       'PY',
       ...cspAllowSnippet(`'${dom}'`),
       `echo '${dom}' > /root/.opencode-domain`,
+      caddyReload,
+    ].join('\n')
+    cmd = script
+  }
+
+  // DeepSeek Harness / OpenClaw install options: Web UI на своём домене. У deepseek TUI нет
+  // (профили dsh: web/headless/sdk/acp), у openclaw свой TUI остаётся работать. Ставим
+  // systemd-юнит с web-службой и caddy-сайт с basic_auth — раньше эти движки ставились без
+  // окна настроек, и их Web UI навсегда оставался на 127.0.0.1.
+  if ((id === 'deepseek' || id === 'openclaw') && (mode === 'web' || mode === 'both')) {
+    const dom = String(domain || '').trim().toLowerCase()
+    if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])\.[a-z]{2,}$/i.test(dom)) {
+      return res.status(400).json({ error: 'некорректный домен: ' + dom })
+    }
+    const user = String(basicUser || '').trim() || 'admin'
+    if (!/^[A-Za-z0-9._-]{1,32}$/.test(user)) {
+      return res.status(400).json({ error: 'логин: латиница, цифры, . _ - (до 32 символов)' })
+    }
+    const pass = String(basicPass || '')
+    if (pass.length < 8) {
+      return res.status(400).json({ error: 'пароль: минимум 8 символов' })
+    }
+    const port = id === 'deepseek' ? 3080 : 18789
+    const svc = id === 'deepseek' ? 'dsh-web' : 'openclaw-web'
+    const execStart = id === 'deepseek'
+      ? `/usr/bin/dsh web --no-open --port ${port} --host 127.0.0.1 --trusted-host ${dom}`
+      : '/usr/bin/openclaw gateway run'
+    const { file: caddyFile, reload: caddyReload } = caddyTarget()
+    // пароль в скрипт — через безопасное shell-экранирование; в конфиг caddy попадает
+    // ТОЛЬКО bcrypt-хэш (там лишь [./A-Za-z0-9$]), сам пароль нигде не оседает
+    const shq = (s) => "'" + String(s).replace(/'/g, "'\\''") + "'"
+    const script = [
+      '# install',
+      def.install,
+      '# systemd web service',
+      `cat > /etc/systemd/system/${svc}.service <<UNIT`,
+      '[Unit]',
+      `Description=${id === 'deepseek' ? 'DeepSeek Harness Web UI (dsh web)' : 'OpenClaw Gateway (web UI)'}`,
+      'After=network.target',
+      '',
+      '[Service]',
+      `ExecStart=${execStart}`,
+      'Restart=always',
+      'RestartSec=3',
+      'User=root',
+      'Environment=HOME=/root',
+      '',
+      '[Install]',
+      'WantedBy=multi-user.target',
+      'UNIT',
+      `systemctl daemon-reload && systemctl enable --now ${svc}`,
+      '# caddy site + basic_auth',
+      `PASS=${shq(pass)}`,
+      'HASH=$(caddy hash-password --plaintext "$PASS")',
+      `python3 - "$HASH" <<'PY'`,
+      'import re, sys',
+      'h = sys.argv[1]',
+      `p = ${shq(caddyFile)}`,
+      "s = open(p).read()",
+      `dom = ${shq(dom)}`,
+      `user = ${shq(user)}`,
+      `port = ${port}`,
+      "block = dom + ' {\n    basic_auth {\n        ' + user + ' ' + h + '\n    }\n    reverse_proxy 127.0.0.1:' + str(port) + '\n}\n'",
+      "if not re.search(r'(?m)^' + re.escape(dom) + r'\s*\{', s):",
+      "    if s and not s.endswith('\n'): s += '\n'",
+      "    s += block",
+      "    open(p, 'w').write(s)",
+      "    print('caddy site added')",
+      "else:",
+      "    print('caddy site already present')",
+      'PY',
+      `echo '${dom}' > /root/.${id}-domain`,
+      ...cspAllowSnippet(`'${dom}'`),
       caddyReload,
     ].join('\n')
     cmd = script

@@ -20,9 +20,15 @@ export const ENGINES = [
 // Engines that expose a built-in web UI (the rest are TUI-only).
 export const WEB_ENGINES = new Set(['hermes', 'opencode', 'deepseek', 'openclaw'])
 
+// Web-ONLY engines: TUI у них нет в принципе (deepseek: профили dsh — web/headless/sdk/acp,
+// `dsh` без --profile падает). Переключатель 💻 TUI/🌐 Web для них не показываем.
+export const WEB_ONLY = new Set(['deepseek'])
+
 export const ENGINE_VIEW_KEY = 'lifeos.engine.view'  // { [engineId]: 'web'|'tui' }
 
 export function getEngineView(engineId, fallback = 'web') {
+  // web-only движок всегда открывается в Web — TUI-режима у него физически нет
+  if (WEB_ONLY.has(engineId)) return 'web'
   try {
     const m = JSON.parse(localStorage.getItem(ENGINE_VIEW_KEY) || '{}')
     if (m[engineId]) return m[engineId]
