@@ -56,12 +56,27 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
-  // Unicode 11: opencode/hermes v2 рисуют эмодзи и считают ширину как string-width (эмодзи = 2).
+  // Unicode: сначала graphemes (правильная ширина сложных эмодзи, флагов, ZWJ — это была
+  // боль: эмодзи считались шириной 2 и съезжали). Если он не поднялся — unicode11 как запасной.
+  // graphemes ЭКСПЕРИМЕНТАЛЬНЫЙ (README предупреждает), но для эмодзи это единственный честный
+  // путь. activeVersion переключаем на 'grapheme' только при успехе.
   try {
-    import('@xterm/addon-unicode11').then(({ Unicode11Addon }) => {
-      term.loadAddon(new Unicode11Addon())
-      term.unicode.activeVersion = '11'
-    }).catch(() => {})
+    import('@xterm/addon-unicode-graphemes').then(({ UnicodeGraphemesAddon }) => {
+      term.loadAddon(new UnicodeGraphemesAddon())
+      try { term.unicode.activeVersion = 'grapheme' } catch {
+        // graphemes не зарегистрировал версию — оставляем unicode11
+        import('@xterm/addon-unicode11').then(({ Unicode11Addon }) => {
+          term.loadAddon(new Unicode11Addon())
+          term.unicode.activeVersion = '11'
+        }).catch(() => {})
+      }
+    }).catch(() => {
+      // graphemes не загрузился вовсе — unicode11
+      import('@xterm/addon-unicode11').then(({ Unicode11Addon }) => {
+        term.loadAddon(new Unicode11Addon())
+        term.unicode.activeVersion = '11'
+      }).catch(() => {})
+    })
   } catch {}
   // --- Аддоны. Грузим динамически и по одному: если какой-то не поднялся (нет GPU, старый
   // браузер), терминал обязан работать дальше — аддон не критичен для самого рендера.
@@ -83,6 +98,14 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   try {
     import('@xterm/addon-web-links').then(({ WebLinksAddon }) => {
       term.loadAddon(new WebLinksAddon())
+    }).catch(() => {})
+  } catch {}
+  // Прогресс операций: слушает OSC 9;4 (ConEmu) и поднимает индикатор прогресса во вкладке/
+  // статусе ОС. Видно, что долгая задача агента идёт — НО только если само приложение шлёт
+  // эту последовательность. Безвреден, если не шлёт.
+  try {
+    import('@xterm/addon-progress').then(({ ProgressAddon }) => {
+      term.loadAddon(new ProgressAddon())
     }).catch(() => {})
   } catch {}
   term.open(el)
