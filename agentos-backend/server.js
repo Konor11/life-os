@@ -601,6 +601,8 @@ const HARNESSES_DEF = [
     install: "export CODEX_NON_INTERACTIVE=true; curl -fsSL https://chatgpt.com/codex/install.sh | sh",
     desc: 'OpenAI Codex — официальный установщик OpenAI (не npm).',
     provider: 'OpenAI', key: 'OPENAI_API_KEY',
+    // Официальный апдейт Codex — тот же инсталлятор (ставит latest, идемпотентен).
+    update: "export CODEX_NON_INTERACTIVE=true; curl -fsSL https://chatgpt.com/codex/install.sh | sh",
     uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null) /root/.local/bin/codex; rm -rf /root/.codex /root/.local/share/codex /root/.cache/codex /root/.codex_auth.json",
   },
   {
@@ -610,6 +612,8 @@ const HARNESSES_DEF = [
     install: "curl -fsSL https://claude.ai/install.sh | bash",
     desc: 'Anthropic Claude Code. Официально: установщик от Anthropic (npm помечен deprecated).',
     provider: 'Anthropic', key: 'ANTHROPIC_API_KEY',
+    // Официальный апдейт: встроенный `claude update`, при неудаче — переустановщик.
+    update: "claude update </dev/null || curl -fsSL https://claude.ai/install.sh | bash",
     // Хвосты Claude Code, которые оставлял прежний uninstall и которые находил find после него:
 // /root/.claude.json, /root/.cache/claude, /root/.local/state/claude (проверено на сервере).
 uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/local/bin/claude* $(command -v claude 2>/dev/null) /root/.local/bin/claude*; rm -rf /root/.claude /root/.claude.json /root/.config/claude /root/.local/share/claude /root/.local/state/claude /root/.cache/claude",
@@ -619,6 +623,8 @@ uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/l
     install: "curl -fsSL https://openclaw.ai/install.sh | bash",
     desc: 'Multi-channel AI gateway. Официальный установщик (npm требует Node 24.16+).',
     provider: 'OpenRouter', key: null,
+    // Официальный апдейт — тот же инсталлятор (openclaw.ai, идемпотентен).
+    update: "curl -fsSL https://openclaw.ai/install.sh | bash </dev/null",
     web: { port: 18789, cmd: 'systemctl --user start openclaw-gateway' },
     uninstall: "npm uninstall -g openclaw 2>/dev/null; rm -f /usr/local/bin/openclaw $(command -v openclaw 2>/dev/null); rm -rf /root/.openclaw /root/.config/openclaw /root/.local/share/openclaw",
   },
@@ -627,13 +633,17 @@ uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/l
     install: 'npm install -g @earendil-works/pi-coding-agent </dev/null',
     desc: 'Pi — AI agent toolkit (унифицированный LLM API + TUI). Официальный пакет: @earendil-works/pi-coding-agent.',
     provider: 'OpenRouter', key: null,
+    // npm-пакет: официальный апдейт — latest.
+    update: 'npm install -g @earendil-works/pi-coding-agent@latest </dev/null',
     uninstall: "npm uninstall -g @earendil-works/pi-coding-agent 2>/dev/null; rm -f /usr/local/bin/pi $(command -v pi 2>/dev/null); rm -rf /root/.pi /root/.config/pi /root/.local/share/pi",
   },
   {
     id: 'deepseek', name: 'DeepSeek Harness', bin: ['dsh'],
     install: 'npm install -g @deepseek-ai/dsh',
-    desc: 'DeepSeek Harness (dsh) — агент-harness «всё-плагин». Запускается как Web UI на :3080 через npx (официальный способ из их README).',
+    desc: 'DeepSeek Harness (dsh) — агент-harness «всё-плагин». Web UI на :3080. TUI НЕТ: профили dsh — web/headless/sdk/acp, без --profile команда падает.',
     provider: 'DeepSeek', key: 'DEEPSEEK_API_KEY',
+    // npm-пакет: официальный апдейт — latest.
+    update: 'npm install -g @deepseek-ai/dsh@latest',
     web: { port: 3080, publicPort: 3090, cmd: 'dsh web --no-open --port 3080' },
     uninstall: "rm -rf /root/.dsh /root/.deepseek-harness /root/.deepseek /root/.config/deepseek-harness /root/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/local/lib/node_modules -maxdepth 1 -iname '*deepseek*' -exec rm -rf {} + 2>/dev/null; true",
   },
