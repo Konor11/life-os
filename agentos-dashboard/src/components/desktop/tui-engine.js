@@ -233,6 +233,15 @@ function ghosttyEngine(args) {
     })
     // стартовый кегль — как просил пользователь, без подгонки
     try { renderer.setFontSize(fontSize) } catch {}
+    // Ссылки: UrlRegexProvider находит URL в буфере (в т.ч. длинные OAuth-ссылки Google,
+    // которые НЕЛЬЗЯ скопировать из canvas — выделения текста там нет). Клик открывает
+    // ссылку в новой вкладке. У xterm.js это делает WebLinksAddon, у ghostty связываем
+    // LinkDetector+UrlRegexProvider с canvas сами.
+    let linkDetector = null
+    try {
+      linkDetector = new mod.LinkDetector(t)
+      linkDetector.registerProvider(new mod.UrlRegexProvider(t))
+    } catch (e) { try { console.warn('[tui] LinkDetector не поднялся:', e) } catch {} }
     // Ввод: свой приёмник — скрытый textarea (как .xterm-helper-textarea у xterm.js). Штатный
     // InputHandler слушает клавиши на контейнере, но Android отдаёт ввод через IME/input-события,
     // а не keydown: фокус на div клавиатуру не поднимает, и ввод теряется. textarea держит фокус и
@@ -280,6 +289,25 @@ function ghosttyEngine(args) {
       }
       if (SPECIAL[k]) { emit(SPECIAL[k]); ev.preventDefault() }
     })
+    // Клик по ссылке: координаты клика → ячейка (col,row) → ссылка в этой ячейке?
+    // Открытие — только по явному клику ЛКМ без модификаторов (как в обычных терминалах).
+    const handleLinkClick = async (ev) => {
+      if (!linkDetector || !renderer || ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.altKey) return
+      try {
+        const rect = canvas.getBoundingClientRect()
+        const m = renderer.getMetrics()
+        const x = ev.clientX - rect.left, y = ev.clientY - rect.top
+        const col = Math.floor(x / m.width)
+        const row = Math.floor(y / m.height)
+        if (col < 0 || row < 0 || col >= t.cols) return
+        const link = await linkDetector.getLinkAt(col, row)
+        if (link && link.text && /^https?:\/\//.test(link.text)) {
+          ev.preventDefault(); ev.stopPropagation()
+          try { window.open(link.text, '_blank', 'noopener') } catch {}
+        }
+      } catch {}
+    }
+    canvas.addEventListener('click', handleLinkClick)
     // Тап по терминалу поднимает клавиатуру: фокус обязан уйти в textarea внутри обработчика жеста.
     // Обработчиков три и все через setTimeout(0): Chromium при тапе фокусирует сам контейнер
     // (у него tabIndex=0) синтетическим mousedown, который приходит ПОСЛЕ pointerup, и одиночный
