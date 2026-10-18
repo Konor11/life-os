@@ -84,6 +84,10 @@ const ENGINES = {
   claude: { build: (p) => ({ cmd: 'claude', args: [], cwd: '/root' }), bin: 'claude' },
   pi: { build: (p) => ({ cmd: 'pi', args: [], cwd: '/root' }), bin: 'pi' },
   openclaw: { build: (p) => ({ cmd: 'openclaw', args: [], cwd: '/root' }), bin: 'openclaw' },
+  // gemini-cli: раньше его не было в ENGINES — движок ставился, но Chat-TUI не знал,
+  // чем его запускать (WS подключался и умирал). Требует входа Google (OAuth) или
+  // GEMINI_API_KEY — см. описание в «Установке компонентов».
+  'gemini-cli': { build: (p) => ({ cmd: 'gemini', args: [], cwd: '/root' }), bin: 'gemini' },
 }
 
 // ---- TUI session keep-alive (performance) ----

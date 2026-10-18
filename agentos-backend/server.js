@@ -630,8 +630,8 @@ uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/l
   },
   {
     id: 'pi', name: 'Pi Agent', bin: ['pi'],
-    install: 'npm install -g @earendil-works/pi-coding-agent </dev/null',
-    desc: 'Pi — AI agent toolkit (унифицированный LLM API + TUI). Официальный пакет: @earendil-works/pi-coding-agent.',
+    install: 'curl -fsSL https://pi.dev/install.sh | sh',
+    desc: 'Pi — AI agent toolkit (унифицированный LLM API + TUI). Официальный установщик: pi.dev/install.sh.',
     provider: 'OpenRouter', key: null,
     // npm-пакет: официальный апдейт — latest.
     update: 'npm install -g @earendil-works/pi-coding-agent@latest </dev/null',

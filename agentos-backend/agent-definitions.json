@@ -100,9 +100,9 @@
    "bin": [
     "amp"
    ],
-   "install": "curl -fsSL https://ampcode.com/install.sh | sh </dev/null"
+   "install": "curl -sSL https://aka.ms/apm-unix | sh"
   },
-  "uninstall": "rm -f /usr/local/bin/amp $(command -v amp 2>/dev/null); rm -rf /root/.amp /root/.config/amp /root/.local/share/amp",
+  "uninstall": "rm -f /usr/local/bin/amp $(command -v amp 2>/dev/null) /root/.local/bin/amp; rm -rf /root/.amp /root/.config/amp /root/.local/share/amp /root/.cache/amp",
   "update": "curl -fsSL https://ampcode.com/install.sh | sh </dev/null"
  },
  {
@@ -125,9 +125,9 @@
    "bin": [
     "aider"
    ],
-   "install": "pip install aider-chat"
+   "install": "curl -LsSf https://aider.chat/install.sh | sh"
   },
-  "uninstall": "pip uninstall -y aider-chat 2>/dev/null; rm -f /usr/local/bin/aider $(command -v aider 2>/dev/null); rm -rf /root/.aider*",
+  "uninstall": "rm -f /usr/local/bin/aider $(command -v aider 2>/dev/null) /root/.local/bin/aider; python3 -m pip uninstall -y aider-chat 2>/dev/null; rm -rf /root/.aider /root/.config/aider /root/.local/share/aider /root/.cache/aider /root/.aider*",
   "update": "python3 -m pip install --upgrade aider-chat"
  },
  {
@@ -151,65 +151,15 @@
     "cursor-agent",
     "cursor"
    ],
-   "install": "curl -fsSL https://cursor.com/install.sh | sh </dev/null"
+   "install": "curl https://cursor.com/install -fsS | bash"
   },
-  "uninstall": "rm -f /usr/local/bin/cursor* $(command -v cursor 2>/dev/null); rm -rf /root/.cursor /root/.config/Cursor /root/.local/share/cursor",
+  "uninstall": "rm -f /usr/local/bin/cursor-agent $(command -v cursor-agent 2>/dev/null) /root/.local/bin/cursor-agent; rm -rf /root/.cursor /root/.config/Cursor /root/.local/share/cursor /root/.cache/cursor",
   "update": "curl -fsSL https://cursor.com/install.sh | sh </dev/null"
- },
- {
-  "id": "windsurf",
-  "name": "Windsurf",
-  "description": "Codeium's AI IDE. Cascade agent for terminal.",
-  "provider": "OpenRouter",
-  "keys": [
-   "OPENROUTER_API_KEY"
-  ],
-  "category": "coding",
-  "launch": {
-   "tui": {
-    "cmd": "windsurf",
-    "args": []
-   },
-   "web": null
-  },
-  "detect": {
-   "bin": [
-    "windsurf"
-   ],
-   "install": "curl -fsSL https://windsurf.com/install.sh | sh </dev/null"
-  },
-  "uninstall": "rm -f /usr/local/bin/windsurf $(command -v windsurf 2>/dev/null); rm -rf /root/.windsurf /root/.config/Windsurf",
-  "update": "curl -fsSL https://windsurf.com/install.sh | sh </dev/null"
- },
- {
-  "id": "groq",
-  "name": "Groq",
-  "description": "Groq's ultra-fast inference CLI agent.",
-  "provider": "Groq",
-  "keys": [
-   "GROQ_API_KEY"
-  ],
-  "category": "coding",
-  "launch": {
-   "tui": {
-    "cmd": "groq",
-    "args": []
-   },
-   "web": null
-  },
-  "detect": {
-   "bin": [
-    "groq"
-   ],
-   "install": "pip install groq-cli"
-  },
-  "uninstall": "pip uninstall -y groq-cli 2>/dev/null; rm -f /usr/local/bin/groq $(command -v groq 2>/dev/null)",
-  "update": "python3 -m pip install --upgrade groq-cli"
  },
  {
   "id": "gemini-cli",
   "name": "Gemini CLI",
-  "description": "Google's official Gemini CLI agent.",
+  "description": "Google Gemini CLI. ВАЖНО: после установки требует вход в Google-аккаунт (OAuth в браузере) — на сервере без монитора сначала запусти `gemini` в терминале Life OS и пройди вход по ссылке. Или задай GEMINI_API_KEY в ключах.",
   "provider": "Google",
   "keys": [
    "GOOGLE_API_KEY",
@@ -229,7 +179,7 @@
    ],
    "install": "npm install -g @google/gemini-cli"
   },
-  "uninstall": "npm uninstall -g @google/gemini-cli 2>/dev/null; rm -f /usr/local/bin/gemini $(command -v gemini 2>/dev/null); rm -rf /root/.gemini",
+  "uninstall": "npm uninstall -g @google/gemini-cli 2>/dev/null; rm -f $(command -v gemini 2>/dev/null) /root/.local/bin/gemini; rm -rf /root/.gemini /root/.config/gemini /root/.cache/gemini",
   "update": "npm install -g @google/gemini-cli@latest"
  },
  {
@@ -255,9 +205,9 @@
    "bin": [
     "gh"
    ],
-   "install": "gh extension install github/gh-copilot"
+   "install": "npm install -g @github/copilot"
   },
-  "uninstall": "gh extension remove github/gh-copilot 2>/dev/null",
+  "uninstall": "npm uninstall -g @github/copilot 2>/dev/null; rm -f $(command -v copilot 2>/dev/null) /root/.local/bin/copilot; rm -rf /root/.copilot /root/.config/github-copilot /root/.local/share/github-copilot /root/.cache/github-copilot",
   "update": "gh extension upgrade copilot"
  },
  {
@@ -280,9 +230,9 @@
    "bin": [
     "devin"
    ],
-   "install": "curl -fsSL https://devin.ai/install.sh | sh </dev/null"
+   "install": "curl -fsSL https://cli.devin.ai/install.sh | bash"
   },
-  "uninstall": "rm -f /usr/local/bin/devin $(command -v devin 2>/dev/null); rm -rf /root/.devin /root/.config/devin",
+  "uninstall": "rm -f /usr/local/bin/devin $(command -v devin 2>/dev/null) /root/.local/bin/devin; rm -rf /root/.devin /root/.config/devin /root/.local/share/devin /root/.cache/devin",
   "update": "curl -fsSL https://devin.ai/install.sh | sh </dev/null"
  },
  {
@@ -305,9 +255,9 @@
    "bin": [
     "continue"
    ],
-   "install": "npm install -g @continue/cli"
+   "install": "curl -fsSL https://raw.githubusercontent.com/continuedev/continue/main/extensions/cli/scripts/install.sh | bash"
   },
-  "uninstall": "npm uninstall -g @continue/cli 2>/dev/null; rm -f /usr/local/bin/continue $(command -v continue 2>/dev/null)",
+  "uninstall": "rm -f /usr/local/bin/continue $(command -v continue 2>/dev/null) /root/.local/bin/continue; npm uninstall -g @continue/cli 2>/dev/null; rm -rf /root/.continue /root/.config/continue /root/.local/share/continue /root/.cache/continue",
   "update": "npm install -g @continue/cli@latest"
  },
  {
@@ -330,9 +280,9 @@
    "bin": [
     "grok"
    ],
-   "install": "pip install grok-cli"
+   "install": "curl -fsSL https://raw.githubusercontent.com/superagent-ai/grok-cli/main/install.sh | bash"
   },
-  "uninstall": "pip uninstall -y grok-cli 2>/dev/null; rm -f /usr/local/bin/grok $(command -v grok 2>/dev/null)",
+  "uninstall": "rm -f /usr/local/bin/grok $(command -v grok 2>/dev/null) /root/.local/bin/grok; python3 -m pip uninstall -y grok-cli 2>/dev/null; rm -rf /root/.grok /root/.config/grok /root/.local/share/grok /root/.cache/grok",
   "update": "python3 -m pip install --upgrade grok-cli"
  },
  {
@@ -360,7 +310,7 @@
    ],
    "install": "curl -fsSL https://openclaw.ai/install.sh | bash </dev/null"
   },
-  "uninstall": "npm uninstall -g openclaw 2>/dev/null; rm -f /usr/local/bin/openclaw $(command -v openclaw 2>/dev/null); rm -rf /root/.openclaw /root/.config/openclaw /root/.local/share/openclaw",
+  "uninstall": "systemctl disable --now openclaw-web 2>/dev/null; rm -f /etc/systemd/system/openclaw-web.service; python3 -c \"import re;p='/etc/caddy/Caddyfile';s=open(p).read();d=open('/root/.openclaw-domain').read().strip() if __import__('os').path.exists('/root/.openclaw-domain') else '';open(p,'w').write(re.sub(r'(?ms)^'+re.escape(d)+r'\\\\s*\\\\{.*?\\\\n\\\\}\\\\n?','',s)) if d else None\"; systemctl reload caddy 2>/dev/null; rm -f /root/.openclaw-domain; npm uninstall -g openclaw 2>/dev/null; rm -f /usr/local/bin/openclaw $(command -v openclaw 2>/dev/null); rm -rf /root/.openclaw /root/.config/openclaw /root/.local/share/openclaw /root/.openclaw-dev",
   "update": "curl -fsSL https://openclaw.ai/install.sh | bash </dev/null"
  },
  {
@@ -383,9 +333,9 @@
    "bin": [
     "pi"
    ],
-   "install": "npm install -g @earendil-works/pi-coding-agent </dev/null"
+   "install": "curl -fsSL https://pi.dev/install.sh | sh"
   },
-  "uninstall": "npm uninstall -g @earendil-works/pi-coding-agent 2>/dev/null; rm -f /usr/local/bin/pi $(command -v pi 2>/dev/null); rm -rf /root/.pi /root/.config/pi /root/.local/share/pi",
+  "uninstall": "npm uninstall -g @earendil-works/pi-coding-agent 2>/dev/null; rm -f $(command -v pi 2>/dev/null) /root/.local/bin/pi; rm -rf /root/.pi /root/.config/pi /root/.local/share/pi /root/.cache/pi",
   "update": "npm install -g @earendil-works/pi-coding-agent@latest </dev/null"
  },
  {
@@ -412,7 +362,7 @@
    ],
    "install": "npm install -g @deepseek-ai/dsh"
   },
-  "uninstall": "rm -rf /root/.dsh /root/.deepseek-harness /root/.deepseek /root/.config/deepseek-harness /root/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/local/lib/node_modules -maxdepth 1 -iname \"*deepseek*\" -exec rm -rf {} + 2>/dev/null; true",
+  "uninstall": "systemctl disable --now dsh-web 2>/dev/null; rm -f /etc/systemd/system/dsh-web.service; python3 -c \"import re;p='/etc/caddy/Caddyfile';s=open(p).read();d=open('/root/.deepseek-domain').read().strip() if __import__('os').path.exists('/root/.deepseek-domain') else '';open(p,'w').write(re.sub(r'(?ms)^'+re.escape(d)+r'\\\\s*\\\\{.*?\\\\n\\\\}\\\\n?','',s)) if d else None\"; systemctl reload caddy 2>/dev/null; rm -f /root/.deepseek-domain; rm -rf /root/.dsh /root/.deepseek-harness /root/.deepseek /root/.config/deepseek-harness /root/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/lib/node_modules -maxdepth 1 -iname \"*deepseek*\" -exec rm -rf {} + 2>/dev/null; true",
   "update": "npm install -g @deepseek-ai/dsh@latest"
  },
  {
