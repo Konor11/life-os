@@ -118,18 +118,23 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   // Включаем нативное выделение: xterm.js ставит user-select:none на .xterm-rows через
   // свой CSS (xterm.css) — обычный inline на родителе его не переопределяет (наследуется,
   // но дочерний CSS-класс бьёт). Инъекция <style> с !important пробивается.
+  // === Ключевая инъекция CSS для нативного выделения на Android ===
+  // 1. user-select:text !important — пробивает xterm.css (user-select:none на .xterm)
+  // 2. pointer-events:none на .xterm-helper-textarea — textarea xterm сидит ПОВЕРХ
+  //    текста и перехватывает все touch-события. Android видит input-поле → показывает
+  //    «Вставить» вместо выделения. С pointer-events:none touch проходит к .xterm-rows
+  //    (настоящему DOM-тексту) → Android рисует ручки выделения и «Копировать».
+  //    Ввод: короткий тап временно включает pointer-events + focus (см. ниже).
   try {
     const sel = document.createElement('style')
-    sel.textContent = '.xterm,.xterm-rows,.xterm-screen,.xterm-viewport{' +
-      'user-select:text !important;-webkit-user-select:text !important;' +
-      '-moz-user-select:text !important;-ms-user-select:text !important}'
+    sel.textContent =
+      '.xterm,.xterm-rows,.xterm-screen,.xterm-viewport{' +
+        'user-select:text !important;-webkit-user-select:text !important;' +
+        '-moz-user-select:text !important;-ms-user-select:text !important}' +
+      '.xterm-helper-textarea{pointer-events:none !important}'
     el.appendChild(sel)
   } catch {}
-  // xterm.js блокирует нативное выделение: его mousedown-обработчик вызывает
-  // preventDefault(), и Android (синтезирующий mousedown из touch) не может начать
-  // выделение. На тач-устройствах перехватываем mousedown в фазе capture и глушим —
-  // xterm не получает событие, не вызывает preventDefault, и Android выделяет текст
-  // своими ручками. На десктопе не трогаем (там xterm-выделение нужнее).
+  // На тач-устройствах: глушим mousedown xterm (preventDefault блокирует выделение)
   try {
     if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
       el.addEventListener('mousedown', (ev) => {
@@ -137,15 +142,42 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
       }, { capture: true })
     }
   } catch {}
-  // textarea xterm делаем видимой полосой внизу для нативной вставки
-  // (long-press → «Вставить» → paste → терминал). Без этого textarea скрыт и Android
-  // не показывает меню вставки.
+  // Короткий тап по терминалу → фокус (клавиатура). textarea имеет pointer-events:none,
+  // поэтому touch не доходит до него — перехватываем на canvas/контейнере и фокусируем
+  // программно, временно включив pointer-events.
   try {
-    const ta = el.querySelector('.xterm-helper-textarea')
-    if (ta) {
-      ta.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:36px;' +
-        'opacity:0.02;z-index:10;border:0;outline:0;resize:none;padding:0;margin:0;' +
-        'background:transparent;color:transparent;font-size:16px;caret-color:transparent'
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+      let tapTimer = null, tapStart = null
+      el.addEventListener('touchstart', (ev) => {
+        if (ev.touches.length !== 1) return
+        tapStart = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, t: Date.now() }
+        // временно включаем textarea для фокуса
+        const ta = el.querySelector('.xterm-helper-textarea')
+        if (ta) ta.style.pointerEvents = 'auto'
+        try { term.focus() } catch {}
+        tapTimer = setTimeout(() => {
+          // если палец не двигался и не долго — это ввод, оставляем фокус
+          // возвращаем pointer-events:none чтобы long-press работал для выделения
+          if (ta) ta.style.pointerEvents = 'none'
+        }, 300)
+      }, { capture: true, passive: true })
+      el.addEventListener('touchmove', (ev) => {
+        if (!tapStart) return
+        const dist = Math.hypot(ev.touches[0].clientX - tapStart.x, ev.touches[0].clientY - tapStart.y)
+        if (dist > 8) {
+          // пользователь тянет — выделение; textarea уже выключен
+          if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
+          const ta = el.querySelector('.xterm-helper-textarea')
+          if (ta) ta.style.pointerEvents = 'none'
+        }
+      }, { capture: true, passive: true })
+      el.addEventListener('touchend', () => {
+        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
+        setTimeout(() => {
+          const ta = el.querySelector('.xterm-helper-textarea')
+          if (ta) ta.style.pointerEvents = 'none'
+        }, 50)
+      }, { capture: true })
     }
   } catch {}
   term.whenReady = (cb) => { try { cb() } catch {} }
