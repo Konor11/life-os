@@ -139,8 +139,9 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   // Без isTouch-проверки: на десктопе touch не срабатывает, click-фоллбэк работает везде.
   {
     let overlay = null, longPressTimer = null
-    // вешаем на .xterm (создаётся term.open) — ближе к поверхности, чем el
-    const xtermEl = el.querySelector('.xterm') || el
+    // touchTarget — куда вешать обработчики. textarea xterm — это поверхность,
+    // которую xterm держит поверх терминала; на Android touch приходит на неё.
+    const touchTarget = el.querySelector('.xterm-helper-textarea') || el.querySelector('.xterm') || el
     if (true) {
       const openOverlay = () => {
         if (overlay) return
