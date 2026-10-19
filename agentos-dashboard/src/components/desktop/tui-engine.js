@@ -204,8 +204,9 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
       try { el.style.position = el.style.position || 'relative' } catch {}
       el.appendChild(overlay)
     }
-    // touch на textarea xterm (touchTarget — рабочая поверхность)
-    const touchTarget = el.querySelector('.xterm-helper-textarea') || el.querySelector('.xterm') || el
+    // touch на .xterm (НЕ textarea: xterm.css прячет её на left:-9999em — touch туда
+    // не доходит. .xterm — видимый контейнер на экране, touch-события падают на него)
+    const touchTarget = el.querySelector('.xterm') || el
     touchTarget.addEventListener('touchstart', (ev) => {
       if (ev.touches.length !== 1 || overlay) return
       const sx = ev.touches[0].clientX, sy = ev.touches[0].clientY
