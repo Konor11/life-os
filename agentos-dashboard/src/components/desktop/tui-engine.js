@@ -154,147 +154,105 @@ function ghosttyEngine(args) {
     for (const cb of resizeListeners) { try { cb({ cols: t.cols, rows: t.rows }) } catch {} }
   }
 
-  // ---- Кнопка «Скопировать» над терминалом, когда есть выделение ----
-  // Canvas не даёт выделить текст руками браузера, поэтому выделение рисует сам
-  // SelectionManager, а копирование в буфер — эта кнопка (жест клика = разрешение
-  // navigator.clipboard). Появляется при непустом выделении, прячется при очистке.
-  let copyBtn = null
-  const ensureCopyBtn = () => {
-    if (copyBtn || disposed) return
-    copyBtn = document.createElement('button')
-    copyBtn.textContent = '📋 Скопировать'
-    copyBtn.style.cssText = 'position:absolute;right:10px;top:10px;z-index:20;padding:5px 12px;'
-      + 'border-radius:8px;border:1px solid rgba(128,128,128,.45);background:rgba(28,30,36,.94);'
-      + 'color:#fff;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)'
+  // Long-press по терминалу → overlay с НАСТОЯЩИМ DOM-текстом экрана → нативное
+  // выделение Android (ручки, системное «Копировать/Выбрать всё»). Canvas пиксели
+  // выделить нативно нельзя — единственный путь: собрать текст из буфера в реальный div.
+  // Тап (короткий) → фокус клавиатуры. Вставка — textarea обёртки внизу (native paste).
+  let selectOverlay = null, longPressTimer = null, touchStartPos = null
+  const enterSelectMode = () => {
+    if (selectOverlay || !t) return
     try { el.style.position = el.style.position || 'relative' } catch {}
-    el.appendChild(copyBtn)
-    copyBtn.addEventListener('click', async () => {
-      try {
-        const sel = t && t.getSelection ? t.getSelection() : ''
-        if (sel) {
-          await navigator.clipboard.writeText(sel)
-          copyBtn.textContent = '✓ Скопировано'
-          setTimeout(() => { if (copyBtn) copyBtn.textContent = '📋 Скопировать' }, 1600)
-        }
-      } catch (e) { try { console.warn('[tui] копирование не удалось:', e && e.message || e) } catch {} }
-    })
+    const b = t.buffer && t.buffer.active
+    const lines = []
+    if (b) {
+      const start = Math.max(0, (b.length || t.rows) - t.rows - (b.viewportY || 0))
+      for (let r = 0; r < t.rows; r++) {
+        const line = b.getLine(start + r)
+        try { lines.push(line ? line.translateToString(true) : '') } catch { lines.push('') }
+      }
+    }
+    selectOverlay = document.createElement('div')
+    selectOverlay.style.cssText =
+      'position:absolute;inset:0;z-index:40;overflow:auto;padding:12px 8px 40px;' +
+      'background:' + (theme.background || '#0b0e14') + ';color:' + (theme.foreground || '#e6edf3') + ';' +
+      'font-family:monospace;font-size:' + fontSize + 'px;line-height:1.15;white-space:pre-wrap;' +
+      'word-break:break-all;-webkit-user-select:text;user-select:text;' +
+      '-webkit-touch-callout:default;-webkit-user-modify:read-only'
+    selectOverlay.textContent = lines.join('\n')
+    const closeBtn = document.createElement('button')
+    closeBtn.textContent = '✕'
+    closeBtn.style.cssText = 'position:absolute;right:6px;top:6px;z-index:41;padding:4px 8px;' +
+      'border-radius:6px;border:1px solid rgba(128,128,128,.4);background:rgba(28,30,36,.95);' +
+      'color:#fff;font-size:13px;cursor:pointer'
+    closeBtn.addEventListener('click', () => { try { selectOverlay.remove() } catch {} ; selectOverlay = null })
+    selectOverlay.appendChild(closeBtn)
+    el.appendChild(selectOverlay)
   }
 
   ;(async () => {
     const mod = await import('ghostty-web')
-    // Ядро грузим со своего домена: инлайновый data:-URL режет CSP (connect-src).
     let ghostty = null
     try { ghostty = await mod.Ghostty.load('/ghostty-vt.wasm') } catch (e1) { ghostty = await mod.Ghostty.load() }
     if (disposed) return
     try { el.innerHTML = '' } catch {}
-    // Официальная обёртка Terminal: внутри canvas+renderer, SelectionManager (выделение),
-    // LinkDetector+UrlRegexProvider (кликабельные ссылки, включая OAuth-ссылки Google),
-    // InputHandler с IME/вставкой и textarea-приёмником. Наш прежний ручной монтаж этих
-    // частей заменён целиком — обёртка делает всё это сама и слаженнее.
     t = new mod.Terminal({
       fontSize, fontFamily: 'monospace', cursorBlink: false, theme,
       scrollback: scrollback || 2000, cols: size.cols, rows: size.rows, ghostty,
     })
     t.open(el)
-    // === Нативное копирование/вставка (как в Telegram) ===
-    // Canvas не даёт нативного выделения — текст там пиксели. Поэтому:
-    //  • КОПИРОВАНИЕ: «Select-режим» — кнопка открывает overlay с настоящим DOM-текстом
-    //    экрана (собранным из буфера). На нём Android рисует свои ручки выделения и
-    //    системное меню «Копировать / Выбрать всё». Никаких кастомных кнопок копирования.
-    //  • ВСТАВКА: textarea обёртки делаем видимой полосой внизу — long-press → системное
-    //    «Вставить» → paste-обработчик обёртки → t.paste(). Своих кнопок вставки нет.
-    //  • ВВОД: тап по canvas → t.focus() (нативный — поднимает клавиатуру).
-    const cnv = el.querySelector('canvas')
-    // --- Select-режим (нативное копирование) ---
-    let selectOverlay = null
-    const enterSelectMode = () => {
-      if (selectOverlay || !t) return
-      try { el.style.position = el.style.position || 'relative' } catch {}
-      // собираем видимый текст экрана из буфера терминала
-      const b = t.buffer && t.buffer.active
-      const lines = []
-      if (b) {
-        const start = Math.max(0, (b.length || t.rows) - t.rows - (b.viewportY || 0))
-        for (let r = 0; r < t.rows; r++) {
-          const line = b.getLine(start + r)
-          try { lines.push(line ? line.translateToString(true) : '') } catch { lines.push('') }
-        }
-      }
-      selectOverlay = document.createElement('div')
-      selectOverlay.style.cssText =
-        'position:absolute;inset:0;z-index:40;overflow:auto;padding:12px;' +
-        'background:' + (theme.background || '#0b0e14') + ';color:' + (theme.foreground || '#e6edf3') + ';' +
-        'font-family:monospace;font-size:' + fontSize + 'px;line-height:1.1;white-space:pre-wrap;' +
-        'word-break:break-all;-webkit-user-select:text;user-select:text;' +
-        '-webkit-user-modify:read-only;-webkit-touch-callout:default'
-      selectOverlay.textContent = lines.join('\n')
-      const closeBtn = document.createElement('button')
-      closeBtn.textContent = '✕'
-      closeBtn.style.cssText = 'position:sticky;float:right;z-index:41;padding:4px 10px;' +
-        'border-radius:6px;border:1px solid rgba(128,128,128,.4);background:rgba(28,30,36,.95);' +
-        'color:#fff;font-size:14px;cursor:pointer;margin-bottom:8px'
-      closeBtn.addEventListener('click', exitSelectMode)
-      selectOverlay.insertBefore(closeBtn, selectOverlay.firstChild)
-      el.appendChild(selectOverlay)
-    }
-    const exitSelectMode = () => {
-      if (selectOverlay) { try { selectOverlay.remove() } catch {} ; selectOverlay = null }
-    }
-    // кнопка входа в select-режим
-    let selectBtn = null
-    const ensureSelectBtn = () => {
-      if (selectBtn || disposed) return
-      selectBtn = document.createElement('button')
-      selectBtn.textContent = '📋 Выбрать'
-      selectBtn.style.cssText = 'position:absolute;right:10px;top:10px;z-index:20;padding:5px 12px;' +
-        'border-radius:8px;border:1px solid rgba(128,128,128,.45);background:rgba(28,30,36,.94);' +
-        'color:#fff;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)'
-      try { el.style.position = el.style.position || 'relative' } catch {}
-      el.appendChild(selectBtn)
-      selectBtn.addEventListener('click', enterSelectMode)
-    }
-    ensureSelectBtn()
-    // --- Вставка: textarea обёртки как видимая полоса внизу ---
-    // Обёртка прячет textarea (1px, opacity:0) и двигает за курсором — Android не покажет
-    // на нём «Вставить». Переопределяем CSS (через MutationObserver — обёртка переписывает
-    // style при каждом mousemove) в полосу 100%×36px внизу, почти невидимую, но достаточно
-    // крупную для системного меню long-press → «Вставить» → paste → t.paste().
-    const ta = t.textarea || el.querySelector('textarea')
-    if (ta) {
-      const applyTa = () => {
-        ta.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:36px;' +
-          'opacity:0.011;z-index:6;border:0;outline:0;resize:none;padding:0;margin:0;' +
-          'background:transparent;color:transparent;font-size:16px;caret-color:transparent'
-      }
-      try { new MutationObserver(applyTa).observe(ta, { attributes: true, attributeFilter: ['style'] }) } catch {}
-      applyTa()
-    }
-    // --- Ввод: тап по canvas → нативный фокус (клавиатура) ---
-    if (cnv) {
-      cnv.addEventListener('touchstart', (ev) => {
-        if (ev.touches.length !== 1) return
-        if (selectOverlay) return // в select-режиме canvas не трогаем
-        ev.preventDefault()
-        try { t.focus() } catch {}
-      }, { capture: true, passive: false })
-    }
-    // отложенные записи, случившиеся до готовности ядра
+    // ввод: единый транслятор из обёртки в наших слушателей
+    try { t.onData((d) => { for (const cb of dataListeners) { try { cb(d) } catch {} } }) } catch {}
+    // выделение обёртки → нативное копирование (onSelectionChange → нативно не работает на
+    // canvas, поэтому нативное выделение даёт long-press overlay выше; тут только для десктопа)
+    try { t.onResize(({ cols, rows }) => {
+      size = { cols, rows }
+      for (const cb of resizeListeners) { try { cb({ cols, rows }) } catch {} }
+    }) } catch {}
+    // отложенные записи
     for (const chunk of pendingWrites) { try { t.write(chunk) } catch {} }
     pendingWrites = []
-    // FitAddon (как у xterm.js): подгонка под контейнер, свой ResizeObserver с дебаунсом.
-    // Раньше мы считали сетку сами и ошибались метрикой (canvas вылезал за контейнер).
+    // FitAddon
     try {
       fitAddon = new mod.FitAddon()
       t.loadAddon(fitAddon)
       fitAddon.fit()
-    } catch (e) { try { console.warn('[tui] FitAddon не поднялся:', e) } catch {} }
+    } catch (e) { try { console.warn('[tui] FitAddon:', e) } catch {} }
     el.dataset.termEngine = 'ghostty'
     notifyResize()
     fire()
-    // повторные подгонки по мере раскладки (контейнер может быть ещё не разложен)
     for (const d of [60, 300, 1000, 2500]) setTimeout(() => {
       if (!disposed && fitAddon) { try { fitAddon.fit() } catch {} }
     }, d)
+    // textarea обёртки — ОДИН раз ставим CSS (без MutationObserver: он зацикливался,
+    // потому что обёртка переписывает style на mousemove → observer → cssText → observer...).
+    // Ставим полосу внизу для нативной вставки (long-press → «Вставить»).
+    const ta = t.textarea || el.querySelector('textarea')
+    if (ta) {
+      ta.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:36px;' +
+        'opacity:0.02;z-index:6;border:0;outline:0;resize:none;padding:0;margin:0;' +
+        'background:transparent;color:transparent;font-size:16px;caret-color:transparent'
+    }
+    // canvas: long-press → нативное выделение (overlay), короткий тап → фокус
+    const cnv = el.querySelector('canvas')
+    if (cnv) {
+      cnv.addEventListener('touchstart', (ev) => {
+        if (ev.touches.length !== 1 || selectOverlay) return
+        ev.preventDefault()
+        touchStartPos = { x: ev.touches[0].clientX, y: ev.touches[0].clientY }
+        try { t.focus() } catch {}
+        longPressTimer = setTimeout(() => {
+          if (touchStartPos) { touchStartPos = null; enterSelectMode() }
+        }, 500)
+      }, { capture: true, passive: false })
+      cnv.addEventListener('touchmove', () => {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+        touchStartPos = null
+      }, { capture: true, passive: true })
+      cnv.addEventListener('touchend', () => {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+        touchStartPos = null
+      }, { capture: true })
+    }
   })().catch((e) => {
     if (!disposed) { try { onFallback && onFallback(String((e && e.message) || e)) } catch {} }
   })
@@ -331,9 +289,8 @@ function ghosttyEngine(args) {
       open() {}, loadAddon() {},
       dispose() {
         disposed = true
-        try { selectBtn && selectBtn.remove() } catch {}
         try { selectOverlay && selectOverlay.remove() } catch {}
-        selectBtn = null; selectOverlay = null
+        selectOverlay = null
         try { t && t.dispose() } catch {}
         t = null; fitAddon = null
       },
