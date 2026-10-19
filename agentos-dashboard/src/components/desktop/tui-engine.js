@@ -114,14 +114,16 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   term.open(el)
   el.style.background = theme.background
-  // НЕ грузим WebGL: DOM-рендерер рендерит текст настоящими элементами (span/div),
-  // и Android может выделить его нАтивно (user-select:text ниже). WebGL/canvas даёт
-  // пиксели — нативного выделения нет. Скорость DOM-рендерера достаточна для TUI.
-  // Включаем нативное выделение на всём терминале:
+  // НЕ грузим WebGL: DOM-рендерер рендерит текст настоящими элементами (span/div).
+  // Включаем нативное выделение: xterm.js ставит user-select:none на .xterm-rows через
+  // свой CSS (xterm.css) — обычный inline на родителе его не переопределяет (наследуется,
+  // но дочерний CSS-класс бьёт). Инъекция <style> с !important пробивается.
   try {
-    el.style.userSelect = 'text'
-    el.style.webkitUserSelect = 'text'
-    el.style.MozUserSelect = 'text'
+    const sel = document.createElement('style')
+    sel.textContent = '.xterm,.xterm-rows,.xterm-screen,.xterm-viewport{' +
+      'user-select:text !important;-webkit-user-select:text !important;' +
+      '-moz-user-select:text !important;-ms-user-select:text !important}'
+    el.appendChild(sel)
   } catch {}
   // textarea xterm делаем видимой полосой внизу для нативной вставки
   // (long-press → «Вставить» → paste → терминал). Без этого textarea скрыт и Android
