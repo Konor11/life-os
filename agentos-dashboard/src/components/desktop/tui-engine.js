@@ -55,8 +55,13 @@ export function setPreferredEngine(kind) {
 
 function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   const term = new Terminal({
-    cursorBlink: false,   // мигающий блок-курсор на тёмном экране = вспышка каждые ~600 мс
+    cursorBlink: false,
     fontSize, lineHeight: 1, fontFamily: 'monospace', theme, scrollback, cols, rows,
+    // screenReaderMode: true — xterm.js создаёт accessibility tree в DOM (настоящие
+    // текстовые элементы .xterm-accessibility-tree поверх canvas). Android может
+    // выделять их нативно (ручки, «Копировать»). Это единственный официальный способ
+    // получить нативное touch-выделение в xterm.js с canvas/WebGL рендерером.
+    screenReaderMode: true,
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
@@ -98,11 +103,32 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
       serialize = new SerializeAddon(); term.loadAddon(serialize)
     }).catch(() => {})
   } catch {}
-  // Кликабельные ссылки: в выводе агентов много URL.
+  // Кликабельные ссылки
   try {
     import('@xterm/addon-web-links').then(({ WebLinksAddon }) => {
       term.loadAddon(new WebLinksAddon())
     }).catch(() => {})
+  } catch {}
+  // addon-clipboard: OSC 52 — копирование/вставка через системный буфер
+  try {
+    import('@xterm/addon-clipboard').then(({ ClipboardAddon }) => {
+      term.loadAddon(new ClipboardAddon())
+    }).catch(() => {})
+  } catch {}
+  // Ctrl+C копирует выделение (если есть), Ctrl+V вставляет — как в обычных терминалах
+  try {
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown') return true
+      if (ev.ctrlKey && ev.key === 'c') {
+        const sel = term.getSelection()
+        if (sel) { navigator.clipboard.writeText(sel).catch(() => {}); return false }
+      }
+      if (ev.ctrlKey && ev.key === 'v') {
+        navigator.clipboard.readText().then(t => { if (t) term.paste(t) }).catch(() => {})
+        return false
+      }
+      return true
+    })
   } catch {}
   // Прогресс операций: слушает OSC 9;4 (ConEmu) и поднимает индикатор прогресса во вкладке/
   // статусе ОС. Видно, что долгая задача агента идёт — НО только если само приложение шлёт
@@ -114,6 +140,19 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   term.open(el)
   el.style.background = theme.background
+  // accessibility tree (.xterm-accessibility-tree) — делаем ВИДИМЫМ и выделяемым:
+  // по умолчанию он off-screen и pointer-events:none. С этим CSS он накрывает терминал
+  // прозрачным слоем с настоящим текстом → Android выделяет его ручками при long-press.
+  try {
+    const s = document.createElement('style')
+    s.textContent =
+      '.xterm-accessibility-tree{position:absolute !important;inset:0 !important;' +
+      'z-index:5 !important;opacity:0.01 !important;pointer-events:auto !important;' +
+      'user-select:text !important;-webkit-user-select:text !important;' +
+      '-webkit-touch-callout:default !important;overflow:visible !important}' +
+      '.xterm-accessibility-tree > div{user-select:text !important;-webkit-user-select:text !important}'
+    el.appendChild(s)
+  } catch {}
   // === WebGL: GPU-ускоренный рендер ===
   // Текст на canvas НЕ выделяется нативно — это ограничение xterm.js на touch-устройствах
   // (issues #5377, #3727, #1101 — upstream не решён). Поэтому для копирования/вставки на
@@ -133,135 +172,12 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
       } catch { /* нет GPU — DOM-рендер */ }
     }).catch(() => {})
   } catch {}
-  // === Long-press → overlay с текстом экрана (нативное копирование) ===
-  // При долгом нажатии открывается textarea с текстом терминала (read-only).
-  // Android выделяет её нативно (ручки, «Копировать/Выбрать всё»).
-  // Без isTouch-проверки: на десктопе touch не срабатывает, click-фоллбэк работает везде.
-  {
-    let overlay = null, longPressTimer = null
-    // touchTarget — куда вешать обработчики. textarea xterm — это поверхность,
-    // которую xterm держит поверх терминала; на Android touch приходит на неё.
-    const touchTarget = el.querySelector('.xterm-helper-textarea') || el.querySelector('.xterm') || el
-    if (true) {
-      const openOverlay = () => {
-        if (overlay) return
-        // собираем видимый текст экрана из буфера
-        const buf = term.buffer.active
-        const lines = []
-        const base = buf.baseY
-        for (let r = 0; r < term.rows; r++) {
-          const line = buf.getLine(base + r)
-          try { lines.push(line ? line.translateToString(true) : '') } catch { lines.push('') }
-        }
-        overlay = document.createElement('div')
-        overlay.style.cssText = 'position:absolute;inset:0;z-index:40;overflow:auto;' +
-          'padding:8px 6px 52px;background:' + (theme.background || '#0b0e14') + ';' +
-          'display:flex;flex-direction:column;'
-        // заголовок с кнопками
-        const bar = document.createElement('div')
-        bar.style.cssText = 'display:flex;gap:6px;padding:4px 6px;margin-bottom:6px;flex-shrink:0;'
-        // кнопка Copy all
-        const copyBtn = document.createElement('button')
-        copyBtn.textContent = '📋 Всё'
-        copyBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.4);' +
-          'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer'
-        const screenText = lines.join('\n')
-        copyBtn.onclick = async () => {
-          try {
-            await navigator.clipboard.writeText(screenText)
-            copyBtn.textContent = '✓'
-            setTimeout(() => copyBtn.textContent = '📋 Всё', 1200)
-          } catch {}
-        }
-        bar.appendChild(copyBtn)
-        // кнопка Вставить
-        const pasteBtn = document.createElement('button')
-        pasteBtn.textContent = '📥 Вставить'
-        pasteBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.4);' +
-          'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer'
-        pasteBtn.onclick = async () => {
-          try {
-            const text = await navigator.clipboard.readText()
-            if (text) term.paste(text)
-          } catch (e) {
-            pasteBtn.textContent = '⚠'
-            setTimeout(() => pasteBtn.textContent = '📥 Вставить', 1200)
-          }
-        }
-        bar.appendChild(pasteBtn)
-        // кнопка закрыть
-        const closeBtn = document.createElement('button')
-        closeBtn.textContent = '✕'
-        closeBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.4);' +
-          'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer;margin-left:auto'
-        closeBtn.onclick = () => { try { overlay.remove() } catch {} ; overlay = null }
-        bar.appendChild(closeBtn)
-        overlay.appendChild(bar)
-        // textarea с текстом (нативное выделение)
-        // textarea с white-space:pre — НЕ pre-wrap: перенос строк уже в тексте
-        // (translateToString(true) тримит хвосты, рамки целы), а при wrap длинные строки
-        // рвутся и ASCII-рамки разваливаются (жалоба: «таблица ломается»).
-        // Горизонтальный скролл — единственный честный путь для широких терминалов.
-        const taWrap = document.createElement('div')
-        taWrap.style.cssText = 'flex:1;overflow:auto;'
-        const ta = document.createElement('textarea')
-        ta.value = screenText
-        ta.readOnly = true
-        ta.spellcheck = false
-        ta.style.cssText = 'width:100%;height:100%;border:0;outline:0;resize:none;' +
-          'background:transparent;color:' + (theme.foreground || '#e6edf3') + ';' +
-          'font-family:monospace;font-size:' + (fontSize || 11) + 'px;line-height:1.2;' +
-          'white-space:pre;overflow:auto;wrap:"off";' +
-          'padding:4px 6px;user-select:text;-webkit-user-select:text;'
-        taWrap.appendChild(ta)
-        overlay.appendChild(taWrap)
-        try { el.style.position = el.style.position || 'relative' } catch {}
-        el.appendChild(overlay)
-      }
-      // Жесты: короткий тап → фокус (клавиатура); долгое нажатие (>500мс) → overlay.
-      // Фокус НЕ в touchstart: preventDefault там глушит синтетические события, и
-      // Android поднимал клавиатуру «через раз». Надёжно — фокус на touchEND короткого
-      // тапа: это завершённый жест, таймер long-press ещё не сработал.
-      touchTarget.addEventListener('touchstart', (ev) => {
-        if (ev.touches.length !== 1 || overlay) return
-        const sx = ev.touches[0].clientX, sy = ev.touches[0].clientY
-        let moved = false
-        longPressTimer = setTimeout(() => { if (!moved) openOverlay() }, 500)
-        const onMove = (e) => {
-          if (Math.hypot(e.touches[0].clientX - sx, e.touches[0].clientY - sy) > 6) {
-            moved = true
-            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
-          }
-        }
-        const onEnd = () => {
-          // короткий тап: таймер ещё жив → фокусим и поднимаем клавиатуру
-          if (longPressTimer && !moved) {
-            try { term.focus() } catch {}
-          }
-          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
-          cleanup()
-        }
-        const onCancel = () => {
-          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
-          cleanup()
-        }
-        const cleanup = () => {
-          touchTarget.removeEventListener('touchmove', onMove)
-          touchTarget.removeEventListener('touchend', onEnd)
-          touchTarget.removeEventListener('touchcancel', onCancel)
-        }
-        touchTarget.addEventListener('touchmove', onMove, { passive: true })
-        touchTarget.addEventListener('touchend', onEnd)
-        touchTarget.addEventListener('touchcancel', onCancel)
-      }, { capture: true, passive: false })
-      // click-фоллбэк: на мобиле touchend синтезирует click — если long-press не сработал,
-      // click всё равно поднимет клавиатуру. На десктопе — просто фокус по клику.
-      touchTarget.addEventListener('click', () => {
-        if (!overlay) { try { term.focus() } catch {} }
-      }, { capture: true })
-    }
-  }
-  term.whenReady = (cb) => { try { cb() } catch {} }
+  // Long-press overlay убран: нативное выделение теперь работает через
+  // accessibility tree (screenReaderMode + CSS выше). Android выделяет текст ручками
+  // при долгом нажатии прямо на терминале — без overlay, без кнопок, без синтетических событий.
+  // Копирование: Ctrl+C (если есть выделение) или системное «Копировать» по long-press.
+  // Вставка: Ctrl+V или long-press → «Вставить» (textarea видима, pointer-events:auto).
+    term.whenReady = (cb) => { try { cb() } catch {} }
   return {
     term, fit, kind: 'xterm',
     // наружу — чтобы UI мог дёрнуть поиск/сериализацию, не зная про аддоны
