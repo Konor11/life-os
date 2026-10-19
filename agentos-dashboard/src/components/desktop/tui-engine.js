@@ -196,45 +196,100 @@ function ghosttyEngine(args) {
       scrollback: scrollback || 2000, cols: size.cols, rows: size.rows, ghostty,
     })
     t.open(el)
-    // --- Мост touch → mouse на canvas ---
-    // Обёртка Terminal слушает mousedown/mousemove/mouseup для выделения. На Android
-    // долгий тап по canvas перехватывается системой (меню «Автозаполнение»/контекст), и
-    // mouse-события не доходят — выделить текст нельзя. Форсируем: touch→synthetic mouse,
-    // preventDefault на touch, чтобы система не лезла. Выделение начинает работать
-    // как тап-и-протяжка, а простой тап по ссылке остаётся кликом.
+    // --- Мост touch → mouse на canvas (выделение + фокус) ---
+    // Обёртка Terminal слушает mousedown/mousemove/mouseup для выделения — на Android
+    // их нет (долгий тап перехватывает система). Мостим, но ПРАВИЛЬНО:
+    //   • тап = только фокус (клавиатура + контекст вставки), БЕЗ выделения — раньше
+    //     synthetic click дёргал link.activate и выделял весь URL от любого нажатия;
+    //   • тап-и-протяжка = выделение (mousedown при первом движении, mousemove, mouseup);
+    //   • ссылки открываются долгим нажатием (long-press), а не обычным тапом.
     const cnv = el.querySelector('canvas')
     if (cnv) {
-      let touchActive = false
-      const fakeMouse = (type, ev, touch) => {
+      let startPos = null, dragging = false, downFired = false, longPressTimer = null
+      const fakeMouse = (type, touch, buttons) => {
         cnv.dispatchEvent(new MouseEvent(type, {
-          bubbles: true, cancelable: true,
+          bubbles: true, cancelable: true, view: window,
           clientX: touch.clientX, clientY: touch.clientY,
-          button: 0, buttons: type === 'mouseup' ? 0 : 1,
-          view: window,
+          button: 0, buttons: buttons ?? (type === 'mouseup' ? 0 : 1),
         }))
       }
       cnv.addEventListener('touchstart', (ev) => {
         if (ev.touches.length !== 1) return
-        touchActive = true
         ev.preventDefault(); ev.stopPropagation()
-        fakeMouse('mousedown', ev, ev.touches[0])
+        startPos = { x: ev.touches[0].clientX, y: ev.touches[0].clientY }
+        dragging = false; downFired = false
+        // фокус — нативный вызов (synthetic mouse event не поднимает фокус на textarea)
+        try { t.focus() } catch {}
+        // долгое нажатие (>500мс без движения) = открыть ссылку под пальцем
+        longPressTimer = setTimeout(() => {
+          if (!dragging && startPos) {
+            const r = cnv.getBoundingClientRect()
+            try {
+              const det = t.linkDetector
+              if (det) {
+                const m = t.renderer.getMetrics()
+                const col = Math.floor((startPos.x - r.left) / m.width)
+                const row = Math.floor((startPos.y - r.top) / m.height)
+                det.getLinkAt(col, row).then((link) => {
+                  if (link && link.text && /^https?:\/\//.test(link.text)) {
+                    try { window.open(link.text, '_blank', 'noopener') } catch {}
+                  }
+                }).catch(() => {})
+              }
+            } catch {}
+          }
+        }, 500)
       }, { capture: true, passive: false })
       cnv.addEventListener('touchmove', (ev) => {
-        if (!touchActive || ev.touches.length !== 1) return
+        if (!startPos || ev.touches.length !== 1) return
         ev.preventDefault()
-        fakeMouse('mousemove', ev, ev.touches[0])
+        const cx = ev.touches[0].clientX, cy = ev.touches[0].clientY
+        const dist = Math.hypot(cx - startPos.x, cy - startPos.y)
+        if (dist > 6 && !downFired) {
+          dragging = true
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+          fakeMouse('mousedown', { clientX: startPos.x, clientY: startPos.y }, 1)
+          downFired = true
+        }
+        if (downFired) fakeMouse('mousemove', ev.touches[0], 1)
       }, { capture: true, passive: false })
       const endTouch = (ev) => {
-        if (!touchActive) return
-        touchActive = false
-        const t = ev.changedTouches[0]
-        fakeMouse('mouseup', ev, t)
-        // click — для кликабельных ссылок (обёртка активирует по click)
-        fakeMouse('click', ev, t)
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+        if (!startPos) return
+        if (downFired) {
+          const tt = ev.changedTouches[0]
+          fakeMouse('mouseup', tt, 0)
+        }
+        startPos = null; dragging = false; downFired = false
       }
       cnv.addEventListener('touchend', endTouch, { capture: true })
       cnv.addEventListener('touchcancel', endTouch, { capture: true })
     }
+    // --- Кнопка «Вставить» (всегда видна): читает буфер и t.paste() ---
+    // Скрытый textarea обёртки не ловит нативное меню Android «Вставить». Явная кнопка
+    // решает это на телефоне (жест клика = разрешение clipboard.readText).
+    let pasteBtn = null
+    const ensurePasteBtn = () => {
+      if (pasteBtn || disposed) return
+      pasteBtn = document.createElement('button')
+      pasteBtn.textContent = '📋 Вставить'
+      pasteBtn.style.cssText = 'position:absolute;left:10px;top:10px;z-index:20;padding:5px 12px;'
+        + 'border-radius:8px;border:1px solid rgba(128,128,128,.45);background:rgba(28,30,36,.94);'
+        + 'color:#fff;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)'
+      try { el.style.position = el.style.position || 'relative' } catch {}
+      el.appendChild(pasteBtn)
+      pasteBtn.addEventListener('click', async () => {
+        try {
+          const text = await navigator.clipboard.readText()
+          if (text) {
+            try { t.paste(text) } catch {}
+            pasteBtn.textContent = '✓ Вставлено'
+            setTimeout(() => { if (pasteBtn) pasteBtn.textContent = '📋 Вставить' }, 1600)
+          }
+        } catch (e) { try { console.warn('[tui] вставка не удалась:', e && e.message || e) } catch {} }
+      })
+    }
+    ensurePasteBtn()
     // ввод: единый транслятор из обёртки в наших слушателей
     try {
       t.onData((d) => { for (const cb of dataListeners) { try { cb(d) } catch {} } })
@@ -310,7 +365,8 @@ function ghosttyEngine(args) {
       dispose() {
         disposed = true
         try { copyBtn && copyBtn.remove() } catch {}
-        copyBtn = null
+        try { pasteBtn && pasteBtn.remove() } catch {}
+        copyBtn = null; pasteBtn = null
         try { t && t.dispose() } catch {}
         t = null; fitAddon = null
       },
