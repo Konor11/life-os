@@ -669,6 +669,9 @@ export function ChatPanel({ fullscreen = false }) {
       repaintTimer = setTimeout(refreshScreen, 600)
     }
     const doResize = () => {
+      // Принудительная перерисовка WebGL canvas: при открытии/закрытии клавиатуры
+      // Life OS контейнер меняет размер, но WebGL может не перерисовать кадр сам.
+      try { term.refresh(0, term.rows - 1) } catch {}
       // Размер ДО подгонки: applyFit() внутри вызывает fit(), который сам поднимает onResize и
       // обновляет lastSentSize, поэтому сравнивать надо с прежним значением, иначе «changed»
       // всегда ложно и чистый кадр после смены раскладки не заказывается.
