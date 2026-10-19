@@ -120,6 +120,14 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   // телефоне ниже есть long-press overlay: терминал-текст в настоящей textarea, где
   // Android выделяет нативно (см. hermes-agent issue #50075 — такой же баг, такое же решение).
   // WebGL при этом работает: буфер текста доступен через term.buffer независимо от рендерера.
+  // .xterm-helper-textarea сидит ПОВЕРХ терминала с pointer-events:auto (из xterm.css)
+  // и перехватывает ВСЕ touch-события — наш обработчик на el их не видит. Глушим.
+  // term.focus() работает программно и при pointer-events:none.
+  try {
+    const s = document.createElement('style')
+    s.textContent = '.xterm-helper-textarea{pointer-events:none !important}'
+    el.appendChild(s)
+  } catch {}
   try {
     import('@xterm/addon-webgl').then(({ WebglAddon }) => {
       try {
