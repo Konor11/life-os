@@ -42,7 +42,11 @@ export function preferredEngine() {
     const s = window.localStorage.getItem(TERM_KEY)
     if (s === 'xterm' || s === 'ghostty') return s
   } catch { /* приватный режим и т.п. */ }
-  return 'ghostty'
+  // По умолчанию — xterm.js с DOM-рендерером (БЕЗ WebGL): текст рисуется настоящими
+  // DOM-элементами, и Android выделяет его нативно (ручки, «Копировать»). WebGL/canvas
+  // этого не дают — там пиксели. ghostty остаётся опцией для скорости, но без нативного
+  // копирования.
+  return 'xterm'
 }
 
 export function setPreferredEngine(kind) {
@@ -110,18 +114,25 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   term.open(el)
   el.style.background = theme.background
-  // WebGL-рендерер: ускоряет отрисовку крупных объёмов (TUI перерисовывает кадр целиком).
-  // ВАЖНО: официального WebGPU-рендера у xterm.js НЕТ — WebGL2 и есть ускоренный путь.
-  // Грузим ПОСЛЕ open() — иначе не подменит дефолтный DOM-рендер. При потере WebGL-контекста
-  // (OOM, сон) — отпускаем аддон, xterm сам падает на DOM-рендер, терминал живёт дальше.
+  // НЕ грузим WebGL: DOM-рендерер рендерит текст настоящими элементами (span/div),
+  // и Android может выделить его нАтивно (user-select:text ниже). WebGL/canvas даёт
+  // пиксели — нативного выделения нет. Скорость DOM-рендерера достаточна для TUI.
+  // Включаем нативное выделение на всём терминале:
   try {
-    import('@xterm/addon-webgl').then(({ WebglAddon }) => {
-      try {
-        webgl = new WebglAddon()
-        webgl.onContextLoss(() => { try { webgl.dispose() } catch {} ; webgl = null })
-        term.loadAddon(webgl)
-      } catch { /* нет GPU — остаёмся на DOM-рендере */ }
-    }).catch(() => {})
+    el.style.userSelect = 'text'
+    el.style.webkitUserSelect = 'text'
+    el.style.MozUserSelect = 'text'
+  } catch {}
+  // textarea xterm делаем видимой полосой внизу для нативной вставки
+  // (long-press → «Вставить» → paste → терминал). Без этого textarea скрыт и Android
+  // не показывает меню вставки.
+  try {
+    const ta = el.querySelector('.xterm-helper-textarea')
+    if (ta) {
+      ta.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:36px;' +
+        'opacity:0.02;z-index:10;border:0;outline:0;resize:none;padding:0;margin:0;' +
+        'background:transparent;color:transparent;font-size:16px;caret-color:transparent'
+    }
   } catch {}
   term.whenReady = (cb) => { try { cb() } catch {} }
   return {
