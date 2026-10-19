@@ -139,13 +139,13 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   // === Long-press → overlay с текстом экрана (нативное копирование) ===
   // При долгом нажатии открывается textarea с текстом терминала (read-only).
-  // Android выделяет её нативно (ручки, «Копировать/Выбрать всё»). Это РЕШЕНИЕ проблемы
-  // touch-выделения в xterm.js — canvas/WebGL не выделяется ОС (см. upstream #5377).
-  // Для вставки — кнопка «📋 Вставить» (clipboard API, жест = разрешение).
+  // Android выделяет её нативно (ручки, «Копировать/Выбрать всё»).
+  // Без isTouch-проверки: на десктопе touch не срабатывает, click-фоллбэк работает везде.
   {
     let overlay = null, longPressTimer = null
-    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-    if (isTouch) {
+    // вешаем на .xterm (создаётся term.open) — ближе к поверхности, чем el
+    const xtermEl = el.querySelector('.xterm') || el
+    if (true) {
       const openOverlay = () => {
         if (overlay) return
         // собираем видимый текст экрана из буфера
@@ -258,6 +258,11 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
         el.addEventListener('touchend', onEnd)
         el.addEventListener('touchcancel', onCancel)
       }, { capture: true, passive: false })
+      // click-фоллбэк: на мобиле touchend синтезирует click — если long-press не сработал,
+      // click всё равно поднимет клавиатуру. На десктопе — просто фокус по клику.
+      xtermEl.addEventListener('click', () => {
+        if (!overlay) { try { term.focus() } catch {} }
+      }, { capture: true })
     }
   }
   term.whenReady = (cb) => { try { cb() } catch {} }
