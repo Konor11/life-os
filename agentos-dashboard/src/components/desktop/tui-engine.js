@@ -196,121 +196,88 @@ function ghosttyEngine(args) {
       scrollback: scrollback || 2000, cols: size.cols, rows: size.rows, ghostty,
     })
     t.open(el)
-    // --- Мост touch → mouse на canvas (выделение + фокус) ---
-    // Обёртка Terminal слушает mousedown/mousemove/mouseup для выделения — на Android
-    // их нет (долгий тап перехватывает система). Мостим, но ПРАВИЛЬНО:
-    //   • тап = только фокус (клавиатура + контекст вставки), БЕЗ выделения — раньше
-    //     synthetic click дёргал link.activate и выделял весь URL от любого нажатия;
-    //   • тап-и-протяжка = выделение (mousedown при первом движении, mousemove, mouseup);
-    //   • ссылки открываются долгим нажатием (long-press), а не обычным тапом.
+    // === Нативное копирование/вставка (как в Telegram) ===
+    // Canvas не даёт нативного выделения — текст там пиксели. Поэтому:
+    //  • КОПИРОВАНИЕ: «Select-режим» — кнопка открывает overlay с настоящим DOM-текстом
+    //    экрана (собранным из буфера). На нём Android рисует свои ручки выделения и
+    //    системное меню «Копировать / Выбрать всё». Никаких кастомных кнопок копирования.
+    //  • ВСТАВКА: textarea обёртки делаем видимой полосой внизу — long-press → системное
+    //    «Вставить» → paste-обработчик обёртки → t.paste(). Своих кнопок вставки нет.
+    //  • ВВОД: тап по canvas → t.focus() (нативный — поднимает клавиатуру).
     const cnv = el.querySelector('canvas')
-    if (cnv) {
-      let startPos = null, dragging = false, downFired = false, longPressTimer = null
-      const fakeMouse = (type, touch, buttons) => {
-        cnv.dispatchEvent(new MouseEvent(type, {
-          bubbles: true, cancelable: true, view: window,
-          clientX: touch.clientX, clientY: touch.clientY,
-          button: 0, buttons: buttons ?? (type === 'mouseup' ? 0 : 1),
-        }))
+    // --- Select-режим (нативное копирование) ---
+    let selectOverlay = null
+    const enterSelectMode = () => {
+      if (selectOverlay || !t) return
+      try { el.style.position = el.style.position || 'relative' } catch {}
+      // собираем видимый текст экрана из буфера терминала
+      const b = t.buffer && t.buffer.active
+      const lines = []
+      if (b) {
+        const start = Math.max(0, (b.length || t.rows) - t.rows - (b.viewportY || 0))
+        for (let r = 0; r < t.rows; r++) {
+          const line = b.getLine(start + r)
+          try { lines.push(line ? line.translateToString(true) : '') } catch { lines.push('') }
+        }
       }
+      selectOverlay = document.createElement('div')
+      selectOverlay.style.cssText =
+        'position:absolute;inset:0;z-index:40;overflow:auto;padding:12px;' +
+        'background:' + (theme.background || '#0b0e14') + ';color:' + (theme.foreground || '#e6edf3') + ';' +
+        'font-family:monospace;font-size:' + fontSize + 'px;line-height:1.1;white-space:pre-wrap;' +
+        'word-break:break-all;-webkit-user-select:text;user-select:text;' +
+        '-webkit-user-modify:read-only;-webkit-touch-callout:default'
+      selectOverlay.textContent = lines.join('\n')
+      const closeBtn = document.createElement('button')
+      closeBtn.textContent = '✕'
+      closeBtn.style.cssText = 'position:sticky;float:right;z-index:41;padding:4px 10px;' +
+        'border-radius:6px;border:1px solid rgba(128,128,128,.4);background:rgba(28,30,36,.95);' +
+        'color:#fff;font-size:14px;cursor:pointer;margin-bottom:8px'
+      closeBtn.addEventListener('click', exitSelectMode)
+      selectOverlay.insertBefore(closeBtn, selectOverlay.firstChild)
+      el.appendChild(selectOverlay)
+    }
+    const exitSelectMode = () => {
+      if (selectOverlay) { try { selectOverlay.remove() } catch {} ; selectOverlay = null }
+    }
+    // кнопка входа в select-режим
+    let selectBtn = null
+    const ensureSelectBtn = () => {
+      if (selectBtn || disposed) return
+      selectBtn = document.createElement('button')
+      selectBtn.textContent = '📋 Выбрать'
+      selectBtn.style.cssText = 'position:absolute;right:10px;top:10px;z-index:20;padding:5px 12px;' +
+        'border-radius:8px;border:1px solid rgba(128,128,128,.45);background:rgba(28,30,36,.94);' +
+        'color:#fff;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)'
+      try { el.style.position = el.style.position || 'relative' } catch {}
+      el.appendChild(selectBtn)
+      selectBtn.addEventListener('click', enterSelectMode)
+    }
+    ensureSelectBtn()
+    // --- Вставка: textarea обёртки как видимая полоса внизу ---
+    // Обёртка прячет textarea (1px, opacity:0) и двигает за курсором — Android не покажет
+    // на нём «Вставить». Переопределяем CSS (через MutationObserver — обёртка переписывает
+    // style при каждом mousemove) в полосу 100%×36px внизу, почти невидимую, но достаточно
+    // крупную для системного меню long-press → «Вставить» → paste → t.paste().
+    const ta = t.textarea || el.querySelector('textarea')
+    if (ta) {
+      const applyTa = () => {
+        ta.style.cssText = 'position:absolute;left:0;bottom:0;width:100%;height:36px;' +
+          'opacity:0.011;z-index:6;border:0;outline:0;resize:none;padding:0;margin:0;' +
+          'background:transparent;color:transparent;font-size:16px;caret-color:transparent'
+      }
+      try { new MutationObserver(applyTa).observe(ta, { attributes: true, attributeFilter: ['style'] }) } catch {}
+      applyTa()
+    }
+    // --- Ввод: тап по canvas → нативный фокус (клавиатура) ---
+    if (cnv) {
       cnv.addEventListener('touchstart', (ev) => {
         if (ev.touches.length !== 1) return
-        ev.preventDefault(); ev.stopPropagation()
-        startPos = { x: ev.touches[0].clientX, y: ev.touches[0].clientY }
-        dragging = false; downFired = false
-        // фокус — нативный вызов (synthetic mouse event не поднимает фокус на textarea)
-        try { t.focus() } catch {}
-        // долгое нажатие (>500мс без движения) = открыть ссылку под пальцем
-        longPressTimer = setTimeout(() => {
-          if (!dragging && startPos) {
-            const r = cnv.getBoundingClientRect()
-            try {
-              const det = t.linkDetector
-              if (det) {
-                const m = t.renderer.getMetrics()
-                const col = Math.floor((startPos.x - r.left) / m.width)
-                const row = Math.floor((startPos.y - r.top) / m.height)
-                det.getLinkAt(col, row).then((link) => {
-                  if (link && link.text && /^https?:\/\//.test(link.text)) {
-                    try { window.open(link.text, '_blank', 'noopener') } catch {}
-                  }
-                }).catch(() => {})
-              }
-            } catch {}
-          }
-        }, 500)
-      }, { capture: true, passive: false })
-      cnv.addEventListener('touchmove', (ev) => {
-        if (!startPos || ev.touches.length !== 1) return
+        if (selectOverlay) return // в select-режиме canvas не трогаем
         ev.preventDefault()
-        const cx = ev.touches[0].clientX, cy = ev.touches[0].clientY
-        const dist = Math.hypot(cx - startPos.x, cy - startPos.y)
-        if (dist > 6 && !downFired) {
-          dragging = true
-          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
-          fakeMouse('mousedown', { clientX: startPos.x, clientY: startPos.y }, 1)
-          downFired = true
-        }
-        if (downFired) fakeMouse('mousemove', ev.touches[0], 1)
+        try { t.focus() } catch {}
       }, { capture: true, passive: false })
-      const endTouch = (ev) => {
-        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
-        if (!startPos) return
-        if (downFired) {
-          const tt = ev.changedTouches[0]
-          fakeMouse('mouseup', tt, 0)
-        }
-        startPos = null; dragging = false; downFired = false
-      }
-      cnv.addEventListener('touchend', endTouch, { capture: true })
-      cnv.addEventListener('touchcancel', endTouch, { capture: true })
     }
-    // --- Кнопка «Вставить» (всегда видна): читает буфер и t.paste() ---
-    // Скрытый textarea обёртки не ловит нативное меню Android «Вставить». Явная кнопка
-    // решает это на телефоне (жест клика = разрешение clipboard.readText).
-    let pasteBtn = null
-    const ensurePasteBtn = () => {
-      if (pasteBtn || disposed) return
-      pasteBtn = document.createElement('button')
-      pasteBtn.textContent = '📋 Вставить'
-      pasteBtn.style.cssText = 'position:absolute;left:10px;top:10px;z-index:20;padding:5px 12px;'
-        + 'border-radius:8px;border:1px solid rgba(128,128,128,.45);background:rgba(28,30,36,.94);'
-        + 'color:#fff;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)'
-      try { el.style.position = el.style.position || 'relative' } catch {}
-      el.appendChild(pasteBtn)
-      pasteBtn.addEventListener('click', async () => {
-        try {
-          const text = await navigator.clipboard.readText()
-          if (text) {
-            try { t.paste(text) } catch {}
-            pasteBtn.textContent = '✓ Вставлено'
-            setTimeout(() => { if (pasteBtn) pasteBtn.textContent = '📋 Вставить' }, 1600)
-          }
-        } catch (e) { try { console.warn('[tui] вставка не удалась:', e && e.message || e) } catch {} }
-      })
-    }
-    ensurePasteBtn()
-    // ввод: единый транслятор из обёртки в наших слушателей
-    try {
-      t.onData((d) => { for (const cb of dataListeners) { try { cb(d) } catch {} } })
-    } catch {}
-    // выделение → показываем кнопку копирования
-    try {
-      t.onSelectionChange(() => {
-        try {
-          const has = !!(t.hasSelection && t.hasSelection())
-          if (has) { ensureCopyBtn(); if (copyBtn) copyBtn.style.display = '' }
-          else if (copyBtn) copyBtn.style.display = 'none'
-        } catch {}
-      })
-    } catch {}
-    // размеры наружу (PTY должен жить в сетке терминала)
-    try {
-      t.onResize(({ cols, rows }) => {
-        size = { cols, rows }
-        for (const cb of resizeListeners) { try { cb({ cols, rows }) } catch {} }
-      })
-    } catch {}
     // отложенные записи, случившиеся до готовности ядра
     for (const chunk of pendingWrites) { try { t.write(chunk) } catch {} }
     pendingWrites = []
@@ -364,9 +331,9 @@ function ghosttyEngine(args) {
       open() {}, loadAddon() {},
       dispose() {
         disposed = true
-        try { copyBtn && copyBtn.remove() } catch {}
-        try { pasteBtn && pasteBtn.remove() } catch {}
-        copyBtn = null; pasteBtn = null
+        try { selectBtn && selectBtn.remove() } catch {}
+        try { selectOverlay && selectOverlay.remove() } catch {}
+        selectBtn = null; selectOverlay = null
         try { t && t.dispose() } catch {}
         t = null; fitAddon = null
       },
