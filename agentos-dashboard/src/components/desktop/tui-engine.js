@@ -120,14 +120,10 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   // телефоне ниже есть long-press overlay: терминал-текст в настоящей textarea, где
   // Android выделяет нативно (см. hermes-agent issue #50075 — такой же баг, такое же решение).
   // WebGL при этом работает: буфер текста доступен через term.buffer независимо от рендерера.
-  // .xterm-helper-textarea сидит ПОВЕРХ терминала с pointer-events:auto (из xterm.css)
-  // и перехватывает ВСЕ touch-события — наш обработчик на el их не видит. Глушим.
-  // term.focus() работает программно и при pointer-events:none.
-  try {
-    const s = document.createElement('style')
-    s.textContent = '.xterm-helper-textarea{pointer-events:none !important}'
-    el.appendChild(s)
-  } catch {}
+  // textarea xterm (.xterm-helper-textarea) — это И ЕСТЬ поверхность для touch:
+  // xterm позиционирует его поверх терминала. Раньше я ставил pointer-events:none — но
+  // Android Chrome НЕ фокусирует элемент с pointer-events:none → клавиатура не открывалась.
+  // Теперь обработчик висит НА textarea — touch доходит, focus работает, Paste ловится.
   try {
     import('@xterm/addon-webgl').then(({ WebglAddon }) => {
       try {
@@ -225,9 +221,8 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
       // Фокус НЕ в touchstart: preventDefault там глушит синтетические события, и
       // Android поднимал клавиатуру «через раз». Надёжно — фокус на touchEND короткого
       // тапа: это завершённый жест, таймер long-press ещё не сработал.
-      el.addEventListener('touchstart', (ev) => {
+      touchTarget.addEventListener('touchstart', (ev) => {
         if (ev.touches.length !== 1 || overlay) return
-        ev.preventDefault()  // без этого Android лезет с системным меню на долгом тапе
         const sx = ev.touches[0].clientX, sy = ev.touches[0].clientY
         let moved = false
         longPressTimer = setTimeout(() => { if (!moved) openOverlay() }, 500)
@@ -250,17 +245,17 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
           cleanup()
         }
         const cleanup = () => {
-          el.removeEventListener('touchmove', onMove)
-          el.removeEventListener('touchend', onEnd)
-          el.removeEventListener('touchcancel', onCancel)
+          touchTarget.removeEventListener('touchmove', onMove)
+          touchTarget.removeEventListener('touchend', onEnd)
+          touchTarget.removeEventListener('touchcancel', onCancel)
         }
-        el.addEventListener('touchmove', onMove, { passive: true })
-        el.addEventListener('touchend', onEnd)
-        el.addEventListener('touchcancel', onCancel)
+        touchTarget.addEventListener('touchmove', onMove, { passive: true })
+        touchTarget.addEventListener('touchend', onEnd)
+        touchTarget.addEventListener('touchcancel', onCancel)
       }, { capture: true, passive: false })
       // click-фоллбэк: на мобиле touchend синтезирует click — если long-press не сработал,
       // click всё равно поднимет клавиатуру. На десктопе — просто фокус по клику.
-      xtermEl.addEventListener('click', () => {
+      touchTarget.addEventListener('click', () => {
         if (!overlay) { try { term.focus() } catch {} }
       }, { capture: true })
     }
