@@ -125,6 +125,18 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
       '-moz-user-select:text !important;-ms-user-select:text !important}'
     el.appendChild(sel)
   } catch {}
+  // xterm.js блокирует нативное выделение: его mousedown-обработчик вызывает
+  // preventDefault(), и Android (синтезирующий mousedown из touch) не может начать
+  // выделение. На тач-устройствах перехватываем mousedown в фазе capture и глушим —
+  // xterm не получает событие, не вызывает preventDefault, и Android выделяет текст
+  // своими ручками. На десктопе не трогаем (там xterm-выделение нужнее).
+  try {
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+      el.addEventListener('mousedown', (ev) => {
+        ev.stopImmediatePropagation()
+      }, { capture: true })
+    }
+  } catch {}
   // textarea xterm делаем видимой полосой внизу для нативной вставки
   // (long-press → «Вставить» → paste → терминал). Без этого textarea скрыт и Android
   // не показывает меню вставки.
