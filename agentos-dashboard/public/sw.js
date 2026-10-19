@@ -1,7 +1,7 @@
 // Service worker Life OS: офлайн-оболочка, чтобы панель открывалась на телефоне как приложение.
 // Каталог API и WebSocket намеренно НЕ кэшируем: там всегда нужны живые данные, а закэшированный
 // ответ выглядел бы как «всё работает», хотя это старый снимок — худший вид поломки.
-const CACHE = 'lifeos-shell-v1'
+const CACHE = 'lifeos-shell-v2'
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['/', '/manifest.webmanifest', '/mascot.svg'])).then(() => self.skipWaiting()))
