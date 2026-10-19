@@ -196,6 +196,45 @@ function ghosttyEngine(args) {
       scrollback: scrollback || 2000, cols: size.cols, rows: size.rows, ghostty,
     })
     t.open(el)
+    // --- Мост touch → mouse на canvas ---
+    // Обёртка Terminal слушает mousedown/mousemove/mouseup для выделения. На Android
+    // долгий тап по canvas перехватывается системой (меню «Автозаполнение»/контекст), и
+    // mouse-события не доходят — выделить текст нельзя. Форсируем: touch→synthetic mouse,
+    // preventDefault на touch, чтобы система не лезла. Выделение начинает работать
+    // как тап-и-протяжка, а простой тап по ссылке остаётся кликом.
+    const cnv = el.querySelector('canvas')
+    if (cnv) {
+      let touchActive = false
+      const fakeMouse = (type, ev, touch) => {
+        cnv.dispatchEvent(new MouseEvent(type, {
+          bubbles: true, cancelable: true,
+          clientX: touch.clientX, clientY: touch.clientY,
+          button: 0, buttons: type === 'mouseup' ? 0 : 1,
+          view: window,
+        }))
+      }
+      cnv.addEventListener('touchstart', (ev) => {
+        if (ev.touches.length !== 1) return
+        touchActive = true
+        ev.preventDefault(); ev.stopPropagation()
+        fakeMouse('mousedown', ev, ev.touches[0])
+      }, { capture: true, passive: false })
+      cnv.addEventListener('touchmove', (ev) => {
+        if (!touchActive || ev.touches.length !== 1) return
+        ev.preventDefault()
+        fakeMouse('mousemove', ev, ev.touches[0])
+      }, { capture: true, passive: false })
+      const endTouch = (ev) => {
+        if (!touchActive) return
+        touchActive = false
+        const t = ev.changedTouches[0]
+        fakeMouse('mouseup', ev, t)
+        // click — для кликабельных ссылок (обёртка активирует по click)
+        fakeMouse('click', ev, t)
+      }
+      cnv.addEventListener('touchend', endTouch, { capture: true })
+      cnv.addEventListener('touchcancel', endTouch, { capture: true })
+    }
     // ввод: единый транслятор из обёртки в наших слушателей
     try {
       t.onData((d) => { for (const cb of dataListeners) { try { cb(d) } catch {} } })
