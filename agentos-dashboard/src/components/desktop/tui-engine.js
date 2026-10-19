@@ -57,11 +57,6 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   const term = new Terminal({
     cursorBlink: false,
     fontSize, lineHeight: 1, fontFamily: 'monospace', theme, scrollback, cols, rows,
-    // screenReaderMode: true — xterm.js создаёт accessibility tree в DOM (настоящие
-    // текстовые элементы .xterm-accessibility-tree поверх canvas). Android может
-    // выделять их нативно (ручки, «Копировать»). Это единственный официальный способ
-    // получить нативное touch-выделение в xterm.js с canvas/WebGL рендерером.
-    screenReaderMode: true,
   })
   const fit = new FitAddon()
   term.loadAddon(fit)
@@ -140,38 +135,9 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   term.open(el)
   el.style.background = theme.background
-  // accessibility tree (.xterm-accessibility-tree) — xterm.js создаёт его при
-  // screenReaderMode:true. По умолчанию off-screen и pointer-events:none. Делаем его
-  // прозрачным слоем ПОВЕРХ canvas (opacity:0 — невидим, но pointer-events:auto —
-  // Android может выделять текст ручками). Текст для отображения рисует canvas (WebGL),
-  // accessibility tree — только поверхность для нативного выделения. opacity:0.01 давал
-  // двоение (два видимых слоя со смещением); opacity:0 — только canvas виден.
-  try {
-    const s = document.createElement('style')
-    s.textContent =
-      '.xterm-accessibility-tree{position:absolute !important;inset:0 !important;' +
-      'z-index:5 !important;opacity:0 !important;pointer-events:auto !important;' +
-      'user-select:text !important;-webkit-user-select:text !important;' +
-      '-webkit-touch-callout:default !important;overflow:hidden !important;' +
-      'color:transparent !important;font-family:monospace !important;' +
-      'font-size:inherit !important;line-height:1 !important;' +
-      'white-space:pre !important;margin:0 !important;padding:0 !important}' +
-      '.xterm-accessibility-tree > div{user-select:text !important;' +
-      '-webkit-user-select:text !important;color:transparent !important;' +
-      'white-space:pre !important}'
-    el.appendChild(s)
-  } catch {}
-  // === WebGL: GPU-ускоренный рендер ===
-  // Текст на canvas НЕ выделяется нативно — это ограничение xterm.js на touch-устройствах
-  // (issues #5377, #3727, #1101 — upstream не решён). Поэтому для копирования/вставки на
-  // телефоне ниже есть long-press overlay: терминал-текст в настоящей textarea, где
-  // Android выделяет нативно (см. hermes-agent issue #50075 — такой же баг, такое же решение).
-  // WebGL при этом работает: буфер текста доступен через term.buffer независимо от рендерера.
-  // textarea xterm (.xterm-helper-textarea) — это И ЕСТЬ поверхность для touch:
-  // xterm позиционирует его поверх терминала. Раньше я ставил pointer-events:none — но
-  // Android Chrome НЕ фокусирует элемент с pointer-events:none → клавиатура не открывалась.
-  // Теперь обработчик висит НА textarea — touch доходит, focus работает, Paste ловится.
-  try {
+  // accessibility tree убран — вызывал двоение с canvas
+  // Копирование: long-press → overlay с текстом (проверенный способ)
+    try {
     import('@xterm/addon-webgl').then(({ WebglAddon }) => {
       try {
         webgl = new WebglAddon()
@@ -186,6 +152,87 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   // Копирование: Ctrl+C (если есть выделение) или системное «Копировать» по long-press.
   // Вставка: Ctrl+V или long-press → «Вставить» (textarea видима, pointer-events:auto).
     term.whenReady = (cb) => { try { cb() } catch {} }
+  // === Long-press → overlay (проверенный способ, ты подтверждал что работал) ===
+  // Canvas/WebGL не выделяется ОС. Долгое нажатие → textarea с текстом экрана →
+  // нативные ручки Android → «Копировать». Кнопки: 📋 Всё, 📥 Вставить, ✕.
+  {
+    let overlay = null, longPressTimer = null
+    const openOverlay = () => {
+      if (overlay) return
+      const buf = term.buffer.active
+      const lines = []
+      const base = buf.baseY
+      for (let r = 0; r < term.rows; r++) {
+        const line = buf.getLine(base + r)
+        try { lines.push(line ? line.translateToString(true) : '') } catch { lines.push('') }
+      }
+      const screenText = lines.join('\n')
+      overlay = document.createElement('div')
+      overlay.style.cssText = 'position:absolute;inset:0;z-index:40;overflow:hidden;' +
+        'padding:0;background:' + (theme.background || '#0b0e14') + ';' +
+        'display:flex;flex-direction:column;'
+      const bar = document.createElement('div')
+      bar.style.cssText = 'display:flex;gap:6px;padding:6px;flex-shrink:0;'
+      const mkBtn = (txt) => {
+        const b = document.createElement('button')
+        b.textContent = txt
+        b.style.cssText = 'padding:5px 12px;border-radius:8px;border:1px solid rgba(128,128,128,.4);' +
+          'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer'
+        return b
+      }
+      const copyBtn = mkBtn('📋 Всё')
+      copyBtn.onclick = async () => {
+        try { await navigator.clipboard.writeText(screenText); copyBtn.textContent = '✓'; setTimeout(() => copyBtn.textContent = '📋 Всё', 1200) } catch {}
+      }
+      const pasteBtn = mkBtn('📥 Вставить')
+      pasteBtn.onclick = async () => {
+        try { const t = await navigator.clipboard.readText(); if (t) term.paste(t) } catch (e) { pasteBtn.textContent = '⚠'; setTimeout(() => pasteBtn.textContent = '📥 Вставить', 1200) }
+      }
+      const closeBtn = mkBtn('✕')
+      closeBtn.onclick = () => { try { overlay.remove() } catch {} ; overlay = null }
+      bar.appendChild(copyBtn); bar.appendChild(pasteBtn); bar.appendChild(closeBtn)
+      overlay.appendChild(bar)
+      const ta = document.createElement('textarea')
+      ta.value = screenText
+      ta.readOnly = true
+      ta.spellcheck = false
+      ta.style.cssText = 'flex:1;width:100%;border:0;outline:0;resize:none;' +
+        'background:transparent;color:' + (theme.foreground || '#e6edf3') + ';' +
+        'font-family:monospace;font-size:' + (fontSize || 11) + 'px;line-height:1.2;' +
+        'white-space:pre;overflow:auto;padding:6px;user-select:text;-webkit-user-select:text;'
+      overlay.appendChild(ta)
+      try { el.style.position = el.style.position || 'relative' } catch {}
+      el.appendChild(overlay)
+    }
+    // touch на textarea xterm (touchTarget — рабочая поверхность)
+    const touchTarget = el.querySelector('.xterm-helper-textarea') || el.querySelector('.xterm') || el
+    touchTarget.addEventListener('touchstart', (ev) => {
+      if (ev.touches.length !== 1 || overlay) return
+      const sx = ev.touches[0].clientX, sy = ev.touches[0].clientY
+      let moved = false
+      longPressTimer = setTimeout(() => { if (!moved) openOverlay() }, 500)
+      const onMove = (e) => {
+        if (Math.hypot(e.touches[0].clientX - sx, e.touches[0].clientY - sy) > 6) {
+          moved = true
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+        }
+      }
+      const onEnd = () => {
+        if (longPressTimer && !moved) { try { term.focus() } catch {} }
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+        touchTarget.removeEventListener('touchmove', onMove)
+        touchTarget.removeEventListener('touchend', onEnd)
+        touchTarget.removeEventListener('touchcancel', onEnd)
+      }
+      touchTarget.addEventListener('touchmove', onMove, { passive: true })
+      touchTarget.addEventListener('touchend', onEnd)
+      touchTarget.addEventListener('touchcancel', onEnd)
+    }, { passive: true })
+    touchTarget.addEventListener('click', () => {
+      if (!overlay) { try { term.focus() } catch {} }
+    }, { capture: true })
+  }
+
   return {
     term, fit, kind: 'xterm',
     // наружу — чтобы UI мог дёрнуть поиск/сериализацию, не зная про аддоны
