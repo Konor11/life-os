@@ -114,72 +114,114 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   term.open(el)
   el.style.background = theme.background
-  // НЕ грузим WebGL: DOM-рендерер рендерит текст настоящими элементами (span/div).
-  // Включаем нативное выделение: xterm.js ставит user-select:none на .xterm-rows через
-  // свой CSS (xterm.css) — обычный inline на родителе его не переопределяет (наследуется,
-  // но дочерний CSS-класс бьёт). Инъекция <style> с !important пробивается.
-  // === Ключевая инъекция CSS для нативного выделения на Android ===
-  // 1. user-select:text !important — пробивает xterm.css (user-select:none на .xterm)
-  // 2. pointer-events:none на .xterm-helper-textarea — textarea xterm сидит ПОВЕРХ
-  //    текста и перехватывает все touch-события. Android видит input-поле → показывает
-  //    «Вставить» вместо выделения. С pointer-events:none touch проходит к .xterm-rows
-  //    (настоящему DOM-тексту) → Android рисует ручки выделения и «Копировать».
-  //    Ввод: короткий тап временно включает pointer-events + focus (см. ниже).
+  // === WebGL: GPU-ускоренный рендер ===
+  // Текст на canvas НЕ выделяется нативно — это ограничение xterm.js на touch-устройствах
+  // (issues #5377, #3727, #1101 — upstream не решён). Поэтому для копирования/вставки на
+  // телефоне ниже есть long-press overlay: терминал-текст в настоящей textarea, где
+  // Android выделяет нативно (см. hermes-agent issue #50075 — такой же баг, такое же решение).
+  // WebGL при этом работает: буфер текста доступен через term.buffer независимо от рендерера.
   try {
-    const sel = document.createElement('style')
-    sel.textContent =
-      '.xterm,.xterm-rows,.xterm-screen,.xterm-viewport{' +
-        'user-select:text !important;-webkit-user-select:text !important;' +
-        '-moz-user-select:text !important;-ms-user-select:text !important}' +
-      '.xterm-helper-textarea{pointer-events:none !important}'
-    el.appendChild(sel)
+    import('@xterm/addon-webgl').then(({ WebglAddon }) => {
+      try {
+        webgl = new WebglAddon()
+        webgl.onContextLoss(() => { try { webgl.dispose() } catch {} ; webgl = null })
+        term.loadAddon(webgl)
+      } catch { /* нет GPU — DOM-рендер */ }
+    }).catch(() => {})
   } catch {}
-  // На тач-устройствах: глушим mousedown xterm (preventDefault блокирует выделение)
-  try {
-    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-      el.addEventListener('mousedown', (ev) => {
-        ev.stopImmediatePropagation()
-      }, { capture: true })
-    }
-  } catch {}
-  // Короткий тап по терминалу → фокус (клавиатура). textarea имеет pointer-events:none,
-  // поэтому touch не доходит до него — перехватываем на canvas/контейнере и фокусируем
-  // программно, временно включив pointer-events.
-  try {
-    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-      let tapTimer = null, tapStart = null
-      el.addEventListener('touchstart', (ev) => {
-        if (ev.touches.length !== 1) return
-        tapStart = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, t: Date.now() }
-        // временно включаем textarea для фокуса
-        const ta = el.querySelector('.xterm-helper-textarea')
-        if (ta) ta.style.pointerEvents = 'auto'
-        try { term.focus() } catch {}
-        tapTimer = setTimeout(() => {
-          // если палец не двигался и не долго — это ввод, оставляем фокус
-          // возвращаем pointer-events:none чтобы long-press работал для выделения
-          if (ta) ta.style.pointerEvents = 'none'
-        }, 300)
-      }, { capture: true, passive: true })
-      el.addEventListener('touchmove', (ev) => {
-        if (!tapStart) return
-        const dist = Math.hypot(ev.touches[0].clientX - tapStart.x, ev.touches[0].clientY - tapStart.y)
-        if (dist > 8) {
-          // пользователь тянет — выделение; textarea уже выключен
-          if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
-          const ta = el.querySelector('.xterm-helper-textarea')
-          if (ta) ta.style.pointerEvents = 'none'
+  // === Long-press → overlay с текстом экрана (нативное копирование) ===
+  // При долгом нажатии открывается textarea с текстом терминала (read-only).
+  // Android выделяет её нативно (ручки, «Копировать/Выбрать всё»). Это РЕШЕНИЕ проблемы
+  // touch-выделения в xterm.js — canvas/WebGL не выделяется ОС (см. upstream #5377).
+  // Для вставки — кнопка «📋 Вставить» (clipboard API, жест = разрешение).
+  {
+    let overlay = null, longPressTimer = null
+    const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+    if (isTouch) {
+      const openOverlay = () => {
+        if (overlay) return
+        // собираем видимый текст экрана из буфера
+        const buf = term.buffer.active
+        const lines = []
+        const base = buf.baseY
+        for (let r = 0; r < term.rows; r++) {
+          const line = buf.getLine(base + r)
+          try { lines.push(line ? line.translateToString(true) : '') } catch { lines.push('') }
         }
-      }, { capture: true, passive: true })
-      el.addEventListener('touchend', () => {
-        if (tapTimer) { clearTimeout(tapTimer); tapTimer = null }
-        setTimeout(() => {
-          const ta = el.querySelector('.xterm-helper-textarea')
-          if (ta) ta.style.pointerEvents = 'none'
-        }, 50)
-      }, { capture: true })
+        overlay = document.createElement('div')
+        overlay.style.cssText = 'position:absolute;inset:0;z-index:40;overflow:auto;' +
+          'padding:8px 6px 52px;background:' + (theme.background || '#0b0e14') + ';' +
+          'display:flex;flex-direction:column;'
+        // заголовок с кнопками
+        const bar = document.createElement('div')
+        bar.style.cssText = 'display:flex;gap:6px;padding:4px 6px;margin-bottom:6px;flex-shrink:0;'
+        // кнопка Copy all
+        const copyBtn = document.createElement('button')
+        copyBtn.textContent = '📋 Всё'
+        copyBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.4);' +
+          'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer'
+        copyBtn.onclick = async () => {
+          try {
+            await navigator.clipboard.writeText(ta.value)
+            copyBtn.textContent = '✓'
+            setTimeout(() => copyBtn.textContent = '📋 Всё', 1200)
+          } catch {}
+        }
+        bar.appendChild(copyBtn)
+        // кнопка Вставить
+        const pasteBtn = document.createElement('button')
+        pasteBtn.textContent = '📥 Вставить'
+        pasteBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.4);' +
+          'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer'
+        pasteBtn.onclick = async () => {
+          try {
+            const text = await navigator.clipboard.readText()
+            if (text) term.paste(text)
+          } catch (e) {
+            pasteBtn.textContent = '⚠'
+            setTimeout(() => pasteBtn.textContent = '📥 Вставить', 1200)
+          }
+        }
+        bar.appendChild(pasteBtn)
+        // кнопка закрыть
+        const closeBtn = document.createElement('button')
+        closeBtn.textContent = '✕'
+        closeBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.4);' +
+          'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer;margin-left:auto'
+        closeBtn.onclick = () => { try { overlay.remove() } catch {} ; overlay = null }
+        bar.appendChild(closeBtn)
+        overlay.appendChild(bar)
+        // textarea с текстом (нативное выделение)
+        const ta = document.createElement('textarea')
+        ta.value = lines.join('\n')
+        ta.readOnly = true
+        ta.style.cssText = 'flex:1;width:100%;border:0;outline:0;resize:none;' +
+          'background:transparent;color:' + (theme.foreground || '#e6edf3') + ';' +
+          'font-family:monospace;font-size:' + (fontSize || 11) + 'px;line-height:1.2;' +
+          'padding:4px 6px;user-select:text;-webkit-user-select:text;'
+        overlay.appendChild(ta)
+        try { el.style.position = el.style.position || 'relative' } catch {}
+        el.appendChild(overlay)
+      }
+      // long-press: >500мс без движения
+      el.addEventListener('touchstart', (ev) => {
+        if (ev.touches.length !== 1 || overlay) return
+        ev.preventDefault()
+        const sx = ev.touches[0].clientX, sy = ev.touches[0].clientY
+        try { term.focus() } catch {}
+        longPressTimer = setTimeout(() => openOverlay(), 500)
+        const clear = () => {
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+        }
+        const onMove = (e) => {
+          if (Math.hypot(e.touches[0].clientX - sx, e.touches[0].clientY - sy) > 6) clear()
+        }
+        el.addEventListener('touchmove', onMove, { once: true, passive: true })
+        el.addEventListener('touchend', () => { clear() }, { once: true, capture: true })
+        el.addEventListener('touchcancel', () => { clear() }, { once: true, capture: true })
+      }, { capture: true, passive: false })
     }
-  } catch {}
+  }
   term.whenReady = (cb) => { try { cb() } catch {} }
   return {
     term, fit, kind: 'xterm',
