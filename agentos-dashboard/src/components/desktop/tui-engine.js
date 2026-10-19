@@ -137,10 +137,11 @@ function ghosttyEngine(args) {
   const { el, scrollback, cols, rows, onFallback } = args
   let fontSize = args.fontSize
   let theme = args.theme
-  const dataListeners = new Set()
   const resizeListeners = new Set()
-  let t = null, renderer = null, input = null, disposed = false, ready = false
-  let sink = null
+  // Слушатели ввода регистрируются ДО загрузки ядра (ChatPanel вешает onData сразу) —
+  // держим их в наборе и подключаем ОДИН транслятор к обёртке, когда она родится.
+  const dataListeners = new Set()
+  let t = null, fitAddon = null, disposed = false, ready = false
   let pendingWrites = []
   let size = { cols, rows }
   const readyCbs = []
@@ -148,187 +149,91 @@ function ghosttyEngine(args) {
   const fire = () => { ready = true; for (const cb of readyCbs.splice(0)) { try { cb() } catch {} } }
   const notifyResize = () => {
     if (!t) return
-    const c = t.cols, r = t.rows
-    if (c === size.cols && r === size.rows) return
-    size = { cols: c, rows: r }
-    for (const cb of resizeListeners) { try { cb({ cols: c, rows: r }) } catch {} }
-  }
-  const paint = (force) => {
-    if (!t || !renderer || disposed) return
-    let full = force === true
-    try {
-      const d = t.update()
-      full = full || d === 'full' || t.needsFullRedraw()
-    } catch {}
-    try { renderer.render(t, full) } catch {}
-    try { t.markClean() } catch {}
-  }
-  // Размер сетки считаем по контейнеру и метрикам ЯЧЕЙКИ. Метрику берём у САМОГО рендерера
-  // (getMetrics), а не измеряем шрифт сами: measureText даёт 6x11 при кегле 11, а рендерер
-  // рисует ячейку 7x12 — сетка считалась шире, canvas вылезал за контейнер (+52px по ширине)
-  // и картинка выглядела разнутой. Своё измерение оставляем только до создания рендерера.
-  const measureCell = () => {
-    if (renderer) {
-      try {
-        const m = renderer.getMetrics()
-        if (m && m.width > 0 && m.height > 0) return { w: m.width, h: m.height }
-      } catch {}
-    }
-    const c = document.createElement('canvas')
-    const g = c.getContext('2d')
-    g.font = fontSize + 'px monospace'
-    return { w: Math.max(1, Math.round(g.measureText('M').width)), h: Math.max(1, Math.round(fontSize)) }
+    if (t.cols === size.cols && t.rows === size.rows) return
+    size = { cols: t.cols, rows: t.rows }
+    for (const cb of resizeListeners) { try { cb({ cols: t.cols, rows: t.rows }) } catch {} }
   }
 
-  // Отличие ghostty от xterm в МАСШТАБЕ: при одном кегле ghostty рисует ячейку крупнее
-  // (кегль 4: xterm 2.2x5, ghostty 3x6), потому что округляет ширину ячейки вверх и глиф не
-  // заполняет её целиком — отсюда «расстояние между буквами». Это свойство рендерера, а не
-  // ошибка сетки. На МЕЛКОМ кегле (4-6) зазор выглядит крупнее всего, потому что глиф крошечный:
-  // рекомендуемый рабочий кегль — 11 и выше.
-  //
-  // Раньше здесь была калибровка «подгоним ячейку под xterm» — она брала кегль МЕНЬШЕ (3 вместо
-  // 4), чтобы высота ячейки совпала, и текст становился микроскопическим («вообще ничего не
-  // видно»). Убрана: лучше чуть крупнее и видимее, чем точно в размер, но нечитаемо.
-  const propose = () => {
-    const m = measureCell()
-    return {
-      cols: Math.max(20, Math.floor((el.clientWidth || m.w * 80) / m.w)),
-      rows: Math.max(5, Math.floor((el.clientHeight || m.h * 24) / m.h)),
-    }
-  }
-  const applyFit = () => {
-    if (!t || !renderer || disposed) return
-    const p = propose()
-    if (p.cols !== t.cols || p.rows !== t.rows) {
-      try { t.resize(p.cols, p.rows) } catch {}
-      try { renderer.resize(p.cols, p.rows) } catch {}
-      size = { cols: p.cols, rows: p.rows }
-      notifyResize()
-    } else {
-      try { renderer.resize(t.cols, t.rows) } catch {}
-    }
-    paint(true)
-  }
-  const refit = () => {
-    if (!t || !renderer) return
-    try { renderer.remeasureFont() } catch {}
-    applyFit()
+  // ---- Кнопка «Скопировать» над терминалом, когда есть выделение ----
+  // Canvas не даёт выделить текст руками браузера, поэтому выделение рисует сам
+  // SelectionManager, а копирование в буфер — эта кнопка (жест клика = разрешение
+  // navigator.clipboard). Появляется при непустом выделении, прячется при очистке.
+  let copyBtn = null
+  const ensureCopyBtn = () => {
+    if (copyBtn || disposed) return
+    copyBtn = document.createElement('button')
+    copyBtn.textContent = '📋 Скопировать'
+    copyBtn.style.cssText = 'position:absolute;right:10px;top:10px;z-index:20;padding:5px 12px;'
+      + 'border-radius:8px;border:1px solid rgba(128,128,128,.45);background:rgba(28,30,36,.94);'
+      + 'color:#fff;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35)'
+    try { el.style.position = el.style.position || 'relative' } catch {}
+    el.appendChild(copyBtn)
+    copyBtn.addEventListener('click', async () => {
+      try {
+        const sel = t && t.getSelection ? t.getSelection() : ''
+        if (sel) {
+          await navigator.clipboard.writeText(sel)
+          copyBtn.textContent = '✓ Скопировано'
+          setTimeout(() => { if (copyBtn) copyBtn.textContent = '📋 Скопировать' }, 1600)
+        }
+      } catch (e) { try { console.warn('[tui] копирование не удалось:', e && e.message || e) } catch {} }
+    })
   }
 
   ;(async () => {
     const mod = await import('ghostty-web')
-    // Ядро грузим со своего домена: ghostty-web по умолчанию тянет wasm инлайновым data:-URL, а его
-    // режет наш CSP (connect-src). Файл лежит в public/ghostty-vt.wasm и отдаётся с того же origin.
+    // Ядро грузим со своего домена: инлайновый data:-URL режет CSP (connect-src).
     let ghostty = null
     try { ghostty = await mod.Ghostty.load('/ghostty-vt.wasm') } catch (e1) { ghostty = await mod.Ghostty.load() }
     if (disposed) return
     try { el.innerHTML = '' } catch {}
-    const canvas = document.createElement('canvas')
-    canvas.style.display = 'block'
-    el.appendChild(canvas)
-    t = ghostty.createTerminal(size.cols, size.rows, { scrollbackLimit: scrollback || 2000 })
-    renderer = new mod.CanvasRenderer(canvas, {
+    // Официальная обёртка Terminal: внутри canvas+renderer, SelectionManager (выделение),
+    // LinkDetector+UrlRegexProvider (кликабельные ссылки, включая OAuth-ссылки Google),
+    // InputHandler с IME/вставкой и textarea-приёмником. Наш прежний ручной монтаж этих
+    // частей заменён целиком — обёртка делает всё это сама и слаженнее.
+    t = new mod.Terminal({
       fontSize, fontFamily: 'monospace', cursorBlink: false, theme,
-      devicePixelRatio: window.devicePixelRatio || 1,
+      scrollback: scrollback || 2000, cols: size.cols, rows: size.rows, ghostty,
     })
-    // стартовый кегль — как просил пользователь, без подгонки
-    try { renderer.setFontSize(fontSize) } catch {}
-    // Ссылки: UrlRegexProvider находит URL в буфере (в т.ч. длинные OAuth-ссылки Google,
-    // которые НЕЛЬЗЯ скопировать из canvas — выделения текста там нет). Клик открывает
-    // ссылку в новой вкладке. У xterm.js это делает WebLinksAddon, у ghostty связываем
-    // LinkDetector+UrlRegexProvider с canvas сами.
-    let linkDetector = null
+    t.open(el)
+    // ввод: единый транслятор из обёртки в наших слушателей
     try {
-      linkDetector = new mod.LinkDetector(t)
-      linkDetector.registerProvider(new mod.UrlRegexProvider(t))
-    } catch (e) { try { console.warn('[tui] LinkDetector не поднялся:', e) } catch {} }
-    // Ввод: свой приёмник — скрытый textarea (как .xterm-helper-textarea у xterm.js). Штатный
-    // InputHandler слушает клавиши на контейнере, но Android отдаёт ввод через IME/input-события,
-    // а не keydown: фокус на div клавиатуру не поднимает, и ввод теряется. textarea держит фокус и
-    // IME, печатаемый текст берём из его input, служебные клавиши — из keydown.
-    const emit = (d) => { for (const cb of dataListeners) { try { cb(d) } catch {} } }
-    sink = document.createElement('textarea')
-    sink.setAttribute('autocapitalize', 'off')
-    sink.setAttribute('autocorrect', 'off')
-    sink.setAttribute('spellcheck', 'false')
-    sink.setAttribute('aria-label', 'terminal input')
-    sink.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;resize:none;outline:none'
-    el.appendChild(sink)
-    try { el.tabIndex = 0 } catch {}
-    const SPECIAL = {
-      Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b',
-      ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D',
-      Home: '\x1b[H', End: '\x1b[F', Delete: '\x1b[3~', PageUp: '\x1b[5~', PageDown: '\x1b[6~',
-    }
-    // Ввод IME (Gboard с русской раскладкой и автозаменой). Прежняя версия отдавала ВСЁ содержимое
-    // поля и сразу его очищала: Gboard переиспользовал своё предиктивное состояние и один символ
-    // уходил 2-3 раза (в записи потока видно 'ж','ж' с разницей 1 мс, 'р','р','р' — так не печатают,
-    // отсюда и «мусор» вроде длжжррроо в приглашении). Поэтому: отдаём только вставленный фрагмент
-    // (event.data), а во время композиции IME вообще молчим — текст заберём по compositionend.
-    let composing = false
-    sink.addEventListener('compositionstart', () => { composing = true })
-    sink.addEventListener('compositionend', (ev) => {
-      composing = false
-      const d = ev.data || sink.value
-      sink.value = ''
-      if (d) emit(d)
-    })
-    sink.addEventListener('input', (ev) => {
-      if (composing || ev.isComposing) return
-      const d = ev.data
-      if (d) emit(d)
-      else { const v = sink.value; if (v) emit(v) }
-      sink.value = ''
-    })
-    sink.addEventListener('keydown', (ev) => {
-      const k = ev.key
-      if (ev.ctrlKey && k && k.length === 1) {
-        const c = k.toLowerCase()
-        if (c >= 'a' && c <= 'z') { emit(String.fromCharCode(c.charCodeAt(0) - 96)) ; ev.preventDefault() }
-        return
-      }
-      if (SPECIAL[k]) { emit(SPECIAL[k]); ev.preventDefault() }
-    })
-    // Клик по ссылке: координаты клика → ячейка (col,row) → ссылка в этой ячейке?
-    // Открытие — только по явному клику ЛКМ без модификаторов (как в обычных терминалах).
-    const handleLinkClick = async (ev) => {
-      if (!linkDetector || !renderer || ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.altKey) return
-      try {
-        const rect = canvas.getBoundingClientRect()
-        const m = renderer.getMetrics()
-        const x = ev.clientX - rect.left, y = ev.clientY - rect.top
-        const col = Math.floor(x / m.width)
-        const row = Math.floor(y / m.height)
-        if (col < 0 || row < 0 || col >= t.cols) return
-        const link = await linkDetector.getLinkAt(col, row)
-        if (link && link.text && /^https?:\/\//.test(link.text)) {
-          ev.preventDefault(); ev.stopPropagation()
-          try { window.open(link.text, '_blank', 'noopener') } catch {}
-        }
-      } catch {}
-    }
-    canvas.addEventListener('click', handleLinkClick)
-    // Тап по терминалу поднимает клавиатуру: фокус обязан уйти в textarea внутри обработчика жеста.
-    // Обработчиков три и все через setTimeout(0): Chromium при тапе фокусирует сам контейнер
-    // (у него tabIndex=0) синтетическим mousedown, который приходит ПОСЛЕ pointerup, и одиночный
-    // pointerup-обработчик проигрывал — фокус оставался на div и клавиатура не выезжала.
-    const grabFocus = () => setTimeout(() => { try { sink.focus() } catch {} }, 0)
-    el.addEventListener('pointerdown', grabFocus, { passive: true })
-    el.addEventListener('pointerup', grabFocus, { passive: true })
-    el.addEventListener('click', grabFocus, { passive: true })
-    el.dataset.termEngine = 'ghostty'
-    el.__ghostty = { t, renderer }
+      t.onData((d) => { for (const cb of dataListeners) { try { cb(d) } catch {} } })
+    } catch {}
+    // выделение → показываем кнопку копирования
+    try {
+      t.onSelectionChange(() => {
+        try {
+          const has = !!(t.hasSelection && t.hasSelection())
+          if (has) { ensureCopyBtn(); if (copyBtn) copyBtn.style.display = '' }
+          else if (copyBtn) copyBtn.style.display = 'none'
+        } catch {}
+      })
+    } catch {}
+    // размеры наружу (PTY должен жить в сетке терминала)
+    try {
+      t.onResize(({ cols, rows }) => {
+        size = { cols, rows }
+        for (const cb of resizeListeners) { try { cb({ cols, rows }) } catch {} }
+      })
+    } catch {}
+    // отложенные записи, случившиеся до готовности ядра
     for (const chunk of pendingWrites) { try { t.write(chunk) } catch {} }
     pendingWrites = []
-    // Сначала подгоняем сетку под контейнер и только потом объявляем готовность: ChatPanel
-    // подключает PTY на whenReady, и с размером-заглушкой (120x40) приложение родилось бы не в том
-    // размере — ровно та ошибка, из-за которой раньше склеивалась нижняя панель.
-    refit()
+    // FitAddon (как у xterm.js): подгонка под контейнер, свой ResizeObserver с дебаунсом.
+    // Раньше мы считали сетку сами и ошибались метрикой (canvas вылезал за контейнер).
+    try {
+      fitAddon = new mod.FitAddon()
+      t.loadAddon(fitAddon)
+      fitAddon.fit()
+    } catch (e) { try { console.warn('[tui] FitAddon не поднялся:', e) } catch {} }
+    el.dataset.termEngine = 'ghostty'
     notifyResize()
     fire()
-    // Канвас может остаться незакрашенным, если контейнер не был разложен в момент создания:
-    // просим кадр ещё несколько раз по мере раскладки.
-    for (const d of [60, 300, 1000, 2500]) setTimeout(() => { if (!disposed) refit() }, d)
+    // повторные подгонки по мере раскладки (контейнер может быть ещё не разложен)
+    for (const d of [60, 300, 1000, 2500]) setTimeout(() => {
+      if (!disposed && fitAddon) { try { fitAddon.fit() } catch {} }
+    }, d)
   })().catch((e) => {
     if (!disposed) { try { onFallback && onFallback(String((e && e.message) || e)) } catch {} }
   })
@@ -340,38 +245,46 @@ function ghosttyEngine(args) {
       whenReady(cb) { if (ready) { try { cb() } catch {} } else readyCbs.push(cb) },
       options: {
         get fontSize() { return fontSize },
-        // Кегль обязан дойти до РЕНДЕРЕРА (setFontSize), а не только в локальную переменную:
-        // без этого getMetrics() продолжал отдавать старую ячейку, сетка не пересчитывалась
-        // и смена кегля не была видна вовсе.
+        // options у обёртки — Proxy: смена fontSize дёргает renderer.setFontSize сам
         set fontSize(n) {
           fontSize = n
-          if (renderer) { try { renderer.setFontSize(n) } catch {} }
-          refit()
+          if (t) { try { t.options.fontSize = n } catch {}; try { fitAddon && fitAddon.fit() } catch {} }
         },
         get theme() { return theme },
-        set theme(th) { theme = th; if (renderer) { try { renderer.theme = th } catch {} } refit() },
+        // theme после open() официально «не полностью поддержан» — дожимаем через
+        // renderer.setTheme (приватное поле, но обёрнуто в try/catch)
+        set theme(th) {
+          theme = th
+          if (t) {
+            try { t.options.theme = th } catch {}
+            try { if (t.renderer && t.renderer.setTheme) t.renderer.setTheme(th) } catch {}
+          }
+        },
       },
-      write(d) { if (t) { try { t.write(d) } catch {} ; paint(false) } else pendingWrites.push(d) },
+      write(d) { if (t) { try { t.write(d) } catch {} } else pendingWrites.push(d) },
       writeln(d) { this.write((d || '') + '\r\n') },
-      refresh() { paint(true) },
-      clear() { this.write('\x1b[2J\x1b[H') },
-      reset() { this.write('\x1b[2J\x1b[H') },
-      focus() { try { (sink || el).focus() } catch {} },
+      refresh() {},
+      clear() { if (t) { try { t.clear() } catch {} } },
+      reset() { if (t) { try { t.reset() } catch {} } },
+      focus() { try { t && t.focus() } catch {} },
       open() {}, loadAddon() {},
       dispose() {
         disposed = true
-        try { input && input.dispose && input.dispose() } catch {}
-        try { t && t.free && t.free() } catch {}
-        try { renderer && renderer.dispose && renderer.dispose() } catch {}
-        t = null; renderer = null; input = null
+        try { copyBtn && copyBtn.remove() } catch {}
+        copyBtn = null
+        try { t && t.dispose() } catch {}
+        t = null; fitAddon = null
       },
       onData(fn) { dataListeners.add(fn); return { dispose: () => dataListeners.delete(fn) } },
       onResize(fn) { resizeListeners.add(fn); return { dispose: () => resizeListeners.delete(fn) } },
-      getSelection() { return '' },
+      getSelection() { try { return t && t.getSelection ? t.getSelection() : '' } catch { return '' } },
     },
     fit: {
-      fit() { applyFit() },
-      proposeDimensions() { return t ? propose() : { cols: size.cols, rows: size.rows } },
+      fit() { if (fitAddon) { try { fitAddon.fit() } catch {} } },
+      proposeDimensions() {
+        if (fitAddon) { try { const p = fitAddon.proposeDimensions(); if (p) return p } catch {} }
+        return { cols: size.cols, rows: size.rows }
+      },
     },
     kind: 'ghostty',
   }
