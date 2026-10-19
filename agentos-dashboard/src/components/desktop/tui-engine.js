@@ -140,17 +140,25 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
   } catch {}
   term.open(el)
   el.style.background = theme.background
-  // accessibility tree (.xterm-accessibility-tree) — делаем ВИДИМЫМ и выделяемым:
-  // по умолчанию он off-screen и pointer-events:none. С этим CSS он накрывает терминал
-  // прозрачным слоем с настоящим текстом → Android выделяет его ручками при long-press.
+  // accessibility tree (.xterm-accessibility-tree) — xterm.js создаёт его при
+  // screenReaderMode:true. По умолчанию off-screen и pointer-events:none. Делаем его
+  // прозрачным слоем ПОВЕРХ canvas (opacity:0 — невидим, но pointer-events:auto —
+  // Android может выделять текст ручками). Текст для отображения рисует canvas (WebGL),
+  // accessibility tree — только поверхность для нативного выделения. opacity:0.01 давал
+  // двоение (два видимых слоя со смещением); opacity:0 — только canvas виден.
   try {
     const s = document.createElement('style')
     s.textContent =
       '.xterm-accessibility-tree{position:absolute !important;inset:0 !important;' +
-      'z-index:5 !important;opacity:0.01 !important;pointer-events:auto !important;' +
+      'z-index:5 !important;opacity:0 !important;pointer-events:auto !important;' +
       'user-select:text !important;-webkit-user-select:text !important;' +
-      '-webkit-touch-callout:default !important;overflow:visible !important}' +
-      '.xterm-accessibility-tree > div{user-select:text !important;-webkit-user-select:text !important}'
+      '-webkit-touch-callout:default !important;overflow:hidden !important;' +
+      'color:transparent !important;font-family:monospace !important;' +
+      'font-size:inherit !important;line-height:1 !important;' +
+      'white-space:pre !important;margin:0 !important;padding:0 !important}' +
+      '.xterm-accessibility-tree > div{user-select:text !important;' +
+      '-webkit-user-select:text !important;color:transparent !important;' +
+      'white-space:pre !important}'
     el.appendChild(s)
   } catch {}
   // === WebGL: GPU-ускоренный рендер ===
