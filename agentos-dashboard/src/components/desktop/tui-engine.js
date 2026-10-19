@@ -213,22 +213,42 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
         try { el.style.position = el.style.position || 'relative' } catch {}
         el.appendChild(overlay)
       }
-      // long-press: >500мс без движения
+      // Жесты: короткий тап → фокус (клавиатура); долгое нажатие (>500мс) → overlay.
+      // Фокус НЕ в touchstart: preventDefault там глушит синтетические события, и
+      // Android поднимал клавиатуру «через раз». Надёжно — фокус на touchEND короткого
+      // тапа: это завершённый жест, таймер long-press ещё не сработал.
       el.addEventListener('touchstart', (ev) => {
         if (ev.touches.length !== 1 || overlay) return
-        ev.preventDefault()
+        ev.preventDefault()  // без этого Android лезет с системным меню на долгом тапе
         const sx = ev.touches[0].clientX, sy = ev.touches[0].clientY
-        try { term.focus() } catch {}
-        longPressTimer = setTimeout(() => openOverlay(), 500)
-        const clear = () => {
-          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
-        }
+        let moved = false
+        longPressTimer = setTimeout(() => { if (!moved) openOverlay() }, 500)
         const onMove = (e) => {
-          if (Math.hypot(e.touches[0].clientX - sx, e.touches[0].clientY - sy) > 6) clear()
+          if (Math.hypot(e.touches[0].clientX - sx, e.touches[0].clientY - sy) > 6) {
+            moved = true
+            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+          }
         }
-        el.addEventListener('touchmove', onMove, { once: true, passive: true })
-        el.addEventListener('touchend', () => { clear() }, { once: true, capture: true })
-        el.addEventListener('touchcancel', () => { clear() }, { once: true, capture: true })
+        const onEnd = () => {
+          // короткий тап: таймер ещё жив → фокусим и поднимаем клавиатуру
+          if (longPressTimer && !moved) {
+            try { term.focus() } catch {}
+          }
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+          cleanup()
+        }
+        const onCancel = () => {
+          if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+          cleanup()
+        }
+        const cleanup = () => {
+          el.removeEventListener('touchmove', onMove)
+          el.removeEventListener('touchend', onEnd)
+          el.removeEventListener('touchcancel', onCancel)
+        }
+        el.addEventListener('touchmove', onMove, { passive: true })
+        el.addEventListener('touchend', onEnd)
+        el.addEventListener('touchcancel', onCancel)
       }, { capture: true, passive: false })
     }
   }
