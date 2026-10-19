@@ -160,9 +160,10 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
         copyBtn.textContent = '📋 Всё'
         copyBtn.style.cssText = 'padding:4px 10px;border-radius:6px;border:1px solid rgba(128,128,128,.4);' +
           'background:rgba(28,30,36,.95);color:#fff;font-size:13px;cursor:pointer'
+        const screenText = lines.join('\n')
         copyBtn.onclick = async () => {
           try {
-            await navigator.clipboard.writeText(ta.value)
+            await navigator.clipboard.writeText(screenText)
             copyBtn.textContent = '✓'
             setTimeout(() => copyBtn.textContent = '📋 Всё', 1200)
           } catch {}
@@ -192,14 +193,23 @@ function xtermEngine({ el, fontSize, theme, scrollback, cols, rows }) {
         bar.appendChild(closeBtn)
         overlay.appendChild(bar)
         // textarea с текстом (нативное выделение)
+        // textarea с white-space:pre — НЕ pre-wrap: перенос строк уже в тексте
+        // (translateToString(true) тримит хвосты, рамки целы), а при wrap длинные строки
+        // рвутся и ASCII-рамки разваливаются (жалоба: «таблица ломается»).
+        // Горизонтальный скролл — единственный честный путь для широких терминалов.
+        const taWrap = document.createElement('div')
+        taWrap.style.cssText = 'flex:1;overflow:auto;'
         const ta = document.createElement('textarea')
-        ta.value = lines.join('\n')
+        ta.value = screenText
         ta.readOnly = true
-        ta.style.cssText = 'flex:1;width:100%;border:0;outline:0;resize:none;' +
+        ta.spellcheck = false
+        ta.style.cssText = 'width:100%;height:100%;border:0;outline:0;resize:none;' +
           'background:transparent;color:' + (theme.foreground || '#e6edf3') + ';' +
           'font-family:monospace;font-size:' + (fontSize || 11) + 'px;line-height:1.2;' +
+          'white-space:pre;overflow:auto;wrap:"off";' +
           'padding:4px 6px;user-select:text;-webkit-user-select:text;'
-        overlay.appendChild(ta)
+        taWrap.appendChild(ta)
+        overlay.appendChild(taWrap)
         try { el.style.position = el.style.position || 'relative' } catch {}
         el.appendChild(overlay)
       }
