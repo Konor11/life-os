@@ -628,7 +628,13 @@ export function ChatPanel({ fullscreen = false }) {
     let lastSentCols = 0
     const sendSizeToPty = () => {
       if (!wsRef.current || wsRef.current.readyState !== 1) return
-      if (term.cols === lastSentCols) return
+      // Сравниваем ПОЛНЫЙ размер (cols×rows), не только ширину: раньше проверялись только
+      // cols, и внутренняя клавиатура Life OS (меняет ТОЛЬКО высоту) не доходила до PTY —
+      // терминал не растягивался. 250мс дебаунс в sendSizeSoon уже гасит анимационные
+      // серии системной клавиатуры, поэтому полная проверка безопасна.
+      const key = `${term.cols}x${term.rows}`
+      if (key === lastSentSize) return
+      lastSentSize = key
       lastSentCols = term.cols
       wsRef.current.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
     }
