@@ -1132,8 +1132,6 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
       basicUser ? `AUTH_USER='${sq(basicUser)}'` : "AUTH_USER=\"lifeos-$(openssl rand -hex 2)\"",
       basicPass ? `AUTH_PASS='${sq(basicPass)}'` : "AUTH_PASS=\"$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-18)\"",
       'AUTH_SECRET="$(openssl rand -hex 32)"',
-      "printf 'AUTH_USER=%s\\nAUTH_PASS=%s\\nAUTH_SECRET=%s\\n' \"$AUTH_USER\" \"$AUTH_PASS\" \"$AUTH_SECRET\" > /root/.hermes-web-auth",
-      'chmod 600 /root/.hermes-web-auth',
       "sed -i '/^HERMES_DASHBOARD_BASIC_AUTH_/d' \"$ENVF\"",
       "printf 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME=%s\\nHERMES_DASHBOARD_BASIC_AUTH_PASSWORD=%s\\nHERMES_DASHBOARD_BASIC_AUTH_SECRET=%s\\n' \"$AUTH_USER\" \"$AUTH_PASS\" \"$AUTH_SECRET\" >> \"$ENVF\"",
       "echo \"[basic] вход: $AUTH_USER / $AUTH_PASS — сохрани, они же видны во вкладке «Ключи» → Hermes\"",

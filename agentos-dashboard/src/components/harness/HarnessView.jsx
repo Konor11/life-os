@@ -375,7 +375,7 @@ export function HarnessView() {
                         className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-text text-sm focus:outline-none focus:border-accent" />
                       <p className="text-xs text-text-muted mt-1">
                         Оставь поле пустым — сгенерирую надёжный пароль. Заданные значения сохранятся
-                        в <code className="text-[11px]">/root/.hermes-web-auth</code> и будут видны во вкладке «Ключи» → Hermes.
+                        в <code className="text-[11px]">/root/.hermes/.env</code> и будут видны во вкладке «Ключи» → Hermes.
                       </p>
                     </div>
                   </div>
