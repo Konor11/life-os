@@ -439,11 +439,17 @@ function agentExtraTokens(id) {
     try {
       let dom = ''
       try { dom = readFileSync('/root/.hermes-domain', 'utf8').trim() } catch {}
-      const p = '/root/.hermes-web-auth'
+      // Единый источник — /root/.hermes/.env (туда пишет установщик).
+      // /root/.hermes-web-auth оставлен фолбэком для старых установок.
+      let p = '/root/.hermes/.env'
+      if (!existsSync(p) || !/^HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=/m.test(readFileSync(p, 'utf8'))) {
+        p = '/root/.hermes-web-auth'
+      }
       if (!existsSync(p)) return []
       const txt = readFileSync(p, 'utf8')
       const get = (k) => { const m = txt.match(new RegExp(`^${k}=(.*)$`, 'm')); return m ? m[1].replace(/\r?$/, '') : null }
-      const user = get('AUTH_USER') || '', pw = get('AUTH_PASS') || ''
+      const user = get('HERMES_DASHBOARD_BASIC_AUTH_USERNAME') || get('AUTH_USER') || ''
+      const pw = get('HERMES_DASHBOARD_BASIC_AUTH_PASSWORD') || get('AUTH_PASS') || ''
       const out = []
       if (user) out.push({ env: 'HERMES_DASHBOARD_USER', agentToken: true, value: user, masked: user, length: user.length,
                  source: p, desc: 'Логин входа в Hermes Web UI' + (dom ? ` (${dom})` : '') })
