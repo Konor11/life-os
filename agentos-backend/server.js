@@ -17,6 +17,21 @@ import { spawn as ptySpawn } from 'node-pty'
 console.log('>>> [MODULE LOAD] server.js executing')
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+// Пользователь и его home определяет deploy/install.sh и пишет в /etc/lifeos/install.conf.
+// Раньше всё было захардкожено в /root: при установке из-под обычного пользователя
+// конфиги агентов уезжали в /root и были недоступны владельцу, а его собственный
+// `hermes` в шелле смотрел в ~/.hermes — панель и CLI расходились.
+const INSTALL_CONF = (() => {
+  try {
+    const txt = readFileSync('/etc/lifeos/install.conf', 'utf8')
+    return Object.fromEntries(txt.split('\n').filter(l => l.includes('=') && !l.startsWith('#'))
+      .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]))
+  } catch { return {} }
+})()
+const HOME_DIR = process.env.LIFEOS_HOME || INSTALL_CONF.LIFEOS_HOME || os.homedir() || '/root'
+const LIFEOS_USER = process.env.LIFEOS_USER || INSTALL_CONF.LIFEOS_USER || ''
+const LIFEOS_DIR = process.env.LIFEOS_DIR || INSTALL_CONF.LIFEOS_DIR || `${HOME_DIR}/.lifeos`
+
 // Переопределяется переменной окружения только для тестов на отдельном экземпляре (тест ролей,
 // экспорт/импорт): иначе проверка ходила бы по боевым данным и затирала их.
 const DATA_DIR = process.env.LIFEOS_DATA_DIR || `${HOME_DIR}/agentos-data`
@@ -53,20 +68,6 @@ const ocBasic = () => ocEnvGet('OPENCODE_BASIC')
 // Раньше домен каждого движка лежал в отдельном файле (пять файлов по одному значению),
 // и любой новый компонент добавлял шестой. Теперь $LIFEOS_DIR/domains.json.
 // Пишет в него и бэкенд, и CLI lifeos-domain из shell-установщиков.
-// Пользователь и его home определяет deploy/install.sh и пишет в /etc/lifeos/install.conf.
-// Раньше всё было захардкожено в /root: при установке из-под обычного пользователя
-// конфиги агентов уезжали в /root и были недоступны владельцу, а его собственный
-// `hermes` в шелле смотрел в ~/.hermes — панель и CLI расходились.
-const INSTALL_CONF = (() => {
-  try {
-    const txt = readFileSync('/etc/lifeos/install.conf', 'utf8')
-    return Object.fromEntries(txt.split('\n').filter(l => l.includes('=') && !l.startsWith('#'))
-      .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]))
-  } catch { return {} }
-})()
-const HOME_DIR = process.env.LIFEOS_HOME || INSTALL_CONF.LIFEOS_HOME || os.homedir() || '/root'
-const LIFEOS_USER = process.env.LIFEOS_USER || INSTALL_CONF.LIFEOS_USER || ''
-const LIFEOS_DIR = process.env.LIFEOS_DIR || INSTALL_CONF.LIFEOS_DIR || `${HOME_DIR}/.lifeos`
 const DOMAINS_FILE = `${LIFEOS_DIR}/domains.json`
 const readDomains = () => {
   try { const d = JSON.parse(readFileSync(DOMAINS_FILE, 'utf8')); return d && typeof d === 'object' && !Array.isArray(d) ? d : {} }
