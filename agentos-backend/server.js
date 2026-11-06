@@ -1111,9 +1111,13 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
 
   lines.push(
     `echo '[2/3] Web UI: домен ${dom}, защита: ${gate}'`,
-    'ENVF=/root/.hermes/dashboard_auth_env.conf',
+    // Auth-параметры пишем в СТАНДАРТНЫЙ /root/.hermes/.env — Hermes сам его читает.
+    // Отдельный dashboard_auth_env.conf был костылём: приходилось тянуть его в systemd
+    // через EnvironmentFile. .env уже загружается Hermes'ом при старте.
+    'ENVF=/root/.hermes/.env',
     'mkdir -p /root/.hermes; touch "$ENVF"; chmod 600 "$ENVF"',
-    `grep -q '^HERMES_DASHBOARD_PUBLIC_URL=' "$ENVF" || printf 'HERMES_DASHBOARD_PUBLIC_URL=https://%s\\n' '${dom}' >> "$ENVF"`,
+    `sed -i '/^HERMES_DASHBOARD_PUBLIC_URL=/d' "$ENVF"`,
+    `printf 'HERMES_DASHBOARD_PUBLIC_URL=https://%s\n' '${dom}' >> "$ENVF"`,
   )
   if (wantBasic) {
     // Credentials come from the UI when the user typed them; otherwise generate.
@@ -1152,7 +1156,6 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
     'Type=simple',
     'User=root',
     'Environment=HOME=/root',
-    'EnvironmentFile=-/root/.hermes/dashboard_auth_env.conf',
     // The installer drops the CLI in ~/.hermes/hermes-agent/.hermes/bin (not always on a
     // login-shell PATH), so resolve the real binary and bake it into the unit.
     'ExecStart=__HERMES_BIN__ dashboard --host 0.0.0.0 --port 9119 --no-open',
@@ -1246,6 +1249,9 @@ function buildHermesUninstall() {
     '[ -x "$HB" ] && "$HB" uninstall --full --yes 2>&1 || echo "[warn] штатный uninstall недоступен — чищу файлы вручную"',
     "echo '[4/4] Остатки'",
     'rm -rf /root/.hermes/hermes-agent /root/.hermes/bin',
+    // .env НЕ удаляем целиком — там и другие ключи (OpenRouter, OAuth и т.д.).
+    // Чистим только dashboard-переменные.
+    "sed -i '/^HERMES_DASHBOARD_/d' /root/.hermes/.env 2>/dev/null",
     'rm -f /usr/local/bin/hermes /usr/bin/hermes /root/.hermes-web-auth /root/.hermes-domain /root/.hermes/dashboard_auth_env.conf',
     "command -v hermes >/dev/null 2>&1 && echo \"[warn] бинарник всё ещё в PATH: $(command -v hermes)\" || echo '  бинарник удалён — чисто'",
     "systemctl --user is-active hermes-gateway >/dev/null 2>&1 && echo '[warn] user-гейтвей всё ещё активен' || echo '  гейтвей остановлен'",
