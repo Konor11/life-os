@@ -16,6 +16,10 @@ import { writeFileSync, rmSync, existsSync as fsExists } from 'fs'
 import { markShellAttached } from './tui-ws.js'
 import { promisify } from 'util'
 import { wsAllowed } from './auth.js'
+import os from 'os'
+
+// HOME службы задаёт systemd (root-установка → /root, иначе home владельца).
+const HOME = process.env.HOME || os.homedir()
 
 const execF = promisify(execFile)
 
@@ -31,7 +35,7 @@ const DENY_PREFIXES = ['/proc', '/sys', '/dev', '/run', '/var/lib/docker', '/sna
 // Каталог для запуска по умолчанию: /root, но не его содержимое целиком. Чистый
 // каталог без клонов, бэкапов и временных файлов — то, что видит человек в первый
 // момент. Прежние /root показывали рабочий каталог сервера со всем мусором.
-export const DEFAULT_CWD = '/root/workspace'
+export const DEFAULT_CWD = `${HOME}/workspace`
 
 function normalize(p) {
   if (typeof p !== 'string' || !p) return null
@@ -91,15 +95,15 @@ export function attachShellWss(server) {
     const dark = q.theme !== 'light'
     const env = {
       ...process.env,
-      HOME: process.env.HOME || '/root',
+      HOME,
       TERM: 'xterm-256color',
       PATH: [
-        '/root/.local/bin',
-        '/root/.hermes/bin',
-        '/root/.hermes/hermes-agent/.hermes/bin',
-        '/root/.opencode/bin',
-        '/root/.dsh/bin',
-        '/root/.claude/local/bin',
+        `${HOME}/.local/bin`,
+        `${HOME}/.hermes/bin`,
+        `${HOME}/.hermes/hermes-agent/.hermes/bin`,
+        `${HOME}/.opencode/bin`,
+        `${HOME}/.dsh/bin`,
+        `${HOME}/.claude/local/bin`,
         process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
       ].join(':'),
       HERMES_TUI_THEME: dark ? 'dark' : 'light',

@@ -4,7 +4,7 @@ import { createServer } from 'http'
 import { execFile, exec, spawn } from 'child_process'
 import { promisify } from 'util'
 import { readFile, writeFile, mkdir, readdir, stat } from 'fs/promises'
-import { existsSync, mkdirSync, realpathSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, realpathSync, readFileSync, writeFileSync, unlinkSync, copyFileSync, chmodSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import os from 'os'
@@ -19,7 +19,7 @@ console.log('>>> [MODULE LOAD] server.js executing')
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // Переопределяется переменной окружения только для тестов на отдельном экземпляре (тест ролей,
 // экспорт/импорт): иначе проверка ходила бы по боевым данным и затирала их.
-const DATA_DIR = process.env.LIFEOS_DATA_DIR || '/root/agentos-data'
+const DATA_DIR = process.env.LIFEOS_DATA_DIR || `${HOME_DIR}/agentos-data`
 // '/' разрешён по требованию пользователя: файловый менеджер должен показывать
 // настоящий корень. Запрещены только системные поддеревья (/proc, /sys, /dev,
 // /run) — они мёртвые или опасные и в списке файлов бесполезны.
@@ -34,8 +34,90 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || ''
 // Читаем пароль ЛЕНИВО (в момент запроса, а не при старте бэкенда): файл пароля создаёт сам
 // инсталлер opencode в том же запросе, поэтому на свежей установке константы успевали стать
 // пустыми — и в Caddyfile уезжал пустой Authorization.
-const ocWebPass = () => { try { return readFileSync('/root/.opencode-web-pass', 'utf8').trim() } catch { return '' } }
-const ocBasic = () => { const p = ocWebPass(); return p ? Buffer.from('opencode:' + p).toString('base64') : '' }
+// ЕДИНЫЙ источник пароля opencode — $HOME/.lifeos/opencode.env:
+//   OPENCODE_PASSWORD=<пароль>   (его читает сам opencode serve)
+//   OPENCODE_BASIC=<base64>      (готовый заголовок для Caddy: {env.OPENCODE_BASIC})
+// Файл читает systemd (EnvironmentFile) и передаёт переменные в окружение процессов —
+// поэтому и opencode, и caddy видят их, не имея доступа к самому файлу.
+// Старый $HOME/.opencode-web-pass поддерживаем как фолбэк для прежних установок.
+const OC_ENV = `${LIFEOS_DIR}/opencode.env`
+const ocEnvGet = (k) => {
+  try { const m = readFileSync(OC_ENV, 'utf8').match(new RegExp('^' + k + '=(.*)$', 'm')); return m ? m[1].trim() : '' }
+  catch { return '' }
+}
+const ocWebPass = () => ocEnvGet('OPENCODE_PASSWORD')
+  || (() => { try { return readFileSync(`${HOME_DIR}/.opencode-web-pass`, 'utf8').trim() } catch { return '' } })()
+const ocBasic = () => ocEnvGet('OPENCODE_BASIC')
+  || (ocWebPass() ? Buffer.from('opencode:' + ocWebPass()).toString('base64') : '')
+// Реестр доменов компонентов — ОДИН файл вместо /root/.<id>-domain на каждый компонент.
+// Раньше домен каждого движка лежал в отдельном файле (пять файлов по одному значению),
+// и любой новый компонент добавлял шестой. Теперь $LIFEOS_DIR/domains.json.
+// Пишет в него и бэкенд, и CLI lifeos-domain из shell-установщиков.
+// Пользователь и его home определяет deploy/install.sh и пишет в /etc/lifeos/install.conf.
+// Раньше всё было захардкожено в /root: при установке из-под обычного пользователя
+// конфиги агентов уезжали в /root и были недоступны владельцу, а его собственный
+// `hermes` в шелле смотрел в ~/.hermes — панель и CLI расходились.
+const INSTALL_CONF = (() => {
+  try {
+    const txt = readFileSync('/etc/lifeos/install.conf', 'utf8')
+    return Object.fromEntries(txt.split('\n').filter(l => l.includes('=') && !l.startsWith('#'))
+      .map(l => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]))
+  } catch { return {} }
+})()
+const HOME_DIR = process.env.LIFEOS_HOME || INSTALL_CONF.LIFEOS_HOME || os.homedir() || '/root'
+const LIFEOS_USER = process.env.LIFEOS_USER || INSTALL_CONF.LIFEOS_USER || ''
+const LIFEOS_DIR = process.env.LIFEOS_DIR || INSTALL_CONF.LIFEOS_DIR || `${HOME_DIR}/.lifeos`
+const DOMAINS_FILE = `${LIFEOS_DIR}/domains.json`
+const readDomains = () => {
+  try { const d = JSON.parse(readFileSync(DOMAINS_FILE, 'utf8')); return d && typeof d === 'object' && !Array.isArray(d) ? d : {} }
+  catch { return {} }
+}
+const writeDomains = (d) => {
+  mkdirSync(LIFEOS_DIR, { recursive: true, mode: 0o700 })
+  writeFileSync(DOMAINS_FILE, JSON.stringify(d, null, 2) + '\n', { mode: 0o600 })
+}
+const setDomain = (id, dom) => { const d = readDomains(); d[id] = String(dom); writeDomains(d) }
+const delDomain = (id) => { const d = readDomains(); if (id in d) { delete d[id]; writeDomains(d) } }
+// Переезд со старых файлов /root/.<id>-domain: один раз при старте, идемпотентно.
+function migrateDomainFiles() {
+  const known = ['hermes', 'opencode', 'deepseek', 'openclaw', 'omniroute', 'vaultwarden', 'n8n', 'coder', 'lifeos']
+  const d = readDomains()
+  let moved = 0
+  for (const id of known) {
+    if (d[id]) continue
+    try {
+      let legacy = ''
+      for (const base of [HOME_DIR, '/root']) {
+        try { const v = readFileSync(`${base}/.${id}-domain`, 'utf8').trim(); if (v) { legacy = v; break } } catch {}
+      }
+      if (legacy) { d[id] = legacy; moved++ }
+    } catch {}
+  }
+  if (moved) {
+    writeDomains(d)
+    // Старые файлы удаляем: единственный источник теперь domains.json.
+    for (const id of known) for (const base of [HOME_DIR, '/root']) { try { unlinkSync(`${base}/.${id}-domain`) } catch {} }
+    console.log(`[domains] перенесено из старых файлов: ${moved} → ${DOMAINS_FILE}`)
+  }
+}
+migrateDomainFiles()
+
+// CLI для shell-установщиков: они зовут `lifeos-domain get/set`, а не пишут файлы.
+// Кладём из репозитория при первом старте, чтобы обновление кода без переустановки
+// не оставляло установщики без команды.
+function ensureDomainCli() {
+  const dst = '/usr/local/bin/lifeos-domain'
+  try {
+    if (existsSync(dst)) return
+    const src = path.join(__dirname, '..', 'deploy', 'lifeos-domain')
+    if (!existsSync(src)) return
+    copyFileSync(src, dst)
+    chmodSync(dst, 0o755)
+    console.log('[domains] установлен CLI lifeos-domain')
+  } catch (e) { console.warn('[domains] CLI не установлен:', e.message) }
+}
+ensureDomainCli()
+
 const HERMES = '/usr/local/lib/hermes-agent/venv/bin/python'
 const HERMES_ENTRY = '/usr/local/lib/hermes-agent/hermes'
 
@@ -121,7 +203,7 @@ const PROFILE_MODELS = {
 
 // --- FS safety: resolve & ensure path under an allowed root ---
 function safeResolve(p) {
-  const abs = path.resolve(p || '/root')
+  const abs = path.resolve(p || HOME_DIR)
   for (const d of DENY_PREFIXES) {
     if (full === d || full.startsWith(d + '/')) return null
   }
@@ -382,8 +464,8 @@ app.get('/api/all', async (_, res) => res.json({
 }))
 
 // ---- Keys manager: list available API keys & sync into agent configs ----
-const ENV_FILES = ['/root/.hermes/.env', '/root/.env']
-const PROFILE_DIR = '/root/.hermes/profiles'
+const ENV_FILES = ['$HOME/.hermes/.env', `${HOME_DIR}/.env`]
+const PROFILE_DIR = '$HOME/.hermes/profiles'
 
 function readEnvKeys() {
   const found = new Map()
@@ -423,7 +505,7 @@ const HARNESS_KEY_CONSUMERS = {
 function agentExtraTokens(id) {
   if (id === 'openclaw') {
     try {
-      const p = '/root/.openclaw/openclaw.json'
+      const p = '$HOME/.openclaw/openclaw.json'
       if (!existsSync(p)) return []
       const cfg = JSON.parse(readFileSync(p, 'utf8'))
       const t = cfg?.gateway?.auth?.token
@@ -435,15 +517,15 @@ function agentExtraTokens(id) {
   }
   if (id === 'hermes') {
     // Credentials for the Hermes Web UI gate — the same values the install wrote, so the
-    // owner can look them up later instead of digging in /root/.hermes-web-auth.
+    // owner can look them up later instead of digging in $HOME/.hermes-web-auth.
     try {
       let dom = ''
-      try { dom = readFileSync('/root/.hermes-domain', 'utf8').trim() } catch {}
-      // Единый источник — /root/.hermes/.env (туда пишет установщик).
-      // /root/.hermes-web-auth оставлен фолбэком для старых установок.
-      let p = '/root/.hermes/.env'
+      try { dom = readDomains().hermes || '' } catch {}
+      // Единый источник — $HOME/.hermes/.env (туда пишет установщик).
+      // $HOME/.hermes-web-auth оставлен фолбэком для старых установок.
+      let p = '$HOME/.hermes/.env'
       if (!existsSync(p) || !/^HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=/m.test(readFileSync(p, 'utf8'))) {
-        p = '/root/.hermes-web-auth'
+        p = '$HOME/.hermes-web-auth'
       }
       if (!existsSync(p)) return []
       const txt = readFileSync(p, 'utf8')
@@ -458,7 +540,7 @@ function agentExtraTokens(id) {
                    source: p, desc: 'Пароль входа в Hermes Web UI' })
       }
       if (dom) out.push({ env: 'HERMES_WEB_DOMAIN', agentToken: true, value: dom, masked: dom, length: dom.length,
-                 source: '/root/.hermes-domain', desc: 'Домен Web UI Hermes (проксируется Caddy)' })
+                 source: DOMAINS_FILE, desc: 'Домен Web UI Hermes (проксируется Caddy)' })
       return out
     } catch { return [] }
   }
@@ -527,21 +609,21 @@ const HARNESSES_DEF = [
     // Caddy/Node exist), so a hardcoded "installed" was a lie on every fresh server.
     // Detect the real binary; if it's missing, offer the official installer.
     id: 'hermes', name: 'Hermes',
-    bin: ['/root/.local/bin/hermes', '/usr/local/bin/hermes', '/root/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
+    bin: ['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
     install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash',
     interactive: true,   // installer + `hermes setup` need a TTY (arrow-key menus)
     desc: 'Hermes Agent (Nous Research) — один из доступных движков. Пользователь сам выбирает, какой агент использовать.',
     provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
     // Официальный путь обновления — `hermes update` (git-установка: pull + переустановка зависимостей
     // + перезапуск своих служб). Флаг --yes делает его неинтерактивным, поэтому кнопка работает без TTY.
-    // Лончер ищем по всем известным путям: на сервере это /root/.local/bin/hermes (его же запускает
+    // Лончер ищем по всем известным путям: на сервере это $HOME/.local/bin/hermes (его же запускает
     // hermes-dashboard), в других сборках — /usr/local/bin или .hermes/bin внутри дерева исходников.
     update: [
       "echo '[1/2] Обновление через официальную команду: hermes update --yes'",
       'HB="$(command -v hermes || true)"',
-      '[ -x "$HB" ] || HB=/root/.local/bin/hermes',
+      '[ -x "$HB" ] || HB=$HOME/.local/bin/hermes',
       '[ -x "$HB" ] || HB=/usr/local/bin/hermes',
-      '[ -x "$HB" ] || HB=/root/.hermes/hermes-agent/.hermes/bin/hermes',
+      '[ -x "$HB" ] || HB=$HOME/.hermes/hermes-agent/.hermes/bin/hermes',
       '[ -x "$HB" ] || HB=/usr/local/lib/hermes-agent/venv/bin/hermes',
       'if [ -x "$HB" ]; then "$HB" update --yes 2>&1; else echo "[ошибка] лончер hermes не найден — обновление не выполнено"; fi',
       "echo '[2/2] Версия после обновления:'",
@@ -552,19 +634,19 @@ const HARNESSES_DEF = [
       id: 'opencode', name: 'OpenCode', bin: ['opencode'],
       install: "curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh",
       // v2 installer updates the binary in place; restart the web service if present
-      update: "echo '[1/2] Обновление бинарника (официальный v2-инсталлер)...'; curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh; echo '[2/2] Перезапуск opencode-web...'; systemctl restart opencode-web 2>/dev/null && echo 'сервис перезапущен' || echo 'web-сервис не установлен (пропускаю)'; /root/.opencode/bin/opencode --version 2>/dev/null | head -1",
+      update: "echo '[1/2] Обновление бинарника (официальный v2-инсталлер)...'; curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh; echo '[2/2] Перезапуск opencode-web...'; systemctl restart opencode-web 2>/dev/null && echo 'сервис перезапущен' || echo 'web-сервис не установлен (пропускаю)'; $HOME/.opencode/bin/opencode --version 2>/dev/null | head -1",
       desc: 'OpenCode — open-source AI coding agent. Режимы: TUI (терминал), Web UI (opencode serve на :4096 + свой домен), или оба.',
       provider: 'OpenRouter', key: null,
       web: { port: 4096, cmd: 'opencode serve --port 4096 --hostname 0.0.0.0' },
       uninstall: [
         "echo '[1/6] Остановка запущенных процессов opencode...'",
         "pkill -f '[o]pencode serve' 2>/dev/null && echo '  процессы serve остановлены' || echo '  запущенных процессов нет'",
-        "pkill -9 -f '/root/\\\\.opencode/bin/[o]pencode' 2>/dev/null",
+        "pkill -9 -f '$HOME/\\\\.opencode/bin/[o]pencode' 2>/dev/null",
         "echo '[2/6] Остановка сервиса opencode-web...'",
         "systemctl disable --now opencode-web 2>/dev/null && echo '  сервис остановлен и убран из автозагрузки' || echo '  сервис не установлен'",
         "rm -f /etc/systemd/system/opencode-web.service; systemctl daemon-reload 2>/dev/null; echo '  unit-файл удалён'",
         "echo '[3/6] Удаление домена из Caddy...'",
-        "DOM=$(cat /root/.opencode-domain 2>/dev/null || true)",
+        "DOM=$(lifeos-domain get opencode 2>/dev/null || true)",
         "if [ -z \"$DOM\" ]; then echo '  домен не записан — из Caddy убирать нечего'; fi",
         // Удаляем блок домена со счётом вложенных скобок. Регулярка `{[^}]*}` обрывалась на первой
         // закрывающей скобке, оставляла висячую «}» — caddy падал и ложились ВСЕ домены сразу.
@@ -587,12 +669,16 @@ const HARNESSES_DEF = [
         "print('  блок ' + dom + ' удалён' if removed else '  блок не найден (уже чисто)')\n" +
         "PY\n" +
         "python3 /tmp/caddy-rm.py '__CADDY_FILE__' \"$DOM\"; rm -f /tmp/caddy-rm.py",
-        "rm -f /root/.opencode-domain",
+        "lifeos-domain del opencode 2>/dev/null || true",
+        "# пароль opencode жил в трёх местах — чистим единый env-файл, drop-in caddy и старый файл",
+        "rm -f $HOME/.lifeos/opencode.env /etc/systemd/system/caddy.service.d/lifeos-opencode.conf $HOME/.opencode-web-pass",
+        "systemctl daemon-reload 2>/dev/null || true",
+        "systemctl is-active --quiet caddy && systemctl restart caddy || true",
         "echo '[4/6] Перезапуск caddy...'",
         "__CADDY_RELOAD__",
         "echo '[5/6] Удаление файлов opencode...'",
-        "rm -rf /root/.opencode /root/.config/opencode /root/.local/share/opencode /root/.cache/opencode /root/.opencode.json /tmp/start-web-opencode.sh; echo '  /root/.opencode, конфиги, кэш — удалены'",
-        "npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode /root/.local/bin/opencode 2>/dev/null",
+        "rm -rf $HOME/.opencode $HOME/.config/opencode $HOME/.local/share/opencode $HOME/.cache/opencode $HOME/.opencode.json /tmp/start-web-opencode.sh; echo '  $HOME/.opencode, конфиги, кэш — удалены'",
+        "npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode $HOME/.local/bin/opencode 2>/dev/null",
         "echo '[6/6] Проверка...'",
         "command -v opencode >/dev/null 2>&1 && echo '  ВНИМАНИЕ: бинарник opencode всё ещё в PATH: '$(command -v opencode) || echo '  бинарник удалён — чисто'",
         "pgrep -f '[o]pencode serve' >/dev/null 2>&1 && echo '  ВНИМАНИЕ: остались процессы serve' || echo '  процессы opencode отсутствуют'",
@@ -609,7 +695,7 @@ const HARNESSES_DEF = [
     provider: 'OpenAI', key: 'OPENAI_API_KEY',
     // Официальный апдейт Codex — тот же инсталлятор (ставит latest, идемпотентен).
     update: "export CODEX_NON_INTERACTIVE=true; curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-    uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null) /root/.local/bin/codex; rm -rf /root/.codex /root/.local/share/codex /root/.cache/codex /root/.codex_auth.json",
+    uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null) $HOME/.local/bin/codex; rm -rf $HOME/.codex $HOME/.local/share/codex $HOME/.cache/codex $HOME/.codex_auth.json",
   },
   {
     id: 'claude', name: 'Claude Code', bin: ['claude', 'claude-code'],
@@ -621,8 +707,8 @@ const HARNESSES_DEF = [
     // Официальный апдейт: встроенный `claude update`, при неудаче — переустановщик.
     update: "claude update </dev/null || curl -fsSL https://claude.ai/install.sh | bash",
     // Хвосты Claude Code, которые оставлял прежний uninstall и которые находил find после него:
-// /root/.claude.json, /root/.cache/claude, /root/.local/state/claude (проверено на сервере).
-uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/local/bin/claude* $(command -v claude 2>/dev/null) /root/.local/bin/claude*; rm -rf /root/.claude /root/.claude.json /root/.config/claude /root/.local/share/claude /root/.local/state/claude /root/.cache/claude",
+// $HOME/.claude.json, $HOME/.cache/claude, $HOME/.local/state/claude (проверено на сервере).
+uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/local/bin/claude* $(command -v claude 2>/dev/null) $HOME/.local/bin/claude*; rm -rf $HOME/.claude $HOME/.claude.json $HOME/.config/claude $HOME/.local/share/claude $HOME/.local/state/claude $HOME/.cache/claude",
   },
   {
     id: 'openclaw', name: 'OpenClaw', bin: ['openclaw'],
@@ -632,7 +718,7 @@ uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/l
     // Официальный апдейт — тот же инсталлятор (openclaw.ai, идемпотентен).
     update: "curl -fsSL https://openclaw.ai/install.sh | bash </dev/null",
     web: { port: 18789, cmd: 'systemctl --user start openclaw-gateway' },
-    uninstall: "npm uninstall -g openclaw 2>/dev/null; rm -f /usr/local/bin/openclaw $(command -v openclaw 2>/dev/null); rm -rf /root/.openclaw /root/.config/openclaw /root/.local/share/openclaw",
+    uninstall: "npm uninstall -g openclaw 2>/dev/null; rm -f /usr/local/bin/openclaw $(command -v openclaw 2>/dev/null); rm -rf $HOME/.openclaw $HOME/.config/openclaw $HOME/.local/share/openclaw",
   },
   {
     id: 'pi', name: 'Pi Agent', bin: ['pi'],
@@ -641,7 +727,7 @@ uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/l
     provider: 'OpenRouter', key: null,
     // npm-пакет: официальный апдейт — latest.
     update: 'npm install -g @earendil-works/pi-coding-agent@latest </dev/null',
-    uninstall: "npm uninstall -g @earendil-works/pi-coding-agent 2>/dev/null; rm -f /usr/local/bin/pi $(command -v pi 2>/dev/null); rm -rf /root/.pi /root/.config/pi /root/.local/share/pi",
+    uninstall: "npm uninstall -g @earendil-works/pi-coding-agent 2>/dev/null; rm -f /usr/local/bin/pi $(command -v pi 2>/dev/null); rm -rf $HOME/.pi $HOME/.config/pi $HOME/.local/share/pi",
   },
   {
     id: 'deepseek', name: 'DeepSeek Harness', bin: ['dsh'],
@@ -651,7 +737,7 @@ uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/l
     // npm-пакет: официальный апдейт — latest.
     update: 'npm install -g @deepseek-ai/dsh@latest',
     web: { port: 3080, publicPort: 3090, cmd: 'dsh web --no-open --port 3080' },
-    uninstall: "rm -rf /root/.dsh /root/.deepseek-harness /root/.deepseek /root/.config/deepseek-harness /root/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/local/lib/node_modules -maxdepth 1 -iname '*deepseek*' -exec rm -rf {} + 2>/dev/null; true",
+    uninstall: "rm -rf $HOME/.dsh $HOME/.deepseek-harness $HOME/.deepseek $HOME/.config/deepseek-harness $HOME/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/local/lib/node_modules -maxdepth 1 -iname '*deepseek*' -exec rm -rf {} + 2>/dev/null; true",
   },
   // NOTE: Coder is NOT here — it is a full service (systemd + Postgres docker) and
   // lives in COMPONENTS_DEF below («Установка компонентов»), not an engine harness.
@@ -720,8 +806,8 @@ console.log(`>>> [STARTUP] Merged harnesses total: ${HARNESSES_DEF.length}`)
 
 async function binExists(names) {
   // Also probe common per-agent install dirs (installers place binaries in ~/.<agent>/bin).
-  const homeBins = ['/root/.opencode/bin', '/root/.codex/bin', '/root/.claude/local/bin',
-    '/root/.openclaw/bin', '/root/.dsh/bin', '/root/.local/bin', '/usr/local/bin', '/usr/bin']
+  const homeBins = ['$HOME/.opencode/bin', '$HOME/.codex/bin', '$HOME/.claude/local/bin',
+    '$HOME/.openclaw/bin', '$HOME/.dsh/bin', '$HOME/.local/bin', '/usr/local/bin', '/usr/bin']
   for (const n of names) {
     try {
       const r = await execS(`command -v ${n}`, { shell: '/bin/bash' })
@@ -740,12 +826,7 @@ async function binExists(names) {
   return false
 }
 
-function readWebDomain(file) {
-  try {
-    const d = readFileSync(file, 'utf8').trim()
-    return d ? `https://${d}` : null
-  } catch { return null }
-}
+
 
 async function discoverHarnesses() {
   const out = []
@@ -770,7 +851,7 @@ async function discoverHarnesses() {
       // so it must come from here instead of a baked-in subdomain).
       webUrl: h.id === 'hermes'
         // the dashboard only exists when the install also created its unit
-        ? webOriginFor('hermes', { installed: installed && existsSync('/etc/systemd/system/hermes-dashboard.service'), file: '/root/.hermes-domain' })
+        ? webOriginFor('hermes', { installed: installed && existsSync('/etc/systemd/system/hermes-dashboard.service') })
         : webOriginFor(h.id, { installed }),
       web: h.web || null,
       bin: installed ? null : h.bin.join(' / '),
@@ -812,8 +893,9 @@ function lifeosBaseDomain() {
 // Web UI origin of a component/engine: the domain its installer recorded, else <id>.<base>.
 // Nothing is baked in — an old deployment's subdomain (n8n.dktunnel.xyz) pointed every
 // install at a foreign host.
-function webOriginFor(id, { installed = false, file = '' } = {}) {
-  const rec = readWebDomain(file || `/root/.${id}-domain`)
+function webOriginFor(id, { installed = false } = {}) {
+  const dom = readDomains()[id]
+  const rec = dom ? `https://${dom}` : null
   if (rec) return rec
   const base = parentDomain(lifeosBaseDomain())
   return installed && base ? `https://${id}.${base}` : null
@@ -880,11 +962,11 @@ function componentDomainPrelude(id, port) {
     // опираются ещё n8n, Coder и Vaultwarden — там домен подставлялся мимо ввода.
     // Протокол отрезаем на всякий случай: пользователю естественно вставить https://.
     `DOM_IN="\${COMPONENT_DOMAIN:-}"; DOM_IN="\${DOM_IN#http://}"; DOM_IN="\${DOM_IN#https://}"; DOM_IN="\${DOM_IN%%/*}"`,
-    `if [ -n "$DOM_IN" ]; then printf '%s' "$DOM_IN" > /root/.${id}-domain; echo "[домен] $DOM_IN (из диалога)"; fi`,
-    `DOM="$(cat /root/.${id}-domain 2>/dev/null || true)"`,
+    `if [ -n "$DOM_IN" ]; then lifeos-domain set ${id} "$DOM_IN" >/dev/null; echo "[домен] $DOM_IN (из диалога)"; fi`,
+    `DOM="$(lifeos-domain get ${id} 2>/dev/null || true)"`,
     // the header holds the Life OS site domain (lifeos.example.com) — use its parent
     `if [ -z "$DOM" ]; then B="$(grep -oP 'base domain:\\s*\\K\\S+' ${caddyFile} 2>/dev/null | head -1)"; case "$B" in *.*.*) B="${'$'}{B#*.}";; esac; [ -n "$B" ] && DOM="${id}.$B"; fi`,
-    `if [ -n "$DOM" ]; then echo "$DOM" > /root/.${id}-domain; else echo '[warn] домен не определён — впиши вручную в /root/.${id}-domain'; fi`,
+    `if [ -n "$DOM" ]; then lifeos-domain set ${id} "$DOM" >/dev/null; else echo '[warn] домен не определён — задай его в панели или через lifeos-domain set ${id} <домен>'; fi`,
     "python3 - \"$DOM\" <<'PY'",
     'import sys',
     `p = '${caddyFile}'`,
@@ -1117,11 +1199,11 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
 
   lines.push(
     `echo '[2/3] Web UI: домен ${dom}, защита: ${gate}'`,
-    // Auth-параметры пишем в СТАНДАРТНЫЙ /root/.hermes/.env — Hermes сам его читает.
+    // Auth-параметры пишем в СТАНДАРТНЫЙ $HOME/.hermes/.env — Hermes сам его читает.
     // Отдельный dashboard_auth_env.conf был костылём: приходилось тянуть его в systemd
     // через EnvironmentFile. .env уже загружается Hermes'ом при старте.
-    'ENVF=/root/.hermes/.env',
-    'mkdir -p /root/.hermes; touch "$ENVF"; chmod 600 "$ENVF"',
+    'ENVF=$HOME/.hermes/.env',
+    'mkdir -p $HOME/.hermes; touch "$ENVF"; chmod 600 "$ENVF"',
     `sed -i '/^HERMES_DASHBOARD_PUBLIC_URL=/d' "$ENVF"`,
     `printf 'HERMES_DASHBOARD_PUBLIC_URL=https://%s\n' '${dom}' >> "$ENVF"`,
   )
@@ -1145,7 +1227,7 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
       // the public callback with redirect_uri_mismatch — so the public callback MUST be
       // registered (it also makes register write HERMES_DASHBOARD_PUBLIC_URL itself).
       `hermes dashboard register --redirect-uri "https://${dom}/auth/callback" --name "Life OS: ${dom}" 2>&1 || echo '[warn] OAuth не зарегистрирован: нужен вход в Nous Portal (hermes setup → Quick Setup), затем повторить установку или hermes dashboard register --redirect-uri https://${dom}/auth/callback'`,
-      "grep -q '^HERMES_DASHBOARD_OAUTH_CLIENT_ID=' /root/.hermes/.env && echo '[oauth] client_id записан в /root/.hermes/.env' || echo '[warn] client_id не записан — OAuth-вход не заработает'",
+      "grep -q '^HERMES_DASHBOARD_OAUTH_CLIENT_ID=' $HOME/.hermes/.env && echo '[oauth] client_id записан в $HOME/.hermes/.env' || echo '[warn] client_id не записан — OAuth-вход не заработает'",
     )
   }
   lines.push(
@@ -1170,7 +1252,7 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
     'WantedBy=multi-user.target',
     'UNIT',
     'HB="$(command -v hermes || true)"',
-    '[ -x "$HB" ] || HB=/root/.hermes/hermes-agent/.hermes/bin/hermes',
+    '[ -x "$HB" ] || HB=$HOME/.hermes/hermes-agent/.hermes/bin/hermes',
     '[ -x "$HB" ] || HB=/usr/local/bin/hermes',
     'sed -i "s|^ExecStart=.*|ExecStart=$HB dashboard --host 0.0.0.0 --port 9119 --no-open|" /etc/systemd/system/hermes-dashboard.service',
     "echo \"[bin] dashboard запускается из $HB\"",
@@ -1191,7 +1273,7 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
     'PY',
     ...cspAllowSnippet(`'${dom}'`),
     caddyReload,
-    `echo '${dom}' > /root/.hermes-domain`,
+    `lifeos-domain set hermes '${dom}'`,
     `echo '[готово] Hermes${mode === 'both' ? ': TUI + Web UI' : ': Web UI'} — https://${dom}'`,
   )
   return lines.join('\n')
@@ -1208,13 +1290,13 @@ function buildHermesUninstall() {
     "echo '[1/4] Останавливаю сервисы гейтвея и dashboard'",
     'systemctl --user disable --now hermes-gateway 2>/dev/null || true',
     'systemctl disable --now hermes-gateway 2>/dev/null || true',
-    'rm -f /root/.config/systemd/user/hermes-gateway.service /etc/systemd/system/hermes-gateway.service',
+    'rm -f $HOME/.config/systemd/user/hermes-gateway.service /etc/systemd/system/hermes-gateway.service',
     'systemctl disable --now hermes-dashboard 2>/dev/null || true',
     'rm -f /etc/systemd/system/hermes-dashboard.service',
     'systemctl daemon-reload 2>/dev/null || true',
     'systemctl --user daemon-reload 2>/dev/null || true',
     "echo '[2/4] Убираю домен из Caddy'",
-    'DOM="$(cat /root/.hermes-domain 2>/dev/null || true)"; export DOM',
+    'DOM="$(lifeos-domain get hermes 2>/dev/null || true)"; export DOM',
     "python3 - <<'PY'",
     'import os, re',
     'dom = os.environ.get("DOM", "").strip()',
@@ -1249,14 +1331,15 @@ function buildHermesUninstall() {
     caddyReload,
     "echo '[3/4] Штатное удаление Hermes (--full: код + конфиги + данные)'",
     'HB="$(command -v hermes || true)"',
-    '[ -x "$HB" ] || HB=/root/.hermes/hermes-agent/.hermes/bin/hermes',
+    '[ -x "$HB" ] || HB=$HOME/.hermes/hermes-agent/.hermes/bin/hermes',
     '[ -x "$HB" ] && "$HB" uninstall --full --yes 2>&1 || echo "[warn] штатный uninstall недоступен — чищу файлы вручную"',
     "echo '[4/4] Остатки'",
-    'rm -rf /root/.hermes/hermes-agent /root/.hermes/bin',
+    'rm -rf $HOME/.hermes/hermes-agent $HOME/.hermes/bin',
     // .env НЕ удаляем целиком — там и другие ключи (OpenRouter, OAuth и т.д.).
     // Чистим только dashboard-переменные.
-    "sed -i '/^HERMES_DASHBOARD_/d' /root/.hermes/.env 2>/dev/null",
-    'rm -f /usr/local/bin/hermes /usr/bin/hermes /root/.hermes-web-auth /root/.hermes-domain /root/.hermes/dashboard_auth_env.conf',
+    "sed -i '/^HERMES_DASHBOARD_/d' $HOME/.hermes/.env 2>/dev/null",
+    'lifeos-domain del hermes 2>/dev/null || true',
+    'rm -f /usr/local/bin/hermes /usr/bin/hermes $HOME/.hermes-web-auth $HOME/.hermes/dashboard_auth_env.conf',
     "command -v hermes >/dev/null 2>&1 && echo \"[warn] бинарник всё ещё в PATH: $(command -v hermes)\" || echo '  бинарник удалён — чисто'",
     "systemctl --user is-active hermes-gateway >/dev/null 2>&1 && echo '[warn] user-гейтвей всё ещё активен' || echo '  гейтвей остановлен'",
     "echo '[Hermes удалён]'",
@@ -1277,7 +1360,7 @@ function buildHermesSetup() {
     'export XDG_RUNTIME_DIR=/run/user/0',
     'export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus',
     'HB="$(command -v hermes || true)"',
-    'for c in /usr/local/bin/hermes /root/.hermes/hermes-agent/.hermes/bin/hermes /root/.hermes/bin/hermes; do [ -x "$c" ] && HB="$c" && break; done',
+    'for c in /usr/local/bin/hermes $HOME/.hermes/hermes-agent/.hermes/bin/hermes $HOME/.hermes/bin/hermes; do [ -x "$c" ] && HB="$c" && break; done',
     'if [ -z "$HB" ]; then echo "Hermes не установлен — сначала установи движок"; exit 1; fi',
     'echo "[мастер настроек Hermes] отвечай кнопками под логом: ↑↓ выбор, ⏎ подтвердить, Esc отмена"',
     '"$HB" setup',
@@ -1351,25 +1434,34 @@ app.post('/api/harness/install', async (req, res) => {
       '# install binary (v2 installer)',
       'curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh',
       '# systemd web service',
-      // Пароль создаём ДО юнита и подставляем прямо в unit (heredoc без кавычек). Прежний вариант
-      // дописывал переменную через sed, и из-за экранирования она не появлялась вовсе: opencode
-      // генерировал свой случайный пароль, все /api/* отдавали 401, а Web-UI движка показывал
-      // «Something went wrong». Проверено вручную: с OPENCODE_PASSWORD Basic base64(opencode:пароль)
-      // даёт 200 и через caddy тоже.
-      '[ -f /root/.opencode-web-pass ] || (openssl rand -hex 16 > /root/.opencode-web-pass && chmod 600 /root/.opencode-web-pass)',
-      'pw=$(cat /root/.opencode-web-pass)',
+      // Пароль opencode хранится РОВНО В ОДНОМ месте — $HOME/.lifeos/opencode.env.
+      // Раньше он лежал в трёх: $HOME/.opencode-web-pass, в юните (Environment=) и в Caddyfile
+      // (готовый base64), и смена пароля требовала правки всех трёх. Теперь файл читает systemd
+      // через EnvironmentFile и отдаёт переменные обоим процессам (opencode и caddy),
+      // а Caddyfile ссылается на плейсхолдер {env.OPENCODE_BASIC} — секрета в нём нет.
+      'mkdir -p $HOME/.lifeos && chmod 700 $HOME/.lifeos',
+      'umask 077',
+      '[ -f $HOME/.lifeos/opencode.env ] || {',
+      '  if [ -f $HOME/.opencode-web-pass ]; then OPW=$(cat $HOME/.opencode-web-pass); else OPW=$(openssl rand -hex 16); fi',
+      '  OBASIC=$(printf "opencode:%s" "$OPW" | base64 -w0)',
+      '  printf "OPENCODE_PASSWORD=%s\\nOPENCODE_BASIC=%s\\n" "$OPW" "$OBASIC" > $HOME/.lifeos/opencode.env',
+      '  chmod 600 $HOME/.lifeos/opencode.env',
+      '}',
+      '. $HOME/.lifeos/opencode.env',
+      'pw="$OPENCODE_PASSWORD"',
       "cat > /etc/systemd/system/opencode-web.service <<UNIT",
       '[Unit]',
       'Description=OpenCode Web UI (opencode serve)',
       'After=network.target',
       '',
       '[Service]',
-      'ExecStart=/root/.opencode/bin/opencode serve --port 4096 --hostname 127.0.0.1',
+      'ExecStart=$HOME/.opencode/bin/opencode serve --port 4096 --hostname 127.0.0.1',
       'Restart=always',
       'RestartSec=3',
       'User=root',
       'Environment=HOME=/root',
-      'Environment=OPENCODE_PASSWORD=$pw',
+      '# Пароль приходит из EnvironmentFile (см. $HOME/.lifeos/opencode.env), не из юнита.',
+      'EnvironmentFile=$HOME/.lifeos/opencode.env',
       '',
       '[Install]',
       'WantedBy=multi-user.target',
@@ -1383,24 +1475,32 @@ app.post('/api/harness/install', async (req, res) => {
       `dom='${dom}'`,
       "if not re.search(r'(?m)^'+re.escape(dom)+r'\\s*\\{', s):",
       "    if s and not s.endswith('\\n'): s += '\\n'",
-      `    s += dom + ' {\\n    reverse_proxy 127.0.0.1:4096 {\\n        header_up Authorization "Basic ${ocBasic()}"\\n    }\\n}\\n'`,
+      `    s += dom + ' {\\n    reverse_proxy 127.0.0.1:4096 {\\n        header_up Authorization "Basic {env.OPENCODE_BASIC}"\\n    }\\n}\\n'`,
       "    open(p,'w').write(s)",
       "    print('caddy site added')",
       'else:',
       "    print('caddy site already present')",
       "    bare=re.compile(r'(?m)^(\\s*)reverse_proxy 127\\.0\\.0\\.1:4096\\s*$')",
-      `    s2,bare_n=bare.subn('\\1reverse_proxy 127.0.0.1:4096 {\\n\\1    header_up Authorization "Basic ${ocBasic()}"\\n\\1}', s)`,
+      `    s2,bare_n=bare.subn('\\1reverse_proxy 127.0.0.1:4096 {\\n\\1    header_up Authorization "Basic {env.OPENCODE_BASIC}"\\n\\1}', s)`,
       "    if bare_n: open(p,'w').write(s2); print('auth header added to', bare_n, 'proxy lines')",
       "# Внутренний прокси панели (/ocapi/*) ведёт на тот же opencode, поэтому ему тоже нужен заголовок:",
       "# без него создание сессии отдаёт 401 и Web-UI движка показывает «Something went wrong».",
       "if not re.search(r'/ocapi/\\*[^}]*header_up', s, re.S):",
       "    m2=re.search(r'(\\n([ \\t]*)handle /ocapi/\\* \\{\\n(?:.*\\n)*?\\2\\treverse_proxy 127\\.0\\.0\\.1:4096)(\\n\\2\\})', s)",
       "    if m2:",
-      `        s=s[:m2.start(1)]+m2.group(1)+' {\\n'+m2.group(2)+'\\t\\t\\theader_up Authorization "Basic ${ocBasic()}"\\n'+m2.group(2)+'\\t\\t}'+m2.group(3)+s[m2.end(3):]`,
+      `        s=s[:m2.start(1)]+m2.group(1)+' {\\n'+m2.group(2)+'\\t\\t\\theader_up Authorization "Basic {env.OPENCODE_BASIC}"\\n'+m2.group(2)+'\\t\\t}'+m2.group(3)+s[m2.end(3):]`,
       "        open(p,'w').write(s); print('auth header added to /ocapi handler')",
       'PY',
       ...cspAllowSnippet(`'${dom}'`),
-      `echo '${dom}' > /root/.opencode-domain`,
+      `lifeos-domain set opencode '${dom}'`,
+      // Caddy должен ВИДЕТЬ OPENCODE_BASIC. Переменную даёт systemd из того же env-файла:
+      // drop-in добавляет EnvironmentFile к caddy.service. Без этого в заголовок уехал бы
+      // литерал {env.OPENCODE_BASIC} и сайт отдавал бы 401.
+      'mkdir -p /etc/systemd/system/caddy.service.d',
+      'printf "[Service]\\nEnvironmentFile=$HOME/.lifeos/opencode.env\\n" > /etc/systemd/system/caddy.service.d/lifeos-opencode.conf',
+      'systemctl daemon-reload',
+      // reload перечитывает конфиг в ТОМ ЖЕ процессе — новые env так не появятся, нужен restart.
+      'systemctl is-active --quiet caddy && systemctl restart caddy || true',
       caddyReload,
     ].join('\n')
     cmd = script
@@ -1472,7 +1572,7 @@ app.post('/api/harness/install', async (req, res) => {
       "else:",
       "    print('caddy site already present')",
       'PY',
-      `echo '${dom}' > /root/.${id}-domain`,
+      `lifeos-domain set ${id} '${dom}'`,
       ...cspAllowSnippet(`'${dom}'`),
       caddyReload,
     ].join('\n')
@@ -1660,7 +1760,7 @@ exit 0`,
 set -e
 # Домен пользователь вводит в диалоге установки (панель передаёт его в COMPONENT_DOMAIN).
 if [ -n "\${COMPONENT_DOMAIN:-}" ]; then
-  printf '%s' "$COMPONENT_DOMAIN" > /root/.omniroute-domain
+  lifeos-domain set omniroute "$COMPONENT_DOMAIN" >/dev/null
   echo "[домен] $COMPONENT_DOMAIN"
 else
   echo "[домен] в диалоге не задан — определяю по базовому домену"
@@ -1884,7 +1984,8 @@ fi
 echo "[токен админки] создан в $TOK_FILE (в лог не выводится)"
 
 # Пароль первого пользователя пользователь вводит в диалоге установки.
-ENV_FILE=/root/.vaultwarden.env
+# Конвенция: env-файлы служб — в /etc. Раньше лежал в /root/.vaultwarden.env.
+ENV_FILE=/etc/vaultwarden.env
 {
   # Протокол ОБЯЗАТЕЛЕН. Проверено запуском: с голым доменом Vaultwarden не стартует —
   # «DOMAIN variable needs to contain the protocol (http, https)».
@@ -2047,7 +2148,7 @@ app.get('/api/chat/transcript', async (req, res) => {
 // ---- Резервные копии по расписанию ----
 // Раз в сутки складываем все данные в /root/lifeos-backups/<дата>.json и держим последние N.
 // Раньше бэкап был возможен только вручную из консоли — а потеря данных выяснялась постфактум.
-const BACKUP_DIR = process.env.LIFEOS_BACKUP_DIR || '/root/lifeos-backups'
+const BACKUP_DIR = process.env.LIFEOS_BACKUP_DIR || `${HOME_DIR}/lifeos-backups`
 const BACKUP_KEEP = parseInt(process.env.LIFEOS_BACKUP_KEEP, 10) || 14
 let lastBackup = null
 
@@ -2175,19 +2276,19 @@ app.get('/api/components', async (_, res) => res.json({ components: await discov
 // «Служебное» в настройках. Отдаём роль, статус установки и честные отличия.
 // Транспорт сессий агентов: tmux (по умолчанию) | herdr. Значение для НОВЫХ сессий;
 // живые сессии остаются в своём мультиплексоре — перенос невозможен.
-const TRANSPORT_FILE = '/root/.lifeos/transport.json'
+const TRANSPORT_FILE = '$HOME/.lifeos/transport.json'
 app.get('/api/transport', (_, res) => {
   let transport = 'tmux'
   try {
     const cfg = JSON.parse(readFileSync(TRANSPORT_FILE, 'utf8'))
     if (cfg.transport === 'herdr' || cfg.transport === 'tmux') transport = cfg.transport
   } catch { /* нет файла — tmux */ }
-  res.json({ transport, herdrInstalled: existsSync('/root/.local/bin/herdr') })
+  res.json({ transport, herdrInstalled: existsSync(`${HOME_DIR}/.local/bin/herdr`) })
 })
 app.put('/api/transport', async (req, res) => {
   const t = (req.body || {}).transport
   if (t !== 'herdr' && t !== 'tmux') return res.status(400).json({ error: 'transport: tmux | herdr' })
-  if (t === 'herdr' && !existsSync('/root/.local/bin/herdr')) {
+  if (t === 'herdr' && !existsSync(`${HOME_DIR}/.local/bin/herdr`)) {
     return res.status(409).json({ error: 'herdr не установлен — поставь его в «Служебном»' })
   }
   try { mkdirSync(path.dirname(TRANSPORT_FILE), { recursive: true }) } catch {}
@@ -2247,17 +2348,21 @@ app.post('/api/tools/uninstall', async (req, res) => {
 // Закрывать регистрацию после регистрации своего аккаунта обязательно: на публичном
 // домене иначе заводит аккаунт кто угодно. Раньше это была ручная правка env-файла
 // через терминал — забыть можно было легко.
-const VW_ENV = '/root/.vaultwarden.env'
+const VW_ENV = '/etc/vaultwarden.env'
+const VW_ENV_LEGACY = '/root/.vaultwarden.env'
+// Старые установки держали env в /root/.vaultwarden.env — читаем его, пока файл
+// не перенесён в /etc (перенос делает deploy/install.sh и миграция при обновлении).
+const vwEnvPath = () => (existsSync(VW_ENV) ? VW_ENV : (existsSync(VW_ENV_LEGACY) ? VW_ENV_LEGACY : VW_ENV))
 
 function vaultwardenSignups() {
   try {
-    const m = readFileSync(VW_ENV, 'utf8').match(/^SIGNUPS_ALLOWED=(true|false)/m)
+    const m = readFileSync(vwEnvPath(), 'utf8').match(/^SIGNUPS_ALLOWED=(true|false)/m)
     return m ? m[1] === 'true' : null
   } catch { return null }
 }
 
 app.get('/api/components/vaultwarden/signups', auth.requireAdmin, (_, res) => {
-  res.json({ enabled: vaultwardenSignups(), env: VW_ENV })
+  res.json({ enabled: vaultwardenSignups(), env: vwEnvPath() })
 })
 
 app.post('/api/components/vaultwarden/signups', auth.requireAdmin, async (req, res) => {
@@ -2266,9 +2371,9 @@ app.post('/api/components/vaultwarden/signups', auth.requireAdmin, async (req, r
     return res.status(400).json({ error: 'в env-файле нет строки SIGNUPS_ALLOWED — компонент не установлен?' })
   }
   try {
-    let s = readFileSync(VW_ENV, 'utf8')
+    let s = readFileSync(vwEnvPath(), 'utf8')
     s = s.replace(/^SIGNUPS_ALLOWED=(true|false)/m, `SIGNUPS_ALLOWED=${enabled}`)
-    writeFileSync(VW_ENV, s, { mode: 0o600 })
+    writeFileSync(vwEnvPath(), s, { mode: 0o600 })
     await execS('systemctl restart vaultwarden.service', { shell: '/bin/bash', timeout: 60000 })
   } catch (e) {
     return res.status(500).json({ error: e?.message || 'не удалось применить' })
@@ -2448,8 +2553,8 @@ async function ensureRunning(id) {
   if (!def?.web) return null
   const record = { id, state: 'starting', port: def.web.port, log: '' }
   webProcs[id] = record
-  const homePath = `/root/.${def.id}/bin:/root/.codex/bin:/root/.claude/local/bin:/root/.openclaw/bin:/root/.dsh/bin:/root/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}`
-  const fullCmd = `export PATH="${homePath}:$PATH"; cd /root && ${def.web.cmd}`
+  const homePath = `$HOME/.${def.id}/bin:$HOME/.codex/bin:$HOME/.claude/local/bin:$HOME/.openclaw/bin:$HOME/.dsh/bin:$HOME/.local/bin:${process.env.PATH || '/usr/local/bin:/usr/bin:/bin'}`
+  const fullCmd = `export PATH="${homePath}:$PATH"; cd $HOME && ${def.web.cmd}`
   // Clear log file before starting to ensure waitForToken finds fresh token
   writeFileSync(`/tmp/lifeos-web-${id}.log`, '')
   // start fully detached so it survives & doesn't block the request
@@ -2579,7 +2684,7 @@ app.get('/api/harnesses', async (_, res) => res.json({ harnesses: await discover
 // OpenRouter key live in ~/.openclaw/openclaw.json, not in .env). Values never echo back.
 function writeAgentConfigToken(agentId, keyVar, value) {
   if (agentId !== 'openclaw') return null
-  const p = '/root/.openclaw/openclaw.json'
+  const p = '$HOME/.openclaw/openclaw.json'
   if (!existsSync(p)) return { ok: false, reason: 'config not found' }
   const cfg = JSON.parse(readFileSync(p, 'utf8'))
   if (keyVar === 'OPENCLAW_GATEWAY_TOKEN') {
@@ -2748,7 +2853,7 @@ app.post('/api/memory/search', async (req, res) => {
 // Индекс — производные данные: их можно целиком пересобрать, поэтому они НЕ входят в ежедневный
 // бэкап (в отличие от твоих заметок и разделов) и лежат отдельным файлом.
 const LBRAIN_SCRIPT = path.join(__dirname, 'lbrain_index.py')
-const LBRAIN_INDEX = process.env.LIFEOS_LBRAIN_INDEX || '/root/agentos-data/lbrain/index.json'
+const LBRAIN_INDEX = process.env.LIFEOS_LBRAIN_INDEX || `${DATA_DIR}/lbrain/index.json`
 
 function runLbrain(args, timeoutMs = 60000) {
   return new Promise((resolve) => {
@@ -2786,7 +2891,7 @@ async function readLbrainIndex() {
 // ---- Сборка десктопного приложения ----
 // Готовый AppImage отдаём через панель: не нужен сторонний хостинг, доступ закрыт тем же
 // входом, что и у панели. Файл — сборка, а не данные, поэтому в ежедневный бэкап не идёт.
-const DESKTOP_DIST = process.env.LIFEOS_DESKTOP_DIST || '/root/lifeos-desktop-dist'
+const DESKTOP_DIST = process.env.LIFEOS_DESKTOP_DIST || `${HOME_DIR}/lifeos-desktop-dist`
 
 app.get('/api/desktop/info', async (req, res) => {
   let files = []
@@ -3088,7 +3193,7 @@ app.get('/api/agents', async (req, res) => {
 // спавне (несуществующий профиль ломает запуск TUI). Читаем список с диска, а не из
 // статичного agent-definitions.json: иначе селектор показывает выдуманные профили, а
 // созданный позже не появляется.
-const HERMES_PROFILES_DIR = process.env.HERMES_PROFILES_DIR || '/root/.hermes/profiles'
+const HERMES_PROFILES_DIR = process.env.HERMES_PROFILES_DIR || '$HOME/.hermes/profiles'
 app.get('/api/profiles', async (req, res) => {
   let names = []
   try {
@@ -3099,7 +3204,7 @@ app.get('/api/profiles', async (req, res) => {
 })
 
 // ---- TTS (edge-tts) ----
-const EDGE_TTS = '/root/.local/bin/edge-tts'
+const EDGE_TTS = '$HOME/.local/bin/edge-tts'
 app.post('/api/tts', async (req, res) => {
   const { text = '' } = req.body || {}
   if (!text.trim()) return res.status(400).json({ error: 'no text' })
@@ -3164,22 +3269,22 @@ app.post('/api/fs/write', async (req, res) => {
 // PATH для команд, которые пользователь вводит руками (вкладка Terminal).
 //
 // Раньше здесь стоял `shell: '/bin/bash'` БЕЗ флага -l. Логин-шелл читает
-// /root/.profile, где добавляется $HOME/.local/bin; обычный -c — нет. В итоге
+// $HOME/.profile, где добавляется $HOME/.local/bin; обычный -c — нет. В итоге
 // `hermes` в терминале панели давал «command not found», хотя на сервере он есть и
 // работает. То же касалось opencode и всего, что ставится в ~/.local/bin и
 // ~/.hermes/bin. Тот же список, что и у TUI (tui-ws.js), — чтобы терминал и
 // TUI вели себя одинаково.
 const AGENT_BIN_DIRS = [
-  '/root/.local/bin',
-  '/root/.hermes/bin',
-  '/root/.hermes/hermes-agent/.hermes/bin',
-  '/root/.opencode/bin',
-  '/root/.dsh/bin',
+  '$HOME/.local/bin',
+  '$HOME/.hermes/bin',
+  '$HOME/.hermes/hermes-agent/.hermes/bin',
+  '$HOME/.opencode/bin',
+  '$HOME/.dsh/bin',
 ]
 function agentEnv(extra = {}) {
   return {
     ...process.env,
-    HOME: process.env.HOME || '/root',
+    HOME: HOME_DIR,
     PATH: [...AGENT_BIN_DIRS, process.env.PATH || '/usr/local/bin:/usr/bin:/bin'].join(':'),
     ...extra,
   }
@@ -3211,6 +3316,8 @@ app.get('/api/status', async (_, res) => {
     cpuLoad: os.loadavg(),
     mem: { rss: mem.rss, heap: mem.heapUsed },
     dataDir: DATA_DIR,
+    home: HOME_DIR,
+    backupDir: BACKUP_DIR,
     profiles: ['planner', 'tasks', 'knowledge', 'habits', 'coordinator'],
     openrouter: OPENROUTER_KEY ? 'configured' : 'missing',
   })

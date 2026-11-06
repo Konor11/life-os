@@ -11,11 +11,15 @@
 // пользователь видит shell — сессия не умирает. Поэтому «restart» и закрытие
 // сессии тут всегда явные (кнопка в панели), автодетекта выхода нет.
 
+import os from 'os'
+
+// HOME службы задаёт systemd; пути herdr и данных строим от него.
+const HOME = process.env.HOME || os.homedir()
 import { spawn } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import pty from 'node-pty'
 
-const HERDR_CANDIDATES = ['/root/.local/bin/herdr']
+const HERDR_CANDIDATES = [`${HOME}/.local/bin/herdr`]
 let herdrPath = null
 export function herdrBin() {
   if (herdrPath) return herdrPath
@@ -35,7 +39,7 @@ export function currentTransport() {
   if (now - transportCache.at < 2000) return transportCache.value || 'tmux'
   let value = 'tmux'
   try {
-    const p = '/root/.lifeos/transport.json'
+    const p = `${process.env.LIFEOS_DIR || HOME + '/.lifeos'}/transport.json`
     if (existsSync(p)) {
       const cfg = JSON.parse(readFileSync(p, 'utf8'))
       if (cfg.transport === 'herdr' || cfg.transport === 'tmux') value = cfg.transport

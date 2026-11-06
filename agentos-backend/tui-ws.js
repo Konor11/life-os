@@ -5,6 +5,11 @@ import http from 'http'
 import url from 'url'
 import { promisify } from 'util'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import os from 'os'
+
+// HOME службы задаёт systemd (root-установка → /root, иначе home владельца).
+// Пути агентов и tmux-конфига строятся от него, а не от литерала /root.
+const HOME = process.env.HOME || os.homedir()
 import { wsAllowed } from './auth.js'
 import { currentTransport, herdrBin, herdrSessionName, ensureSession, runEngineInPane,
   stopSession as herdrStop, listSessions as herdrList, herdrSessionUp } from './herdr-transport.js'
@@ -14,8 +19,8 @@ async function herdrSessionUpSafe(name) {
 }
 
 const execS = promisify(exec)
-const HOME_BINS = ['/root/.opencode/bin', '/root/.codex/bin', '/root/.claude/local/bin',
-  '/root/.openclaw/bin', '/root/.dsh/bin', '/root/.local/bin', '/usr/local/bin', '/usr/bin']
+const HOME_BINS = [`${HOME}/.opencode/bin`, `${HOME}/.codex/bin`, `${HOME}/.claude/local/bin`,
+  `${HOME}/.openclaw/bin`, `${HOME}/.dsh/bin`, `${HOME}/.local/bin`, '/usr/local/bin', '/usr/bin']
 
 async function engineBin(name) {
   try {
@@ -41,8 +46,8 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || ''
 // the Chat tab die with "execvp(3) failed: No such file or directory" on a fresh server.
 const HERMES_CANDIDATES = [
   '/usr/local/bin/hermes',
-  '/root/.hermes/hermes-agent/.hermes/bin/hermes',
-  '/root/.hermes/bin/hermes',
+  `${HOME}/.hermes/hermes-agent/.hermes/bin/hermes`,
+  `${HOME}/.hermes/bin/hermes`,
   '/usr/local/lib/hermes-agent/.hermes/bin/hermes',
 ]
 
@@ -114,7 +119,7 @@ const TMUX_SOCKET = 'lifeos'
 // Сколько ждать перед автоудалением осиротевшей сессии. Обычно движок удаляют и сразу хотят, чтобы
 // мусор исчез, но час — минимум, чтобы не снести сессию в момент установки/переустановки движка.
 const ORPHAN_GRACE_SEC = 60 * 60
-const TMUX_CONF = '/root/.lifeos-tmux.conf'
+const TMUX_CONF = `${HOME}/.lifeos-tmux.conf`
 const TMUX_KEEPALIVE_MS = (parseInt(process.env.TUI_TMUX_KEEPALIVE_SEC, 10) || 43200) * 1000
 let tmuxPath = null
 
@@ -307,7 +312,7 @@ export function engineInstalled(engine) {
   if (engine === 'hermes') return !!hermesLaunch()
   const def = ENGINES[engine]
   if (!def) return false
-  const dirs = ['/root/.local/bin', '/root/.opencode/bin', '/usr/local/bin', '/usr/bin']
+  const dirs = [`${HOME}/.local/bin`, `${HOME}/.opencode/bin`, '/usr/local/bin', '/usr/bin']
   for (const d of dirs) {
     try { if (existsSync(`${d}/${def.bin || engine}`)) return true } catch {}
   }
@@ -462,7 +467,7 @@ export function attachTuiServer(app, server) {
   function syncOpencodeTheme(theme) {
     if (theme !== 'light' && theme !== 'dark') return
     try {
-      const p = '/root/.config/opencode/cli.json'
+      const p = `${HOME}/.config/opencode/cli.json`
       let cfg = {}
       try { cfg = JSON.parse(readFileSync(p, 'utf8')) } catch {}
       cfg.theme = { name: 'system', mode: theme }

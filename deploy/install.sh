@@ -23,6 +23,19 @@ set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 echo "==> Life OS directory: $DIR"
 
+# ------------------------------------------------ пользователь и его home ----
+# Установщик запускают через sudo, но панель должна работать в home того человека,
+# который её ставит: у него уже стоят агенты, его ключи и его shell. Раньше всё было
+# захардкожено в /root — при установке из-под обычного пользователя конфиги агентов
+# уезжали в /root и были недоступны владельцу, а его собственный `hermes` смотрел
+# в ~/.hermes: панель и CLI расходились.
+LIFEOS_USER="${LIFEOS_USER:-${SUDO_USER:-$(id -un)}}"
+LIFEOS_HOME="$(getent passwd "$LIFEOS_USER" 2>/dev/null | cut -d: -f6)"
+[ -n "$LIFEOS_HOME" ] || LIFEOS_HOME="/root"
+LIFEOS_DIR="$LIFEOS_HOME/.lifeos"
+export LIFEOS_USER LIFEOS_HOME LIFEOS_DIR
+echo "==> Пользователь: $LIFEOS_USER (home: $LIFEOS_HOME)"
+
 # ------------------------------------------------------------------- domain ----
 # Спрашиваем домен СРАЗУ, до всех установок. При `curl | bash` stdin — пайп
 # (bash читает из него сам скрипт), поэтому терминал берём через /dev/tty.
@@ -69,19 +82,19 @@ fi
 # Файл /root/.lifeos/auth.json не перезаписывается, если он уже есть: обновление установщика
 # не должно сбрасывать пароль, который пользователь сменил в Настройках.
 if [ -n "${LIFEOS_LOGIN:-}" ] && [ -n "${LIFEOS_PASSWORD:-}" ]; then
-  if [ -f /root/.lifeos/auth.json ]; then
-    echo "==> /root/.lifeos/auth.json уже есть — учётные данные установщика не трогаем (смена — в Настройках)"
+  if [ -f "$LIFEOS_DIR/auth.json" ]; then
+    echo "==> $LIFEOS_DIR/auth.json уже есть — учётные данные установщика не трогаем (смена — в Настройках)"
   else
-    mkdir -p /root/.lifeos && chmod 700 /root/.lifeos
-    LIFEOS_AUTH_LOGIN="$LIFEOS_LOGIN" LIFEOS_AUTH_PASSWORD="$LIFEOS_PASSWORD" node -e '
+    mkdir -p "$LIFEOS_DIR" && chmod 700 "$LIFEOS_DIR"
+    LIFEOS_AUTH_LOGIN="$LIFEOS_LOGIN" LIFEOS_AUTH_PASSWORD="$LIFEOS_PASSWORD" LIFEOS_DIR="$LIFEOS_DIR" node -e '
       const crypto = require("crypto"), fs = require("fs");
       const p = process.env.LIFEOS_AUTH_PASSWORD, l = process.env.LIFEOS_AUTH_LOGIN;
       const salt = crypto.randomBytes(16).toString("hex");
       const hash = crypto.scryptSync(p, Buffer.from(salt, "hex"), 64, { N: 16384, r: 8, p: 1 }).toString("hex");
-      fs.writeFileSync("/root/.lifeos/auth.json", JSON.stringify({
+      fs.writeFileSync(process.env.LIFEOS_DIR + "/auth.json", JSON.stringify({
         login: l, salt, hash, createdAt: new Date().toISOString(), version: 1 }, null, 2), { mode: 0o600 });
     '
-    chmod 600 /root/.lifeos/auth.json
+    chmod 600 "$LIFEOS_DIR/auth.json"
     echo "==> Учётные данные созданы из переменных окружения: $LIFEOS_LOGIN"
   fi
 else
@@ -225,7 +238,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=$LIFEOS_USER
+Environment=HOME=$LIFEOS_HOME
+Environment=LIFEOS_DIR=$LIFEOS_DIR
 ExecStart=$DIR/deploy/lifeos-stack.sh
 Restart=always
 RestartSec=3
@@ -238,7 +253,26 @@ UNIT
 
 chmod +x "$DIR/deploy/lifeos-stack.sh" "$DIR/agentos-backend/start_backend.sh"
 
+# CLI реестра доменов: установщики движков/компонентов зовут `lifeos-domain set/get`,
+# а не пишут по файлу на каждый домен (см. deploy/lifeos-domain).
+install -m 755 "$DIR/deploy/lifeos-domain" /usr/local/bin/lifeos-domain
+
+# Каталог репозитория и данные должны принадлежать владельцу панели: служба теперь
+# работает не от root, и root-овые node_modules ей недоступны.
+chown -R "$LIFEOS_USER":"$LIFEOS_USER" "$DIR" 2>/dev/null || true
+[ -d "$LIFEOS_DIR" ] && chown -R "$LIFEOS_USER":"$LIFEOS_USER" "$LIFEOS_DIR" 2>/dev/null || true
+
 systemctl daemon-reload
+
+# Домашние каталоги/пользователя панель читает отсюда, а не из /root: заменяемо через env.
+mkdir -p /etc/lifeos
+cat > /etc/lifeos/install.conf <<ICONF
+# Life OS install-time identity, written by deploy/install.sh
+LIFEOS_USER=$LIFEOS_USER
+LIFEOS_HOME=$LIFEOS_HOME
+LIFEOS_DIR=$LIFEOS_DIR
+ICONF
+
 systemctl enable --now lifeos.service
 
 # Сервер tmux держит ОТДЕЛЬНЫЙ юнит. Внутри cgroup панели он умирал бы при каждом
@@ -250,7 +284,7 @@ if ! command -v tmux >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y tmux >/dev/null 2>&1 || true
 fi
 
-cat > /root/.lifeos-tmux.conf <<'TMUXCONF'
+cat > "$LIFEOS_HOME/.lifeos-tmux.conf" <<'TMUXCONF'
 # Life OS: терминал панели. Бэкенд перезаписывает этот файл при старте.
 set -g default-terminal "tmux-256color"
 set -g status off
@@ -269,7 +303,9 @@ After=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/tmux -L lifeos -f /root/.lifeos-tmux.conf new-session -d -s __keeper "sleep infinity"
+User=$LIFEOS_USER
+Environment=HOME=$LIFEOS_HOME
+ExecStart=/usr/bin/tmux -L lifeos -f $LIFEOS_HOME/.lifeos-tmux.conf new-session -d -s __keeper "sleep infinity"
 ExecStop=-/usr/bin/tmux -L lifeos kill-server
 
 [Install]

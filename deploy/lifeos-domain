@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""lifeos-domain — единый реестр доменов компонентов Life OS.
+
+Раньше каждый компонент держал домен в своём файле /root/.<id>-domain:
+пять файлов по одному значению, и любой новый компонент добавлял шестой.
+Теперь один JSON: $LIFEOS_DIR/domains.json (по умолчанию /root/.lifeos/domains.json).
+
+Использование:
+  lifeos-domain get <id>            напечатать домен (пусто, если нет)
+  lifeos-domain set <id> <домен>    записать (протокол/слэш отрезаются)
+  lifeos-domain del <id>            удалить
+  lifeos-domain list                все пары id=домен
+"""
+import fcntl
+import json
+import os
+import sys
+import tempfile
+
+
+def base_dir():
+    d = os.environ.get('LIFEOS_DIR')
+    if d:
+        return d
+    return os.path.join(os.path.expanduser('~'), '.lifeos')
+
+
+def path():
+    return os.path.join(base_dir(), 'domains.json')
+
+
+def load():
+    try:
+        with open(path(), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save(data):
+    p = path()
+    os.makedirs(os.path.dirname(p), mode=0o700, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(p), prefix='.domains.')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
+            f.write('\n')
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def norm(domain):
+    d = (domain or '').strip().lower()
+    for pre in ('https://', 'http://'):
+        if d.startswith(pre):
+            d = d[len(pre):]
+    return d.split('/')[0]
+
+
+class Lock:
+    """Эксклюзивная блокировка на время read-modify-write."""
+
+    def __enter__(self):
+        os.makedirs(base_dir(), mode=0o700, exist_ok=True)
+        self.f = open(os.path.join(base_dir(), '.domains.lock'), 'w')
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *exc):
+        fcntl.flock(self.f, fcntl.LOCK_UN)
+        self.f.close()
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    cmd = argv[1]
+    if cmd == 'get' and len(argv) >= 3:
+        print(load().get(argv[2], ''))
+        return 0
+    if cmd == 'set' and len(argv) >= 4:
+        dom = norm(argv[3])
+        if not dom:
+            print('пустой домен', file=sys.stderr)
+            return 2
+        with Lock():
+            data = load()
+            data[argv[2]] = dom
+            save(data)
+        print(dom)
+        return 0
+    if cmd == 'del' and len(argv) >= 3:
+        with Lock():
+            data = load()
+            if data.pop(argv[2], None) is not None:
+                save(data)
+        return 0
+    if cmd == 'list':
+        for k, v in sorted(load().items()):
+            print(f'{k}={v}')
+        return 0
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv))

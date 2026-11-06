@@ -17,9 +17,20 @@
 //   viewer — только чтение (никаких POST/PUT/DELETE)
 import crypto from 'crypto'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 
-const AUTH_FILE = process.env.LIFEOS_AUTH_FILE || '/root/.lifeos/auth.json'
+// auth.json лежит в home пользователя, которого определил установщик (см. deploy/install.sh
+// и /etc/lifeos/install.conf). Раньше путь был захардкожен в /root: при установке из-под
+// обычного пользователя пароль панели оказывался в /root, недоступный владельцу.
+const HOME_DIR = (() => {
+  try {
+    const m = fs.readFileSync('/etc/lifeos/install.conf', 'utf8').match(/^LIFEOS_HOME=(.+)$/m)
+    if (m) return m[1].trim()
+  } catch {}
+  return process.env.LIFEOS_HOME || os.homedir()
+})()
+const AUTH_FILE = process.env.LIFEOS_AUTH_FILE || `${HOME_DIR}/.lifeos/auth.json`
 const SEEN_FILE = AUTH_FILE + '-created'
 const COOKIE = 'lifeos_session'
 const SESSION_DAYS = 30
