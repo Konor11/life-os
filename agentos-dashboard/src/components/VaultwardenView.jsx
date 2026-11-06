@@ -13,6 +13,7 @@ export function VaultwardenView() {
   const [reloadKey, setReloadKey] = useState(0)
   const [signups, setSignups] = useState(null)   // true — регистрация открыта
   const [signupsBusy, setSignupsBusy] = useState(false)
+  const [paths, setPaths] = useState(null)       // актуальные пути из /etc/lifeos/install.conf
 
   useEffect(() => {
     let alive = true
@@ -36,7 +37,7 @@ export function VaultwardenView() {
     let alive = true
     fetch('/api/components/vaultwarden/signups')
       .then(r => r.ok ? r.json() : null)
-      .then(j => { if (alive && j) setSignups(j.enabled) })
+      .then(j => { if (alive && j) { setSignups(j.enabled); setPaths(j) } })
       .catch(() => {})
     return () => { alive = false }
   }, [reloadKey])
@@ -160,7 +161,7 @@ export function VaultwardenView() {
           </li>
           <li>
             Админка — <code className="text-[11px]">/admin</code>, токен лежит в
-            <code className="text-[11px]"> /root/.vaultwarden-admin-token</code>.
+            <code className="text-[11px]"> {paths?.adminToken || '…'}</code>.
           </li>
           <li>Клиенты Bitwarden подключаются по адресу хранилища — самостоятельный сервер.</li>
         </ol>
@@ -168,8 +169,8 @@ export function VaultwardenView() {
 
       <div className="card-surface rounded-2xl p-4 text-[12px] text-text-muted space-y-1">
         <div className="text-sm font-medium text-text">Где что лежит</div>
-        <div>хранилище и ключи: <code className="text-[11px]">/root/vaultwarden-data</code> (права 700)</div>
-        <div>настройки: <code className="text-[11px]">/root/.vaultwarden.env</code></div>
+        <div>хранилище и ключи: <code className="text-[11px]">{paths?.dataDir || '…'}</code> (права 700)</div>
+        <div>настройки: <code className="text-[11px]">{paths?.env || '…'}</code></div>
         <div className="text-[11px] opacity-80">
           Удаление компонента НЕ трогает хранилище: пароли и ключи останутся на месте.
         </div>

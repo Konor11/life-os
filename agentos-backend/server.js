@@ -604,145 +604,14 @@ function patchKeyEnv(cfgPath, keyEnvVar) {
 
 // ---- Harness detection (what's actually installed) ----
 // Each agent: checkCmd (exists in PATH?), binPath, installCmd, desc, needsKeyHint
-const HARNESSES_DEF = [
-  {
-    // NOT alwaysInstalled: deploy/install.sh does NOT install Hermes (it only checks that
-    // Caddy/Node exist), so a hardcoded "installed" was a lie on every fresh server.
-    // Detect the real binary; if it's missing, offer the official installer.
-    id: 'hermes', name: 'Hermes',
-    bin: ['$HOME/.local/bin/hermes', '/usr/local/bin/hermes', '$HOME/.hermes/hermes-agent/.hermes/bin/hermes', '/usr/local/lib/hermes-agent/venv/bin/hermes'],
-    install: 'curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash',
-    interactive: true,   // installer + `hermes setup` need a TTY (arrow-key menus)
-    desc: 'Hermes Agent (Nous Research) — один из доступных движков. Пользователь сам выбирает, какой агент использовать.',
-    provider: 'OpenRouter', key: 'OPENROUTER_API_KEY',
-    // Официальный путь обновления — `hermes update` (git-установка: pull + переустановка зависимостей
-    // + перезапуск своих служб). Флаг --yes делает его неинтерактивным, поэтому кнопка работает без TTY.
-    // Лончер ищем по всем известным путям: на сервере это $HOME/.local/bin/hermes (его же запускает
-    // hermes-dashboard), в других сборках — /usr/local/bin или .hermes/bin внутри дерева исходников.
-    update: [
-      "echo '[1/2] Обновление через официальную команду: hermes update --yes'",
-      'HB="$(command -v hermes || true)"',
-      '[ -x "$HB" ] || HB=$HOME/.local/bin/hermes',
-      '[ -x "$HB" ] || HB=/usr/local/bin/hermes',
-      '[ -x "$HB" ] || HB=$HOME/.hermes/hermes-agent/.hermes/bin/hermes',
-      '[ -x "$HB" ] || HB=/usr/local/lib/hermes-agent/venv/bin/hermes',
-      'if [ -x "$HB" ]; then "$HB" update --yes 2>&1; else echo "[ошибка] лончер hermes не найден — обновление не выполнено"; fi',
-      "echo '[2/2] Версия после обновления:'",
-      '"$HB" --version 2>&1 | head -3',
-    ].join('; '),
-  },
-  {
-      id: 'opencode', name: 'OpenCode', bin: ['opencode'],
-      install: "curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh",
-      // v2 installer updates the binary in place; restart the web service if present
-      update: "echo '[1/2] Обновление бинарника (официальный v2-инсталлер)...'; curl -fsSL https://opencode.ai/v2/install -o /tmp/install-opencode.sh && bash /tmp/install-opencode.sh --no-modify-path </dev/null; rm -f /tmp/install-opencode.sh; echo '[2/2] Перезапуск opencode-web...'; systemctl restart opencode-web 2>/dev/null && echo 'сервис перезапущен' || echo 'web-сервис не установлен (пропускаю)'; $HOME/.opencode/bin/opencode --version 2>/dev/null | head -1",
-      desc: 'OpenCode — open-source AI coding agent. Режимы: TUI (терминал), Web UI (opencode serve на :4096 + свой домен), или оба.',
-      provider: 'OpenRouter', key: null,
-      web: { port: 4096, cmd: 'opencode serve --port 4096 --hostname 0.0.0.0' },
-      uninstall: [
-        "echo '[1/6] Остановка запущенных процессов opencode...'",
-        "pkill -f '[o]pencode serve' 2>/dev/null && echo '  процессы serve остановлены' || echo '  запущенных процессов нет'",
-        "pkill -9 -f '$HOME/\\\\.opencode/bin/[o]pencode' 2>/dev/null",
-        "echo '[2/6] Остановка сервиса opencode-web...'",
-        "systemctl disable --now opencode-web 2>/dev/null && echo '  сервис остановлен и убран из автозагрузки' || echo '  сервис не установлен'",
-        "rm -f /etc/systemd/system/opencode-web.service; systemctl daemon-reload 2>/dev/null; echo '  unit-файл удалён'",
-        "echo '[3/6] Удаление домена из Caddy...'",
-        "DOM=$(lifeos-domain get opencode 2>/dev/null || true)",
-        "if [ -z \"$DOM\" ]; then echo '  домен не записан — из Caddy убирать нечего'; fi",
-        // Удаляем блок домена со счётом вложенных скобок. Регулярка `{[^}]*}` обрывалась на первой
-        // закрывающей скобке, оставляла висячую «}» — caddy падал и ложились ВСЕ домены сразу.
-        "cat > /tmp/caddy-rm.py <<'PY'\n" +
-        "import sys\n" +
-        "path, dom = sys.argv[1], sys.argv[2]\n" +
-        "lines = open(path).read().split('\\n')\n" +
-        "out, i, removed = [], 0, 0\n" +
-        "while i < len(lines):\n" +
-        "    if '{' in lines[i] and lines[i].strip().startswith(dom):\n" +
-        "        depth = 0\n" +
-        "        while i < len(lines):\n" +
-        "            depth += lines[i].count('{') - lines[i].count('}')\n" +
-        "            i += 1\n" +
-        "            if depth <= 0: break\n" +
-        "        removed += 1\n" +
-        "        continue\n" +
-        "    out.append(lines[i]); i += 1\n" +
-        "open(path, 'w').write('\\n'.join(out).rstrip('\\n') + '\\n')\n" +
-        "print('  блок ' + dom + ' удалён' if removed else '  блок не найден (уже чисто)')\n" +
-        "PY\n" +
-        "python3 /tmp/caddy-rm.py '__CADDY_FILE__' \"$DOM\"; rm -f /tmp/caddy-rm.py",
-        "lifeos-domain del opencode 2>/dev/null || true",
-        "# пароль opencode жил в трёх местах — чистим единый env-файл, drop-in caddy и старый файл",
-        "rm -f $HOME/.lifeos/opencode.env /etc/systemd/system/caddy.service.d/lifeos-opencode.conf $HOME/.opencode-web-pass",
-        "systemctl daemon-reload 2>/dev/null || true",
-        "systemctl is-active --quiet caddy && systemctl restart caddy || true",
-        "echo '[4/6] Перезапуск caddy...'",
-        "__CADDY_RELOAD__",
-        "echo '[5/6] Удаление файлов opencode...'",
-        "rm -rf $HOME/.opencode $HOME/.config/opencode $HOME/.local/share/opencode $HOME/.cache/opencode $HOME/.opencode.json /tmp/start-web-opencode.sh; echo '  $HOME/.opencode, конфиги, кэш — удалены'",
-        "npm uninstall -g opencode-ai 2>/dev/null; rm -f /usr/local/bin/opencode /usr/bin/opencode $HOME/.local/bin/opencode 2>/dev/null",
-        "echo '[6/6] Проверка...'",
-        "command -v opencode >/dev/null 2>&1 && echo '  ВНИМАНИЕ: бинарник opencode всё ещё в PATH: '$(command -v opencode) || echo '  бинарник удалён — чисто'",
-        "pgrep -f '[o]pencode serve' >/dev/null 2>&1 && echo '  ВНИМАНИЕ: остались процессы serve' || echo '  процессы opencode отсутствуют'",
-      ].join('; '),
-    },
-  {
-    id: 'codex', name: 'Codex', bin: ['codex'],
-    // НЕЛЬЗЯ писать `| sh </dev/null`: редирект подменяет stdin самой оболочке, которая должна
-    // прочитать скрипт из пайпа — shell читает EOF, сразу выходит с кодом 0, а curl репортит
-    // «curl: (23) Failure writing output, passed ~1.4KB» и ничего не ставится (проверено: оба
-    // инсталла падали именно так). Неинтерактивность задаём флагом самого установщика.
-    install: "export CODEX_NON_INTERACTIVE=true; curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-    desc: 'OpenAI Codex — официальный установщик OpenAI (не npm).',
-    provider: 'OpenAI', key: 'OPENAI_API_KEY',
-    // Официальный апдейт Codex — тот же инсталлятор (ставит latest, идемпотентен).
-    update: "export CODEX_NON_INTERACTIVE=true; curl -fsSL https://chatgpt.com/codex/install.sh | sh",
-    uninstall: "npm uninstall -g @openai/codex 2>/dev/null; rm -f /usr/local/bin/codex $(command -v codex 2>/dev/null) $HOME/.local/bin/codex; rm -rf $HOME/.codex $HOME/.local/share/codex $HOME/.cache/codex $HOME/.codex_auth.json",
-  },
-  {
-    id: 'claude', name: 'Claude Code', bin: ['claude', 'claude-code'],
-    // `curl | bash` без `</dev/null`: stdin занят самим скриптом, установщик и так не может
-    // спрашивать интерактивно (см. комментарий у codex).
-    install: "curl -fsSL https://claude.ai/install.sh | bash",
-    desc: 'Anthropic Claude Code. Официально: установщик от Anthropic (npm помечен deprecated).',
-    provider: 'Anthropic', key: 'ANTHROPIC_API_KEY',
-    // Официальный апдейт: встроенный `claude update`, при неудаче — переустановщик.
-    update: "claude update </dev/null || curl -fsSL https://claude.ai/install.sh | bash",
-    // Хвосты Claude Code, которые оставлял прежний uninstall и которые находил find после него:
-// $HOME/.claude.json, $HOME/.cache/claude, $HOME/.local/state/claude (проверено на сервере).
-uninstall: "npm uninstall -g @anthropic-ai/claude-code 2>/dev/null; rm -f /usr/local/bin/claude* $(command -v claude 2>/dev/null) $HOME/.local/bin/claude*; rm -rf $HOME/.claude $HOME/.claude.json $HOME/.config/claude $HOME/.local/share/claude $HOME/.local/state/claude $HOME/.cache/claude",
-  },
-  {
-    id: 'openclaw', name: 'OpenClaw', bin: ['openclaw'],
-    install: "curl -fsSL https://openclaw.ai/install.sh | bash",
-    desc: 'Multi-channel AI gateway. Официальный установщик (npm требует Node 24.16+).',
-    provider: 'OpenRouter', key: null,
-    // Официальный апдейт — тот же инсталлятор (openclaw.ai, идемпотентен).
-    update: "curl -fsSL https://openclaw.ai/install.sh | bash </dev/null",
-    web: { port: 18789, cmd: 'systemctl --user start openclaw-gateway' },
-    uninstall: "npm uninstall -g openclaw 2>/dev/null; rm -f /usr/local/bin/openclaw $(command -v openclaw 2>/dev/null); rm -rf $HOME/.openclaw $HOME/.config/openclaw $HOME/.local/share/openclaw",
-  },
-  {
-    id: 'pi', name: 'Pi Agent', bin: ['pi'],
-    install: 'curl -fsSL https://pi.dev/install.sh | sh',
-    desc: 'Pi — AI agent toolkit (унифицированный LLM API + TUI). Официальный установщик: pi.dev/install.sh.',
-    provider: 'OpenRouter', key: null,
-    // npm-пакет: официальный апдейт — latest.
-    update: 'npm install -g @earendil-works/pi-coding-agent@latest </dev/null',
-    uninstall: "npm uninstall -g @earendil-works/pi-coding-agent 2>/dev/null; rm -f /usr/local/bin/pi $(command -v pi 2>/dev/null); rm -rf $HOME/.pi $HOME/.config/pi $HOME/.local/share/pi",
-  },
-  {
-    id: 'deepseek', name: 'DeepSeek Harness', bin: ['dsh'],
-    install: 'npm install -g @deepseek-ai/dsh',
-    desc: 'DeepSeek Harness (dsh) — агент-harness «всё-плагин». Web UI на :3080. TUI НЕТ: профили dsh — web/headless/sdk/acp, без --profile команда падает.',
-    provider: 'DeepSeek', key: 'DEEPSEEK_API_KEY',
-    // npm-пакет: официальный апдейт — latest.
-    update: 'npm install -g @deepseek-ai/dsh@latest',
-    web: { port: 3080, publicPort: 3090, cmd: 'dsh web --no-open --port 3080' },
-    uninstall: "rm -rf $HOME/.dsh $HOME/.deepseek-harness $HOME/.deepseek $HOME/.config/deepseek-harness $HOME/.local/share/deepseek-harness; npm uninstall -g @deepseek-ai/dsh 2>/dev/null; find /usr/local/lib/node_modules -maxdepth 1 -iname '*deepseek*' -exec rm -rf {} + 2>/dev/null; true",
-  },
-  // NOTE: Coder is NOT here — it is a full service (systemd + Postgres docker) and
-  // lives in COMPONENTS_DEF below («Установка компонентов»), not an engine harness.
-]
+// ЕДИНЫЙ источник определений движков — agent-definitions.json (32 записи).
+// Раньше 7 базовых (hermes, opencode, codex, claude, openclaw, pi, deepseek) были
+// захардкожены здесь, а JSON не мог их переопределить: merge пропускал уже существующие
+// id, и правка в JSON молча не действовала. Теперь базовые записи живут в том же JSON
+// (baseEngine: true) и читаются первыми; сервер держит только логику запуска/установки.
+const BASE_IDS = ['hermes', 'opencode', 'codex', 'claude', 'openclaw', 'pi', 'deepseek']
+const HARNESSES_DEF = []
+
 
 // ---- Merge Orca agents (37 agents) into harnesses ----
 // Load at startup to avoid ES module issues in running server
@@ -750,9 +619,35 @@ let ORCA_AGENTS = []
 try {
   const data = readFileSync(new URL('./agent-definitions.json', import.meta.url), 'utf8')
   ORCA_AGENTS = JSON.parse(data)
-  console.log(`>>> [STARTUP] Loaded ${ORCA_AGENTS.length} Orca agents for harness merge`)
+  console.log(`>>> [STARTUP] Loaded ${ORCA_AGENTS.length} agent definitions`)
 } catch (e) {
-  console.error('>>> [STARTUP] Failed to load Orca agents:', e)
+  console.error('>>> [STARTUP] Failed to load agent definitions:', e)
+}
+
+// Базовые движки приходят из ТОГО ЖЕ JSON (baseEngine: true) — код больше их не хранит.
+// Конвертация — общая функция, чтобы базовые и добавленные записи имели одинаковые поля.
+const agentToHarness = (a) => ({
+  id: a.id,
+  name: a.name,
+  bin: Array.isArray(a.detect?.bin) ? a.detect.bin : [a.detect?.bin].filter(Boolean),
+  install: typeof a.install === 'string' ? a.install : (a.detect?.install || null),
+  desc: a.description || a.desc || '',
+  provider: a.provider || 'Unknown',
+  key: (a.keys && a.keys[0]) || null,
+  interactive: a.interactive || false,
+  web: a.launch?.web?.cmd ? {
+    port: a.launch.web.port,
+    cmd: a.launch.web.cmd,
+    publicPort: a.launch.web.publicPort,
+  } : null,
+  uninstall: typeof a.uninstall === 'string' ? a.uninstall : null,
+  update: a.update || null,
+})
+
+for (const a of ORCA_AGENTS) {
+  if (!a.baseEngine) continue
+  const h = agentToHarness(a)
+  if (h.bin.length > 0) HARNESSES_DEF.push(h)
 }
 
 // OpenCode's removal touches the Caddy site its install added: resolve the live Caddy
@@ -767,6 +662,7 @@ try {
 const existingIds = new Set(HARNESSES_DEF.map(h => h.id))
 const existingNames = new Set(HARNESSES_DEF.map(h => h.name.toLowerCase()))
 for (const a of ORCA_AGENTS) {
+  if (a.baseEngine) continue            // уже добавлены выше
   if (existingIds.has(a.id)) continue  // already in HARNESSES_DEF
   if (existingNames.has(a.name.toLowerCase())) continue  // duplicate name (e.g. claude vs claude-code)
   if (a.category === 'lifeos') continue  // LifeOS profiles are Hermes profiles, not separate engines
@@ -781,22 +677,7 @@ for (const a of ORCA_AGENTS) {
   // целиком, хотя их Web UI полностью рабочий. TUI у web-only движка просто отсутствует.
   if (!a.launch?.tui?.cmd && !a.launch?.web?.cmd) continue
   
-  const harnessDef = {
-    id: a.id,
-    name: a.name,
-    bin: Array.isArray(a.detect?.bin) ? a.detect.bin : [a.detect?.bin].filter(Boolean),
-    install: typeof a.install === 'string' ? a.install : (a.detect?.install || null),
-    desc: a.description || a.desc || '',
-    provider: a.provider || 'Unknown',
-    key: (a.keys && a.keys[0]) || null,
-    web: a.launch?.web ? { 
-      port: a.launch.web.port, 
-      cmd: a.launch.web.cmd,
-      publicPort: a.launch.web.publicPort 
-    } : null,
-    uninstall: typeof a.uninstall === 'string' ? a.uninstall : null,
-    update: a.update || null,
-  }
+  const harnessDef = agentToHarness(a)
   if (harnessDef.bin.length > 0) {
     HARNESSES_DEF.push(harnessDef)
     existingIds.add(a.id)
@@ -1207,6 +1088,9 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
     'mkdir -p $HOME/.hermes; touch "$ENVF"; chmod 600 "$ENVF"',
     `sed -i '/^HERMES_DASHBOARD_PUBLIC_URL=/d' "$ENVF"`,
     `printf 'HERMES_DASHBOARD_PUBLIC_URL=https://%s\n' '${dom}' >> "$ENVF"`,
+    // Контроль: правки .env не должны молча проваливаться (sed по изменившемуся формату
+    // писал «ок», а переменной в файле не оказывалось). Перечитываем и проверяем.
+    `grep -q '^HERMES_DASHBOARD_PUBLIC_URL=https://${dom}$' "$ENVF" || { echo '[ОШИБКА] PUBLIC_URL не записан в '"$ENVF"; exit 1; }`,
   )
   if (wantBasic) {
     // Credentials come from the UI when the user typed them; otherwise generate.
@@ -1217,6 +1101,7 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
       'AUTH_SECRET="$(openssl rand -hex 32)"',
       "sed -i '/^HERMES_DASHBOARD_BASIC_AUTH_/d' \"$ENVF\"",
       "printf 'HERMES_DASHBOARD_BASIC_AUTH_USERNAME=%s\\nHERMES_DASHBOARD_BASIC_AUTH_PASSWORD=%s\\nHERMES_DASHBOARD_BASIC_AUTH_SECRET=%s\\n' \"$AUTH_USER\" \"$AUTH_PASS\" \"$AUTH_SECRET\" >> \"$ENVF\"",
+      "grep -q '^HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=' \"$ENVF\" || { echo '[ОШИБКА] basic-auth не записан'; exit 1; }",
       "echo \"[basic] вход: $AUTH_USER / $AUTH_PASS — сохрани, они же видны во вкладке «Ключи» → Hermes\"",
     )
   }
@@ -1256,6 +1141,8 @@ function buildHermesInstall({ mode = 'tui', domain = '', protection = 'basic', b
     '[ -x "$HB" ] || HB=$HOME/.hermes/hermes-agent/.hermes/bin/hermes',
     '[ -x "$HB" ] || HB=/usr/local/bin/hermes',
     'sed -i "s|^ExecStart=.*|ExecStart=$HB dashboard --host 0.0.0.0 --port 9119 --no-open|" /etc/systemd/system/hermes-dashboard.service',
+    // Контроль: sed мог не найти строку (формат юнита изменился) — тогда дописываем свою.
+    'grep -q "^ExecStart=$HB dashboard" /etc/systemd/system/hermes-dashboard.service || { sed -i "/^\[Service\]/a ExecStart=$HB dashboard --host 0.0.0.0 --port 9119 --no-open" /etc/systemd/system/hermes-dashboard.service; grep -q "^ExecStart=$HB dashboard" /etc/systemd/system/hermes-dashboard.service || { echo "[ОШИБКА] ExecStart не обновлён в юните"; exit 1; }; }',
     "echo \"[bin] dashboard запускается из $HB\"",
     'systemctl daemon-reload',
     'systemctl enable --now hermes-dashboard',
@@ -1909,7 +1796,16 @@ fi
 cat > /etc/systemd/system/n8n.service <<'UNIT'
 ${N8N_SERVICE}
 UNIT
-[ -n "$DOM" ] && sed -i "s|^Environment=WEBHOOK_URL=.*|Environment=WEBHOOK_URL=https://$DOM/|" /etc/systemd/system/n8n.service
+# Правка юнита без sed-хрупкости: строка есть → заменяем; нет → дописываем в [Service].
+[ -n "$DOM" ] && {
+  U=/etc/systemd/system/n8n.service
+  if grep -q '^Environment=WEBHOOK_URL=' "$U" 2>/dev/null; then
+    sed -i "s|^Environment=WEBHOOK_URL=.*|Environment=WEBHOOK_URL=https://$DOM/|" "$U"
+  else
+    sed -i "/^\[Service\]/a Environment=WEBHOOK_URL=https://$DOM/" "$U"
+  fi
+  grep -q "^Environment=WEBHOOK_URL=https://$DOM/$" "$U" || { echo '[ОШИБКА] WEBHOOK_URL не записан в юнит n8n'; exit 1; }
+}
 systemctl daemon-reload
 systemctl enable --now n8n
 echo "[n8n установлен и запущен]${'$'}{DOM:+ — https://\$DOM}"`,
@@ -1947,7 +1843,7 @@ VW_TAG="$(curl -fsS --max-time 30 https://api.github.com/repos/dani-garcia/vault
 echo "[версия] $VW_TAG"
 
 INSTALL_DIR=/opt/vaultwarden
-DATA_DIR=/root/vaultwarden-data
+DATA_DIR=$HOME/vaultwarden-data
 TMPD="$(mktemp -d)"
 trap 'rm -rf "$TMPD"' EXIT
 
@@ -1977,7 +1873,7 @@ chmod 700 "$DATA_DIR"
 
 # Токен админ-панели генерируем САМИ и пишем в файл с правами 600. В лог установки он
 # НЕ попадает: лог показывается в интерфейсе.
-TOK_FILE=/root/.vaultwarden-admin-token
+TOK_FILE=$HOME/.vaultwarden-admin-token
 if [ ! -f "$TOK_FILE" ]; then
   openssl rand -hex 32 > "$TOK_FILE"
   chmod 600 "$TOK_FILE"
@@ -2044,8 +1940,8 @@ systemctl disable vaultwarden.service 2>/dev/null || true
 rm -f /etc/systemd/system/vaultwarden.service
 systemctl daemon-reload
 rm -rf /opt/vaultwarden
-echo '[vaultwarden удалён] ХРАНИЛИЩЕ СОХРАНЕНО: /root/vaultwarden-data — пароли и ключи целы'
-echo '[токен админки] /root/.vaultwarden-admin-token — тоже на месте'`,
+echo '[vaultwarden удалён] ХРАНИЛИЩЕ СОХРАНЕНО: $HOME/vaultwarden-data — пароли и ключи целы'
+echo '[токен админки] $HOME/.vaultwarden-admin-token — тоже на месте'`,
     timeout: 1200000,
   },
   {
@@ -2363,7 +2259,12 @@ function vaultwardenSignups() {
 }
 
 app.get('/api/components/vaultwarden/signups', auth.requireAdmin, (_, res) => {
-  res.json({ enabled: vaultwardenSignups(), env: vwEnvPath() })
+  res.json({
+    enabled: vaultwardenSignups(),
+    env: vwEnvPath(),
+    dataDir: `${HOME_DIR}/vaultwarden-data`,
+    adminToken: `${HOME_DIR}/.vaultwarden-admin-token`,
+  })
 })
 
 app.post('/api/components/vaultwarden/signups', auth.requireAdmin, async (req, res) => {
@@ -2373,8 +2274,11 @@ app.post('/api/components/vaultwarden/signups', auth.requireAdmin, async (req, r
   }
   try {
     let s = readFileSync(vwEnvPath(), 'utf8')
-    s = s.replace(/^SIGNUPS_ALLOWED=(true|false)/m, `SIGNUPS_ALLOWED=${enabled}`)
-    writeFileSync(vwEnvPath(), s, { mode: 0o600 })
+    const updated = s.replace(/^SIGNUPS_ALLOWED=(true|false)/m, `SIGNUPS_ALLOWED=${enabled}`)
+    if (updated === s && !new RegExp(`^SIGNUPS_ALLOWED=${enabled}$`, 'm').test(s)) {
+      return res.status(500).json({ error: 'в env-файле не найдена строка SIGNUPS_ALLOWED=true|false — правь вручную: ' + vwEnvPath() })
+    }
+    writeFileSync(vwEnvPath(), updated, { mode: 0o600 })
     await execS('systemctl restart vaultwarden.service', { shell: '/bin/bash', timeout: 60000 })
   } catch (e) {
     return res.status(500).json({ error: e?.message || 'не удалось применить' })
