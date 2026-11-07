@@ -359,7 +359,7 @@ function AreaChart() {
         fill="rgb(var(--cx-accent))" opacity="0.14"
       />
       <polyline points={`${pts.map(p=>`${p[0]},${80-p[1]}`).join(' ')}`}
-        fill="none" stroke="rgb(var(--cx-accent))" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        fill="none" stroke="rgb(var(--cx-accent))" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
       <circle cx={pts[pts.length-1][0]} cy={80-last} r="3" fill="rgb(var(--cx-accent))" />
     </svg>
   )

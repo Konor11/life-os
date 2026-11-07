@@ -50,7 +50,7 @@ export function KnowledgeView({ notes, onUpdate }) {
               <Icon name="Grid" size={16} />
             </button>
             <button onClick={() => setViewMode('graph')} className={`px-2.5 py-1.5 transition-colors ${viewMode === 'graph' ? 'bg-accent text-white' : 'text-text-muted hover:bg-bg-elevated'}`} title="Граф связей (Second Brain)">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="9" r="2.4"/><circle cx="15" cy="7" r="2"/><circle cx="13" cy="15" r="2"/><path d="M9 9L15 7M9 9L13 15"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="2.4"/><circle cx="15" cy="7" r="2"/><circle cx="13" cy="15" r="2"/><path d="M9 9L15 7M9 9L13 15"/></svg>
             </button>
           </div>
           <button onClick={() => setShowForm(!showForm)} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors flex items-center gap-2">
