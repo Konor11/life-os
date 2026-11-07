@@ -81,32 +81,6 @@ function App() {
     }
   }, [])
   useEffect(() => { checkAuth() }, [checkAuth])
-  // ── Скролл: шапка плотнеет, hero мягко уходит (только transform/opacity) ──
-  useEffect(() => {
-    const scroller = document.querySelector('main .overflow-y-auto') || window
-    const hero = () => document.querySelector('[data-hero]')
-    const header = () => document.querySelector('header.nav-blur')
-    let raf = 0
-    const onScroll = () => {
-      if (raf) return
-      raf = requestAnimationFrame(() => {
-        raf = 0
-        const y = (scroller === window ? window.scrollY : scroller.scrollTop) || 0
-        header()?.classList.toggle('nav-scrolled', y > 8)
-        const h = hero()
-        if (h) {
-          // 24px вверх и лёгкое затухание — на глаз почти незаметно, в сумме даёт глубину
-          const p = Math.min(1, y / 320)
-          h.style.transform = `translate3d(0, ${-p * 24}px, 0)`
-          h.style.opacity = String(1 - p * 0.35)
-        }
-      })
-    }
-    scroller.addEventListener('scroll', onScroll, { passive: true })
-    onScroll()
-    return () => scroller.removeEventListener('scroll', onScroll)
-  }, [activeView])
-
   // Появление секций при скролле (класс .reveal задаётся в разметке).
   useEffect(() => {
     const io = new IntersectionObserver(
@@ -141,6 +115,33 @@ function App() {
   const [activeView, setActiveViewRaw] = useState(() => {
     try { return localStorage.getItem('lifeos.activeView') || 'dashboard' } catch { return 'dashboard' }
   })
+
+  // ── Скролл: шапка плотнеет, hero мягко уходит (только transform/opacity) ──
+  useEffect(() => {
+    const scroller = document.querySelector('main .overflow-y-auto') || window
+    const hero = () => document.querySelector('[data-hero]')
+    const header = () => document.querySelector('header.nav-blur')
+    let raf = 0
+    const onScroll = () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        const y = (scroller === window ? window.scrollY : scroller.scrollTop) || 0
+        header()?.classList.toggle('nav-scrolled', y > 8)
+        const h = hero()
+        if (h) {
+          // 24px вверх и лёгкое затухание — на глаз почти незаметно, в сумме даёт глубину
+          const p = Math.min(1, y / 320)
+          h.style.transform = `translate3d(0, ${-p * 24}px, 0)`
+          h.style.opacity = String(1 - p * 0.35)
+        }
+      })
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [activeView])
+
   // Тема живёт на СЕРВЕРЕ: телефон и ПК показывают одно и то же, а смена темы на ПК
   // доезжает сюда сама (палитру присылает Life OS Desktop). localStorage остаётся
   // только запасным вариантом на случай, если сервер недоступен.
