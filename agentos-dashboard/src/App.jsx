@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react'
+import React, { useState, useEffect, useMemo, useRef, Suspense, lazy } from 'react'
 import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, OmniRouterView, VaultwardenView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
+import { Icon } from './components/Icons'
 import { CommandPalette, useHotkeys, ToastHost, toast, NAV } from './components/PanelUX'
 import { applyTheme, loadTheme, saveTheme, watchTheme, systemPrefersDark, markLocalChange } from './lib/theme'
 
@@ -80,6 +81,32 @@ function App() {
     }
   }, [])
   useEffect(() => { checkAuth() }, [checkAuth])
+  // ── Скролл: шапка плотнеет, hero мягко уходит (только transform/opacity) ──
+  useEffect(() => {
+    const scroller = document.querySelector('main .overflow-y-auto') || window
+    const hero = () => document.querySelector('[data-hero]')
+    const header = () => document.querySelector('header.nav-blur')
+    let raf = 0
+    const onScroll = () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => {
+        raf = 0
+        const y = (scroller === window ? window.scrollY : scroller.scrollTop) || 0
+        header()?.classList.toggle('nav-scrolled', y > 8)
+        const h = hero()
+        if (h) {
+          // 24px вверх и лёгкое затухание — на глаз почти незаметно, в сумме даёт глубину
+          const p = Math.min(1, y / 320)
+          h.style.transform = `translate3d(0, ${-p * 24}px, 0)`
+          h.style.opacity = String(1 - p * 0.35)
+        }
+      })
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => scroller.removeEventListener('scroll', onScroll)
+  }, [activeView])
+
   // Появление секций при скролле (класс .reveal задаётся в разметке).
   useEffect(() => {
     const io = new IntersectionObserver(
@@ -139,7 +166,14 @@ function App() {
   }
   const setTheme = (mode) => applyNext({ mode })
   const setPalette = (palette) => applyNext({ palette })
-  const toggleTheme = () => setTheme(theme === 'dark' ? 'light' : 'dark')
+  // Смена темы с кроссфейдом: на 350 мс вешаем класс .theme-transition на <html>,
+  // иначе постоянный transition на всех элементах стоил бы кадров при обычной работе.
+  const toggleTheme = () => {
+    const root = document.documentElement
+    root.classList.add('theme-transition')
+    setTimeout(() => root.classList.remove('theme-transition'), 380)
+    setTheme(theme === 'dark' ? 'light' : 'dark')
+  }
 
   // Забрать выбор с сервера при входе и следить за изменениями (ПК сменил тему — панель узнала).
   useEffect(() => {
@@ -256,9 +290,20 @@ function App() {
   const updateMemory = makeUpdate('memory', setMemory, saveMemory)
   const updateCalendar = makeUpdate('calendar', setCalendar, saveCalendar)
   const updateProjects = makeUpdate('projects', setProjects, saveProjects)
+  // ── Переходы между разделами ───────────────────────────────────────────────
+  // View Transitions API: браузер сам снимает «до» и «после» и делает плавный кроссфейд.
+  // Библиотека не нужна; где API нет (Safari <18, старые Android) — мгновенное
+  // переключение, как раньше: деградация, а не поломка.
+  const [viewTick, setViewTick] = useState(0)
   const setActiveView = (v) => {
     try { localStorage.setItem('lifeos.activeView', v) } catch {}
-    setActiveViewRaw(v)
+    const commit = () => { setActiveViewRaw(v); setViewTick(t => t + 1) }
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    if (!reduce && typeof document.startViewTransition === 'function') {
+      document.startViewTransition(commit)
+    } else {
+      commit()
+    }
   }
 
   useEffect(() => {
@@ -343,6 +388,8 @@ function App() {
         mainRender={(
           <>
             <MainContent>
+              {/* key меняется при каждом переходе — раздел въезжает анимацией */}
+              <div key={`${activeView}-${viewTick}`} className="view-enter">
               {apiError && (
                 <div style={{ background:'rgb(var(--cx-danger) / 0.1)', border:'1px solid #ef4444', color:'#f87171', padding:'12px 16px', borderRadius:'8px', marginBottom:'16px', fontSize:'13px' }}>
                   ⚠ Backend unavailable: {apiError} — showing in-memory data. Actions won't persist until backend is up.
@@ -352,13 +399,33 @@ function App() {
                 <>
                 {/* Hero по канону apple.com: Display Hero 56/600/1.07/-0.28px,
                     подзаголовок 21/400, черный заголовок + серый вторая строка
-                    (как «MacBook Pro» + «Mind-blowing. Head-turning.»). */}
-                <div className="text-center mb-8 mt-2 reveal">
+                    (как «MacBook Pro» + «Mind-blowing. Head-turning.»).
+                    data-hero — якорь для параллакса при скролле (App.jsx, эффект ниже). */}
+                <div className="text-center mb-8 mt-2 reveal hero-parallax" data-hero>
                   <h1 className="text-hero text-text">Твоя жизнь.</h1>
                   <h1 className="text-hero text-text-muted mb-3">Под управлением.</h1>
                   <p className="text-lead text-text-muted mx-auto max-w-xl">
                     План, задачи, знания, привычки и агенты — в одном месте.
                   </p>
+                </div>
+
+                {/* Промо-плитки в стиле карточек продуктов apple.com:
+                    два главных раздела крупно, остальное — тихой сеткой. */}
+                <div className="stagger grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
+                  <button onClick={() => setActiveView('chat')} className="promo-tile">
+                    <span className="promo-tile-icon"><Icon name="MessageSquare" size={26} /></span>
+                    <span>
+                      <span className="promo-tile-title block text-text">Chat.</span>
+                      <span className="promo-tile-hint block">Терминалы агентов, живые сессии.</span>
+                    </span>
+                  </button>
+                  <button onClick={() => setActiveView('tasks')} className="promo-tile">
+                    <span className="promo-tile-icon"><Icon name="CheckSquare" size={26} /></span>
+                    <span>
+                      <span className="promo-tile-title block text-text">Задачи.</span>
+                      <span className="promo-tile-hint block">{stats.tasksPending} в работе · доска и контексты.</span>
+                    </span>
+                  </button>
                 </div>
                 <AgentCard
                   plan={plan}
@@ -405,11 +472,53 @@ function App() {
               {activeView === 'keys' && <KeysView />}
               {activeView === 'harness' && <HarnessView />}
               {activeView === 'split' && <SplitPaneView />}
+              </div>
             </MainContent>
           </>
         )}
       />
     </ErrorBoundary>
+  )
+}
+
+// ── Счётчик-метрика: число набегает от 0 за ~600 мс (как счётчики на apple.com) ──
+function useCountUp(target, duration = 620) {
+  const [val, setVal] = useState(0)
+  const started = useRef(false)
+  useEffect(() => {
+    if (started.current) { setVal(target); return }
+    started.current = true
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+    if (reduce) { setVal(target); return }
+    const t0 = performance.now()
+    let raf = 0
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / duration)
+      // ease-out: быстро в начале, мягко в конце
+      const eased = 1 - Math.pow(1 - p, 3)
+      setVal(target * eased)
+      if (p < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [target, duration])
+  return val
+}
+
+// ── Skeleton: болванки карточек вместо мгновенного «ничего» при загрузке ─────
+function DashboardSkeleton() {
+  return (
+    <div className="stagger grid grid-cols-1 md:grid-cols-3 gap-4" aria-hidden="true">
+      {[0, 1, 2].map(col => (
+        <div key={col} className="card-surface p-4 space-y-3">
+          <div className="skeleton h-3 w-1/2" />
+          <div className="skeleton h-8 w-3/4" />
+          <div className="skeleton h-3 w-full" />
+          <div className="skeleton h-3 w-5/6" />
+          <div className="skeleton h-16 w-full mt-2" />
+        </div>
+      ))}
+    </div>
   )
 }
 

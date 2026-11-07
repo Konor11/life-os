@@ -72,7 +72,7 @@ export function CommandPalette({ open, onClose, onNavigate, items = NAV }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] px-4"
       style={{ background: 'rgba(0,0,0,0.35)' }} onClick={onClose}>
-      <div className="w-full max-w-lg rounded-xl overflow-hidden shadow-2xl border border-border"
+      <div className="palette-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl border border-border"
         style={{ background: 'rgb(var(--cx-bg-card))' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center gap-2.5 px-4 border-b border-border">
           <Icon name="Search" size={16} className="text-text-muted" />
@@ -193,7 +193,7 @@ export function ToastHost() {
         const mood = state === 'work' ? 'work' : state === 'error' ? 'error' : state === 'ok' ? 'ok' : 'idle'
         return (
           <div key={t.id} onClick={() => dismiss(t.id)} title="закрыть"
-            className="pointer-events-auto cursor-pointer flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border shadow-lg max-w-sm"
+            className="toast-item pointer-events-auto cursor-pointer flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border shadow-lg max-w-sm"
             style={{ background: 'rgb(var(--cx-bg-card))', borderColor: 'rgb(var(--cx-border))' }}>
             <Mascot size={26} state={mood} className="text-accent" />
             <span className="text-sm text-text">{t.message}</span>

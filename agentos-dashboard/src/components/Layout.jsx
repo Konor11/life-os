@@ -26,7 +26,7 @@ function TabBar({ activeView, onViewChange, onOpenMore, moreActive }) {
           onClick={() => onViewChange(t.id)}
           className={cn(
             'flex-1 flex flex-col items-center gap-1 pt-2 pb-2 transition-colors',
-            activeView === t.id ? 'text-accent' : 'text-text-muted'
+            activeView === t.id ? 'text-accent tab-active' : 'text-text-muted'
           )}
         >
           <Icon name={t.icon} size={22} />

@@ -243,7 +243,7 @@ function AgentsPulse({ onOpenShell, canAdmin }) {
 
 export function AgentCard({ plan, tasks, habits, notes, onQuickAction, status = null, onOpenShell, canAdmin }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+    <div className="stagger grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
       {/* ============ COLUMN 1 ============ */}
       <div className="space-y-4">
         <SystemCard status={status} />
@@ -311,12 +311,37 @@ function SystemCard({ status }) {
   )
 }
 
+// Число, которое «набегает» от нуля за 600 мс — как счётчики на страницах продуктов Apple.
+// Принимает готовую строку («12.3%», «420МБ»); анимирует только числовую часть.
+function CountUp({ value }) {
+  const m = String(value ?? '').match(/^([\d.,]+)(.*)$/)
+  const target = m ? parseFloat(m[1].replace(',', '.')) : null
+  const suffix = m ? m[2] : ''
+  const decimals = m && m[1].includes('.') ? m[1].split('.')[1].length : 0
+  const [shown, setShown] = useState(0)
+  useEffect(() => {
+    if (target == null || Number.isNaN(target)) return
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) { setShown(target); return }
+    const t0 = performance.now()
+    let raf = 0
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / 620)
+      setShown(target * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [target])
+  if (target == null || Number.isNaN(target)) return <>{value}</>
+  return <>{shown.toFixed(decimals)}{suffix}</>
+}
+
 function StatRow({ icon, label, value, mono }) {
   return (
     <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-md hover:bg-bg-elevated transition-colors">
       <Icon name={icon} size={14} className="text-text-muted shrink-0" />
       <span className="text-xs text-text-muted uppercase tracking-wide w-28">{label}</span>
-      <span className={cn("text-xs font-medium text-text flex-1 text-right", mono && "font-mono text-accent")}>{value}</span>
+      <span className={cn("text-xs font-medium text-text flex-1 text-right", mono && "font-mono text-accent")}><CountUp value={value} /></span>
     </div>
   )
 }
@@ -491,7 +516,12 @@ function HabitsCard({ habits }) {
             </div>
           )
         })}
-        {list.length === 0 && <p className="text-sm text-text-muted py-2 text-center">Нет привычек</p>}
+        {list.length === 0 && (
+          <div className="flex flex-col items-center gap-1 py-4 text-center">
+            <span className="text-text-muted opacity-70"><Mascot size={44} state="sleep" /></span>
+            <p className="text-sm text-text-muted">Привычек пока нет</p>
+          </div>
+        )}
       </div>
     </Card>
   )
@@ -521,7 +551,12 @@ function NotesCard({ notes }) {
             </div>
           </div>
         ))}
-        {list.length === 0 && <p className="text-sm text-text-muted py-2 text-center">Нет заметок</p>}
+        {list.length === 0 && (
+          <div className="flex flex-col items-center gap-1 py-4 text-center">
+            <span className="text-text-muted opacity-70"><Mascot size={44} state="sleep" /></span>
+            <p className="text-sm text-text-muted">Пока пусто — записать мысль?</p>
+          </div>
+        )}
       </div>
     </Card>
   )

@@ -340,4 +340,137 @@ body {
     .reveal { opacity: 1; transform: none; transition: none; }
   }
 
+/* =============================================================================
+   Движение (Apple-канон): 180–600 мс, пружинные кривые, только transform/opacity.
+   Ни одного бесконечного лупа — Apple их почти не использует, и «вечно крутится»
+   читается как недоделка. Всё уважает prefers-reduced-motion (блок в конце).
+   ============================================================================= */
 
+:root {
+  /* Пружина: быстрый разгон, мягкое торможение — как в iOS */
+  --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
+  --ease-out: cubic-bezier(.25, .46, .45, .94);
+}
+
+/* ── 1. Переход между разделами ──────────────────────────────────────────── */
+@keyframes view-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(.995); }
+  to   { opacity: 1; transform: none; }
+}
+.view-enter { animation: view-in .42s var(--ease-out) both; }
+
+/* ── 2. Скролл-состояния шапки и hero ─────────────────────────────────────── */
+/* Шапка плотнеет при прокрутке — так ведёт себя навигация apple.com. */
+.nav-blur { transition: background-color .3s var(--ease-out), box-shadow .3s var(--ease-out); }
+.nav-scrolled {
+  background: rgb(var(--cx-bg) / 0.95) !important;
+  box-shadow: 0 1px 0 rgb(var(--cx-border) / 0.6);
+}
+html[data-theme="apple"][data-mode="light"] .nav-scrolled { background: rgb(245 245 247 / 0.95) !important; }
+
+/* Hero тускнеет и слегка уходит вверх при скролле (только transform/opacity — дёшево). */
+.hero-parallax { will-change: transform, opacity; transform-origin: 50% 0; }
+
+/* ── 3. Микро-взаимодействия ──────────────────────────────────────────────── */
+/* Нажатие кнопки — 0.97, как в iOS. Не больше: заметный «прыжок» = дешёво. */
+button:not([disabled]):active { transform: scale(.97); }
+button { transition: transform .12s var(--ease-out), background-color .15s var(--ease-out), color .15s var(--ease-out); }
+
+/* Таб-бар: активная иконка чуть подпрыгивает при переключении. */
+@keyframes tab-pop {
+  0% { transform: scale(1); } 45% { transform: scale(1.16); } 100% { transform: scale(1); }
+}
+.tab-active svg { animation: tab-pop .32s var(--ease-spring); }
+
+/* ── 4. Каскад карточек на дашборде ──────────────────────────────────────── */
+.stagger > * { opacity: 0; animation: view-in .5s var(--ease-out) both; }
+.stagger > *:nth-child(1) { animation-delay: 0s; }
+.stagger > *:nth-child(2) { animation-delay: .06s; }
+.stagger > *:nth-child(3) { animation-delay: .12s; }
+.stagger > *:nth-child(4) { animation-delay: .18s; }
+.stagger > *:nth-child(5) { animation-delay: .24s; }
+.stagger > *:nth-child(6) { animation-delay: .30s; }
+
+/* ── 6. Skeleton — болванки вместо пустоты ───────────────────────────────── */
+@keyframes skeleton-pulse { 0%, 100% { opacity: .45; } 50% { opacity: .8; } }
+.skeleton {
+  background: rgb(var(--cx-border) / .55);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+/* Лёгкая волна по строкам — читается как «данные едут», не как зависание. */
+.skeleton:nth-child(2) { animation-delay: .15s; }
+.skeleton:nth-child(3) { animation-delay: .3s; }
+.skeleton:nth-child(4) { animation-delay: .45s; }
+
+/* ── 7. Плавная смена темы ───────────────────────────────────────────────── */
+/* Фон/текст перетекают за 300 мс только в момент переключения (класс ставится на 350 мс),
+   чтобы не тормозить обычную работу: постоянный transition на * стоил бы кадров. */
+.theme-transition,
+.theme-transition * {
+  transition-property: background-color, border-color, color, fill;
+  transition-duration: .3s;
+  transition-timing-function: var(--ease-out);
+}
+
+/* ── 8. Toast с пружиной снизу ───────────────────────────────────────────── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translate3d(0, 16px, 0) scale(.96); }
+  to   { opacity: 1; transform: none; }
+}
+.toast-item { animation: toast-in .38s var(--ease-spring) both; }
+
+/* ── 9. Промо-плитки (как карточки продуктов на apple.com) ───────────────── */
+.promo-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  padding: 22px;
+  min-height: 148px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform .3s var(--ease-out), box-shadow .3s var(--ease-out);
+  text-align: left;
+}
+.promo-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 3px 5px 30px rgb(0 0 0 / .12);
+}
+.promo-tile:active { transform: scale(.985); }
+html[data-theme="apple"] .promo-tile {
+  background: rgb(var(--cx-surface));
+  box-shadow: var(--cx-shadow-card);
+}
+.promo-tile-title { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.015em; line-height: 1.1; }
+.promo-tile-hint { font-size: .875rem; color: rgb(var(--cx-text-muted)); margin-top: 4px; }
+.promo-tile-icon { color: rgb(var(--cx-accent)); }
+
+/* ── 10. Чередование секций: кинематографичный ритм apple.com ────────────── */
+.section-alt {
+  background: rgb(var(--cx-bg-card) / .55);
+  border-radius: 16px;
+  padding: 20px;
+  margin: 0 -20px;
+}
+html[data-theme="apple"][data-mode="light"] .section-alt { background: #ffffff; }
+html[data-theme="apple"][data-mode="dark"] .section-alt { background: #0a0a0b; }
+
+/* ── 12. Командная палитра в стиле Spotlight ─────────────────────────────── */
+@keyframes palette-in {
+  from { opacity: 0; transform: translate3d(0, -12px, 0) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+.palette-panel { animation: palette-in .28s var(--ease-spring) both; }
+.palette-row-selected { background: rgb(var(--cx-accent) / .12); }
+
+/* ── Уважение к настройкам доступности ──────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .stagger > * { opacity: 1; }
+}
