@@ -315,7 +315,7 @@ function EnginesSection({ harnesses }) {
                 </span>
                 {WEB_ENGINES.has(e.id) && ok ? (
                   <div className="flex items-center gap-1 shrink-0">
-                    {[['tui', '💻 TUI'], ['web', '🌐 Web']].map(([v, label]) => (
+                    {[['tui', 'TUI'], ['web', 'Web']].map(([v, label]) => (
                       <button
                         key={v}
                         onClick={() => { setEngineView(e.id, v); setViews({ ...views, [e.id]: v }) }}

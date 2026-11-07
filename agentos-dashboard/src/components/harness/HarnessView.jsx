@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Icon } from '../Icons'
 
 const API = '/api'
@@ -27,19 +27,25 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
             {item.updateCmd && (
               <button onClick={() => onUpdate(item.id)} disabled={!!busyId}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'update' ? 'opacity-60' : ''}`}>
-                {busy && busyOp === 'update' ? '⏳ Обновление...' : '⬆ Обновить'}
+                {busy && busyOp === 'update'
+                  ? <><Icon name="Loader" size={13} className="animate-spin" /> Обновление...</>
+                  : <><Icon name="Download" size={13} /> Обновить</>}
               </button>
             )}
             {item.uninstallCmd && (
               <button onClick={() => onUninstall(item.id)} disabled={!!busyId}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 ${busy && busyOp === 'uninstall' ? 'opacity-60' : ''}`}>
-                {busy && busyOp === 'uninstall' ? '⏳ Удаление...' : '🗑 Удалить'}
+                {busy && busyOp === 'uninstall'
+                  ? <><Icon name="Loader" size={13} className="animate-spin" /> Удаление...</>
+                  : <><Icon name="Trash2" size={13} /> Удалить</>}
               </button>
             )}
             {item.id === 'hermes' && item.setupAvailable && (
               <button onClick={() => onSetup(item.id)} disabled={!!busyId}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'setup' ? 'opacity-60' : ''}`}>
-                {busy && busyOp === 'setup' ? '⏳ Мастер запущен...' : '⚙ Мастер настроек'}
+                {busy && busyOp === 'setup'
+                  ? <><Icon name="Loader" size={13} className="animate-spin" /> Мастер запущен...</>
+                  : <><Icon name="Settings" size={13} /> Мастер настроек</>}
               </button>
             )}
             {!item.uninstallCmd && item.id === 'hermes' && null}
@@ -48,7 +54,9 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
           <>
             <button onClick={() => onInstall(item.id)} disabled={!!busyId}
               className={`px-4 py-2 rounded-lg font-medium text-sm text-white bg-accent hover:opacity-90 transition-opacity ${busy ? 'opacity-60' : ''}`}>
-              {busy && busyOp === 'install' ? '⏳ Устанавливается...' : `⬇ Установить ${item.name}`}
+              {busy && busyOp === 'install'
+                ? <><Icon name="Loader" size={13} className="animate-spin" /> Устанавливается...</>
+                : <><Icon name="Download" size={13} /> Установить {item.name}</>}
             </button>
             {item.installCmd && !item.needsInstallOptions && (
               <code className="px-2 py-1 rounded text-[11px] bg-bg-elevated border border-border text-text-muted font-mono break-all max-w-full">{item.installCmd}</code>
@@ -175,7 +183,7 @@ export function HarnessView() {
       const ep = isComponent ? 'components' : 'harness'
       await fetch(`${API}/${ep}/install`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...opts }) })
-      setInstalling(id); setLogs(prev => ({ ...prev, [id]: '⏳ установка запущена...' }))
+      setInstalling(id); setLogs(prev => ({ ...prev, [id]: 'установка запущена...' }))
     } catch (e) { setError(e.message) }
   }
 
@@ -211,7 +219,7 @@ export function HarnessView() {
   const openSetup = async (id) => {
     try {
       await fetch(`${API}/harness/setup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
-      setSetting(id); setLogs(prev => ({ ...prev, [id]: '⏳ запускаю мастер настроек...' }))
+      setSetting(id); setLogs(prev => ({ ...prev, [id]: 'запускаю мастер настроек...' }))
     } catch (e) { setError(e.message) }
   }
 
@@ -221,7 +229,7 @@ export function HarnessView() {
       const ep = isComponent ? 'components' : 'harness'
       await fetch(`${API}/${ep}/uninstall`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
-      setUninstalling(id); setLogs(prev => ({ ...prev, [id]: '⏳ удаление запущено...' }))
+      setUninstalling(id); setLogs(prev => ({ ...prev, [id]: 'удаление запущено...' }))
     } catch (e) { setError(e.message) }
   }
 
@@ -229,7 +237,7 @@ export function HarnessView() {
     try {
       await fetch(`${API}/harness/update`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
-      setUpdating(id); setLogs(prev => ({ ...prev, [id]: '⏳ обновление запущено...' }))
+      setUpdating(id); setLogs(prev => ({ ...prev, [id]: 'обновление запущено...' }))
     } catch (e) { setError(e.message) }
   }
 

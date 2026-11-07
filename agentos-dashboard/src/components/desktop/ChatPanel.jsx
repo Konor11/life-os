@@ -10,6 +10,7 @@ import {
   setEngineView 
 } from './ChatPanelEngines'
 import { AGENT_STATES, AGENT_STATE_LABELS, AGENT_STATE_COLORS, AGENT_STATE_BG, detectAgentState } from '../../config/agentStates'
+import { Icon } from '../Icons'
 import { getAgentsByCategory, getAgentById } from '../../config/agents'
 
 // Лента сообщений из истории движка (адаптер: agentos-backend/transcript.py, пока умеет Hermes).
@@ -900,7 +901,7 @@ export function ChatPanel({ fullscreen = false }) {
             переключателя — TUI у deepseek нет, и кнопка «💻 TUI» вела бы в ошибку */}
         {hasWeb && WEB_ONLY.has(engine) ? (
           <span className="ml-2 px-2 py-0.5 rounded text-xs border border-border bg-bg-card text-text-muted whitespace-nowrap">
-            🌐 Web
+            <><Icon name="Globe" size={12} className="inline-block" /> Web</>
           </span>
         ) : hasWeb ? (
           <button
@@ -908,7 +909,7 @@ export function ChatPanel({ fullscreen = false }) {
             className={`ml-2 px-2 py-0.5 rounded text-xs whitespace-nowrap transition-colors border ${useWeb ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
             title={useWeb ? 'Переключить на TUI' : 'Переключить на Web'}
           >
-            {useWeb ? '🌐 Web' : '💻 TUI'}
+            {useWeb ? <><Icon name="Globe" size={12} className="inline-block" /> Web</> : <><Icon name="Terminal" size={12} className="inline-block" /> TUI</>}
           </button>
         ) : (
           <button
@@ -916,7 +917,7 @@ export function ChatPanel({ fullscreen = false }) {
             className="ml-2 px-2 py-0.5 rounded text-xs whitespace-nowrap border border-border bg-bg-card text-text-muted opacity-60 cursor-not-allowed"
             title="У этого движка нет web-интерфейса — доступен только TUI. Установи через «Установка компонентов», если он должен появиться."
           >
-            💻 TUI
+            <><Icon name="Terminal" size={12} className="inline-block" /> TUI</>
           </button>
         )}
         {/* Font size controls */}
@@ -939,12 +940,12 @@ export function ChatPanel({ fullscreen = false }) {
           <button onClick={() => setView(chatView === 'tui' ? 'chat' : 'tui')}
             className={`ml-1 px-2 py-1 rounded text-xs shrink-0 border transition-colors ${chatView === 'chat' ? 'bg-accent text-white border-accent' : 'bg-bg-card border-border text-text-muted hover:text-text'}`}
             title="Переключить вид: терминал или лента сообщений из истории движка">
-            {chatView === 'tui' ? '📜 Лента' : '💻 Терминал'}
+            {chatView === 'tui' ? <><Icon name="History" size={12} className="inline-block" /> Лента</> : <><Icon name="Terminal" size={12} className="inline-block" /> Терминал</>}
           </button>
         )}
         <button onClick={() => restartRef.current?.()}
           className="ml-1 px-2 py-1 rounded text-xs shrink-0 border border-border bg-bg-card text-text-muted hover:text-text transition-colors"
-          title="Перезапустить сессию движка (сбросить зависший интерфейс)">🔄</button>
+          title="Перезапустить сессию движка (сбросить зависший интерфейс)"><Icon name="RotateCw" size={12} /></button>
         {/* Движок терминала выбирается в Настройках («Терминал Chat · движок отрисовки»). */}
         {/* Web-режим: вход и внешнее открытие. У дашбордов движков своя страница входа;
             логин-пароль вводится прямо здесь, а OAuth (Nous Portal) невозможен внутри

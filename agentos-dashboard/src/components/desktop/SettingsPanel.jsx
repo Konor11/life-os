@@ -168,7 +168,7 @@ export function SettingsPanel() {
                       </button>
                       <button onClick={() => { setEngineView(e.id, 'web'); setEngineViews({ ...engineViews, [e.id]: 'web' }) }}
                         className={`px-2 py-0.5 rounded text-xs transition-colors ${engineViews[e.id] === 'web' ? 'bg-accent text-white' : 'bg-bg-card text-text-muted hover:text-text'}`}>
-                        🌐 Web
+                        <><Icon name="Globe" size={12} className="inline-block" /> Web</>
                       </button>
                     </span>
                   ) : (
