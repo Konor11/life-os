@@ -350,10 +350,12 @@ function App() {
               )}
               {activeView === 'dashboard' && (
                 <>
-                {/* Hero-заголовок в духе apple.com: крупно, по центру, одна фраза. */}
+                {/* Hero по канону apple.com: Display Hero 56/600/1.07/-0.28px,
+                    подзаголовок 21/400, черный заголовок + серый вторая строка
+                    (как «MacBook Pro» + «Mind-blowing. Head-turning.»). */}
                 <div className="text-center mb-8 mt-2 reveal">
                   <h1 className="text-hero text-text">Твоя жизнь.</h1>
-                  <h1 className="text-hero text-text-muted mb-4">Под управлением.</h1>
+                  <h1 className="text-hero text-text-muted mb-3">Под управлением.</h1>
                   <p className="text-lead text-text-muted mx-auto max-w-xl">
                     План, задачи, знания, привычки и агенты — в одном месте.
                   </p>

@@ -45,7 +45,9 @@ html[data-theme="glass"][data-mode="dark"] {
    Тёмная: чистый чёрный, панели #161617, текст #f5f5f7, акцент #2997ff.
    Фон — БЕЗ градиентных пятен: вся узнаваемость apple.com в монохроме. */
 html[data-theme="apple"] {
-  --cx-accent: 0 113 227; --cx-accent-hover: 0 100 210; --cx-accent-2: 88 86 214;
+  /* Спецификация apple.com: единственный хроматический цвет — синий,
+     ТОЛЬКО на интерактивных элементах. На тёмном фоне ссылки ярче: #2997ff. */
+  --cx-accent: 0 113 227; --cx-accent-hover: 0 119 237; --cx-accent-2: 88 86 214;
   /* Системные цвета Apple (iOS palette): мягкие, не кричащие. */
   --cx-success: 52 199 89; --cx-warning: 255 159 10; --cx-danger: 255 69 58;
 }
@@ -53,15 +55,20 @@ html[data-theme="apple"][data-mode="light"] {
   --cx-bg: 245 245 247; --cx-bg-card: 255 255 255; --cx-bg-elevated: 255 255 255; --cx-surface: 255 255 255;
   --cx-border: 210 210 215; --cx-border-hover: 178 178 186;
   --cx-text: 29 29 31; --cx-text-muted: 110 110 115; --cx-text-faint: 134 134 140;
-  --cx-app-bg: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
-  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px -8px rgb(0 0 0 / .08);
+  /* Сплошной цвет, БЕЗ градиентов — фон apple.com это #f5f5f7. */
+  --cx-app-bg: #f5f5f7;
+  /* Одна мягкая тень от спецификации: rgba(0,0,0,.22) 3px 5px 30px — на светлом
+     приглушаем до .06, иначе чёрная тень на белом выглядит грязно. */
+  --cx-shadow-card: 3px 5px 30px rgb(0 0 0 / .06);
 }
 html[data-theme="apple"][data-mode="dark"] {
-  --cx-bg: 0 0 0; --cx-bg-card: 22 22 23; --cx-bg-elevated: 28 28 30; --cx-surface: 22 22 23;
+  /* Dark surfaces по спецификации Apple: карточки #1d1d1f, приподнятые #272729,
+     текст #f5f5f7 (не чисто белый — Apple так делает всегда). */
+  --cx-bg: 0 0 0; --cx-bg-card: 29 29 31; --cx-bg-elevated: 39 39 41; --cx-surface: 29 29 31;
   --cx-border: 48 48 51; --cx-border-hover: 70 70 74;
   --cx-text: 245 245 247; --cx-text-muted: 161 161 168; --cx-text-faint: 120 120 126;
   --cx-app-bg: #000000;
-  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .5), 0 12px 32px -10px rgb(0 0 0 / .7);
+  --cx-shadow-card: 3px 5px 30px rgb(0 0 0 / .5);
 }
 
 /* ── Классика: прежняя холодная панель, путь назад ── */

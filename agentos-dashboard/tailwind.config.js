@@ -30,14 +30,16 @@ export default {
         mono: ['SF Mono', 'ui-monospace', 'JetBrains Mono', 'Fira Code', 'monospace'],
       },
       // Типографическая шкала apple.com: hero-заголовки 48–80, разделы 40, текст 17.
+      /* Шкала apple.com (спецификация): hero 56/600/1.07/-0.28px; section 40/600/1.10;
+         body 17/400/1.47/-0.374px; caption 14/-0.224px. Weight 700 запрещён — max 600. */
       fontSize: {
-        'hero': ['clamp(2.5rem, 6vw, 5rem)', { lineHeight: '1.05', letterSpacing: '-0.025em', fontWeight: '700' }],
-        'display': ['clamp(2rem, 4vw, 2.5rem)', { lineHeight: '1.08', letterSpacing: '-0.02em', fontWeight: '700' }],
-        'section': ['1.75rem', { lineHeight: '1.15', letterSpacing: '-0.015em', fontWeight: '600' }],
-        'lead': ['1.25rem', { lineHeight: '1.4', fontWeight: '400' }],
-        'body-lg': ['1.0625rem', { lineHeight: '1.5' }],
-        'body': ['0.9375rem', { lineHeight: '1.5' }],
-        'caption': ['0.75rem', { lineHeight: '1.3', fontWeight: '500' }],
+        'hero': ['clamp(1.75rem, 5vw, 3.5rem)', { lineHeight: '1.07', letterSpacing: '-0.01em', fontWeight: '600' }],
+        'display': ['clamp(1.5rem, 3.5vw, 2.5rem)', { lineHeight: '1.10', fontWeight: '600' }],
+        'section': ['2.5rem', { lineHeight: '1.10', fontWeight: '600' }],
+        'lead': ['1.3125rem', { lineHeight: '1.19', fontWeight: '400' }],
+        'body-lg': ['1.0625rem', { lineHeight: '1.47', letterSpacing: '-0.374px' }],
+        'body': ['0.9375rem', { lineHeight: '1.47', letterSpacing: '-0.244px' }],
+        'caption': ['0.75rem', { lineHeight: '1.33', letterSpacing: '-0.12px' }],
       },
       boxShadow: {
         card: 'var(--cx-shadow-card)',
@@ -46,16 +48,18 @@ export default {
       },
       // Масштаб радиусов: «Стекло» держится на крупных скруглениях. Меняем шкалу целиком —
       // все существующие rounded-* в панели становятся нужного размера без правки компонентов.
+      /* Радиусы по спецификации Apple: 8px — кнопки/карточки; 11px — поиск;
+         12px — крупные панели; больше 12px на прямоугольных НЕЛЬЗЯ (980 — только пилюли). */
       borderRadius: {
         none: '0px',
-        sm: '8px',
-        DEFAULT: '10px',
-        md: '12px',
-        lg: '14px',
-        xl: '18px',     // карточки apple.com
-        '2xl': '22px',
-        '3xl': '28px',
-        full: '9999px', // кнопки-пилюли
+        sm: '5px',
+        DEFAULT: '8px',
+        md: '8px',
+        lg: '11px',
+        xl: '12px',
+        '2xl': '12px',
+        '3xl': '12px',
+        full: '980px',  // пилюля «Подробнее» — фирменный радиус apple.com
       },
       backdropBlur: { xs: '2px' },
     },

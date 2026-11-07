@@ -97,7 +97,7 @@ export function AppShell({ sidebarRender, mainRender, onOpenPalette, onToggleThe
     <div className="flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
       {/* Тонкая шапка в стиле глобальной навигации apple.com: 44px, blur, минимум
           элементов — лого слева, поиск и тема справа. Одинаковая на всех экранах. */}
-      <header className="h-11 flex-shrink-0 flex items-center gap-3 px-4 sm:px-5 border-b border-border nav-blur">
+      <header className="h-12 flex-shrink-0 flex items-center gap-3 px-4 sm:px-5 border-b border-border nav-blur">
         <button
           onClick={() => sidebarRender?.props?.onViewChange?.('dashboard')}
           className="flex items-center gap-2 font-semibold text-[15px] tracking-tight"
