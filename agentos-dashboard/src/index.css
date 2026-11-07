@@ -51,18 +51,31 @@ body {
   color: rgb(var(--cx-text));
 }
 
+/* Скроллбар канона apple.com: тонкий, полупрозрачный, проявляется при наведении.
+   На сенсорных экранах его нет вовсе — там прокрутка инерционная, полоса только мешает. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(var(--cx-bg));
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--cx-border));
+  background: rgb(var(--cx-text-muted) / .28);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--cx-text-muted) / .45);
+  background-clip: content-box;
+}
+
+@media (hover: none) {
+  ::-webkit-scrollbar { width: 0; height: 0; }
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -190,19 +203,30 @@ body {
   color: rgb(var(--cx-text));
 }
 
+/* Скроллбар канона apple.com: тонкий, полупрозрачный, проявляется при наведении.
+   На сенсорных экранах его нет вовсе — там прокрутка инерционная, полоса только мешает. */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgb(var(--cx-bg));
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--cx-border));
+  background: rgb(var(--cx-text-muted) / .28);
   border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--cx-text-muted) / .45);
+  background-clip: content-box;
+}
+
+
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--cx-border-hover));
