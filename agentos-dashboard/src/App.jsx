@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, Suspense, lazy } from 'react'
-import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, StatusBar, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, OmniRouterView, VaultwardenView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
+import { AppShell, Sidebar, MainContent, AgentCard, PlanView, TasksView, KnowledgeView, HabitsView, AgentsView, KeysView, HarnessView, AssistantView, SecondBrainView, N8nView, CoderView, OmniRouterView, VaultwardenView, TerminalTab, FilesTab, ChatTab, SettingsTab } from './components'
 import { fetchAll, savePlan, saveTasks, saveNotes, saveHabits, saveFinances, saveHealth, saveLearning, saveContacts, saveAutomations, saveMemory, saveCalendar, saveProjects } from './data/api'
 import { LoginScreen } from './components/LoginScreen'
 import { Mascot } from './components/Mascot'
@@ -404,12 +404,6 @@ function App() {
               {activeView === 'harness' && <HarnessView />}
               {activeView === 'split' && <SplitPaneView />}
             </MainContent>
-            <StatusBar agents={[
-              { id: 'planner', name: 'Planner', status: 'idle' },
-              { id: 'tasks', name: 'Tasks', status: 'idle' },
-              { id: 'knowledge', name: 'Knowledge', status: 'idle' },
-              { id: 'habits', name: 'Habits', status: 'idle' },
-            ]} />
           </>
         )}
       />
