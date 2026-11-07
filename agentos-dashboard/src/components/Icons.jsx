@@ -2,10 +2,10 @@ export function Icon({ name, size = 20, className = '', style }) {
   const icons = {
     LayoutDashboard: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <rect x="3" y="3" width="7" height="9" rx="1" />
+        <rect x="14" y="3" width="7" height="5" rx="1" />
+        <rect x="14" y="12" width="7" height="9" rx="1" />
+        <rect x="3" y="16" width="7" height="5" rx="1" />
       </svg>
     ),
     Keyboard: (
@@ -69,7 +69,9 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     Brain: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M12 5a3 3 0 1 0-3 3c0 1.5.5 3 2 3.5S10 16 9 17a2 2 0 0 0 2 2c4 0 6-3 6-6a3 3 0 1 0-3-3z" />
+        <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+        <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+        <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
       </svg>
     ),
     Clock: (
@@ -115,15 +117,16 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     Send: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
+        <path d="m22 2-7 20-4-9-9-4Z" />
         <path d="M22 2 11 13" />
-        <path d="M22 2 15 22l11-9 11-9z" />
-        <path d="m15 22-4-9-9-4" />
       </svg>
     ),
     Expand: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M3 3h5v15h-5z" />
-        <path d="M16 3h5v15h-5z" />
+        <path d="M15 3h6v6" />
+        <path d="M9 21H3v-6" />
+        <path d="M21 3l-7 7" />
+        <path d="M3 21l7-7" />
       </svg>
     ),
     ShrinkDown: (
@@ -172,8 +175,7 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     Wrench: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M14.74 6.3a1 1 0 0 0-1.236-3.3l1.236 3.3a2.7 3 0 0 1-.424-.464 2.27 2.5 0 0 1 .5 2.4z" />
-        <path d="M6 3v12a1.208 1.208 0 0 1 1.208 1.208v6a1.208 1.208 0 0 1-1.208 1.208H6.5v-4a1.208 1.208 0 0 0 0-1.208zM9.81 8.418a1.5 1.5 0 1 1 .854 1.5v.585a1.5 1.5 0 0 1 2.146-.585a0.603.603 0 1 1 0-1.125 1.603 1.603 0 0 1-.854 1.5v.585a1.5 1.5 0 0 1-2.146-.585z" />
+        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
       </svg>
     ),
     List: (
@@ -282,14 +284,14 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     Sunrise: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M12 2v2" />
-        <path d="m4.93 4.93 1.41 1.41" />
-        <path d="M2 12h2" />
-        <path d="M4.93 19.07 6.34 17.66" />
-        <path d="M12 22v-2" />
-        <path d="m19.07 19.07 1.41-1.41" />
-        <path d="M22 12h-2" />
-        <path d="m19.07 4.93-1.41 1.41" />
+        <path d="M12 2v8" />
+        <path d="m4.93 10.93 1.41 1.41" />
+        <path d="M2 18h2" />
+        <path d="M20 18h2" />
+        <path d="m19.07 10.93-1.41 1.41" />
+        <path d="M22 22H2" />
+        <path d="m8 6 4-4 4 4" />
+        <path d="M16 18a4 4 0 0 0-8 0" />
       </svg>
     ),
     CheckCircle: (
@@ -411,9 +413,12 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     MemoryStick: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M6 19v-3a6 6 0 0 1 12 0v3" />
-        <rect x="8" y="11" width="8" height="8" rx="1" />
-        <line x1="10" y1="2" x2="10" y2="5" /><line x1="14" y1="2" x2="14" y2="5" />
+        <path d="M6 19v-3" />
+        <path d="M10 19v-3" />
+        <path d="M14 19v-3" />
+        <path d="M18 19v-3" />
+        <path d="M8 11V9a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        <rect x="2" y="16" width="20" height="6" rx="1" />
       </svg>
     ),
     Info: (
@@ -480,11 +485,13 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     Dumbbell: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M14.4 14.4 9.6 9.6" />
-        <path d="M18.657 21.485a2 2 0 1 1-2.829-2.828l-1.767 1.768a2 2 0 1 0 2.828 2.828z" />
-        <path d="m21.5 21.5-1.4-1.4" />
-        <path d="M3.9 3.9 2.1 2.1" />
-        <path d="M6.404 12.768a2 2 0 1 0-2.829-2.829l3.536 3.536" />
+        <path d="m6.5 6.5 11 11" />
+        <path d="m21 21-1-1" />
+        <path d="m3 3 1 1" />
+        <path d="m18 22 4-4" />
+        <path d="m2 6 4-4" />
+        <path d="m3 10 7-7" />
+        <path d="m14 21 7-7" />
       </svg>
     ),
     Weight: (
@@ -497,6 +504,7 @@ export function Icon({ name, size = 20, className = '', style }) {
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
         <path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" />
         <path d="M20 20v-2.38c0-2.12 1.03-4.12 2-5.62.53-.84.5-2.02-.5-3L19 7" />
+        <path d="M16 9.5V4.5C16 3.12 17.12 2 18.5 2S21 3.12 21 4.5" />
       </svg>
     ),
     Zap: (
@@ -633,6 +641,9 @@ export function Icon({ name, size = 20, className = '', style }) {
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
         <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z" />
         <path d="M14 2v6h6" />
+        <path d="M16 13H8" />
+        <path d="M16 17H8" />
+        <path d="M10 9H8" />
       </svg>
     ),
   }
