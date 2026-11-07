@@ -101,21 +101,23 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     Download: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M12 3v9h6" />
-        <path d="M4 17v2h14" />
+        <path d="M12 3v12" />
+        <path d="m7 11 5 5 5-5" />
+        <path d="M5 20h14" />
       </svg>
     ),
     Upload: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M5 4h14" />
-        <path d="M3 8h18" />
-        <path d="M12 10l4 4" />
+        <path d="M12 14V3" />
+        <path d="m7 8 5-5 5 5" />
+        <path d="M5 20h14" />
       </svg>
     ),
     Send: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M21 12v4h6" />
-        <path d="M8 12v8h5" />
+        <path d="M22 2 11 13" />
+        <path d="M22 2 15 22l11-9 11-9z" />
+        <path d="m15 22-4-9-9-4" />
       </svg>
     ),
     Expand: (
@@ -126,8 +128,9 @@ export function Icon({ name, size = 20, className = '', style }) {
     ),
     ShrinkDown: (
       <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
-        <path d="M3 3h18v15h-18z" />
-        <path d="M12 18v3h0" />
+        <rect x="3" y="3" width="18" height="15" rx="2" />
+        <path d="M12 8v6" />
+        <path d="m9 12 3 3 3-3" />
       </svg>
     ),
     FileText: (
