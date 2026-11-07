@@ -118,7 +118,17 @@ function App() {
 
   // ── Скролл: шапка плотнеет, hero мягко уходит (только transform/opacity) ──
   useEffect(() => {
-    const scroller = document.querySelector('main .overflow-y-auto') || window
+    // Скроллер ищем по вычисленному стилю: классы Tailwind могут экранироваться,
+    // а селектор по 'main .overflow-y-auto' молча падал на window.
+    const findScroller = () => {
+      const main = document.querySelector('main')
+      const els = main ? [main, ...main.querySelectorAll('div')] : []
+      return els.find(e => {
+        const s = getComputedStyle(e)
+        return (s.overflowY === 'auto' || s.overflowY === 'scroll') && e.scrollHeight > e.clientHeight
+      }) || els.find(e => getComputedStyle(e).overflowY === 'auto') || window
+    }
+    const scroller = findScroller()
     const hero = () => document.querySelector('[data-hero]')
     const header = () => document.querySelector('header.nav-blur')
     let raf = 0
