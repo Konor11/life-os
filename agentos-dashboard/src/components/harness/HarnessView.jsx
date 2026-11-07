@@ -26,7 +26,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
             <span className="px-2 py-1 rounded text-xs bg-bg-elevated border border-border text-text-muted">готов к работе</span>
             {item.updateCmd && (
               <button onClick={() => onUpdate(item.id)} disabled={!!busyId}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'update' ? 'opacity-60' : ''}`}>
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'update' ? 'opacity-60' : ''}`}>
                 {busy && busyOp === 'update'
                   ? <><Icon name="Loader" size={13} className="animate-spin" /> Обновление...</>
                   : <><Icon name="Download" size={13} /> Обновить</>}
@@ -34,7 +34,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
             )}
             {item.uninstallCmd && (
               <button onClick={() => onUninstall(item.id)} disabled={!!busyId}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 ${busy && busyOp === 'uninstall' ? 'opacity-60' : ''}`}>
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-danger/40 bg-danger/10 text-danger hover:bg-danger/20 ${busy && busyOp === 'uninstall' ? 'opacity-60' : ''}`}>
                 {busy && busyOp === 'uninstall'
                   ? <><Icon name="Loader" size={13} className="animate-spin" /> Удаление...</>
                   : <><Icon name="Trash2" size={13} /> Удалить</>}
@@ -42,7 +42,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
             )}
             {item.id === 'hermes' && item.setupAvailable && (
               <button onClick={() => onSetup(item.id)} disabled={!!busyId}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'setup' ? 'opacity-60' : ''}`}>
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 ${busy && busyOp === 'setup' ? 'opacity-60' : ''}`}>
                 {busy && busyOp === 'setup'
                   ? <><Icon name="Loader" size={13} className="animate-spin" /> Мастер запущен...</>
                   : <><Icon name="Settings" size={13} /> Мастер настроек</>}
@@ -53,7 +53,7 @@ function ItemCard({ item, keys, busyId, busyOp, logs, onInstall, onUninstall, on
         ) : (
           <>
             <button onClick={() => onInstall(item.id)} disabled={!!busyId}
-              className={`px-4 py-2 rounded-lg font-medium text-sm text-white bg-accent hover:opacity-90 transition-opacity ${busy ? 'opacity-60' : ''}`}>
+              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-sm text-white bg-accent hover:opacity-90 transition-opacity ${busy ? 'opacity-60' : ''}`}>
               {busy && busyOp === 'install'
                 ? <><Icon name="Loader" size={13} className="animate-spin" /> Устанавливается...</>
                 : <><Icon name="Download" size={13} /> Установить {item.name}</>}
@@ -251,7 +251,7 @@ export function HarnessView() {
       {components.length > 0 && (
         <>
           <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide flex items-center gap-2">
-            <Icon name="Boxes" size={14} /> Компоненты
+            <Icon name="Boxes" size={14} className="shrink-0" /> Компоненты
           </h2>
           {components.map(c => (
             <ItemCard key={c.id} item={c} keys={keys} busyId={busyId} busyOp={busyOp}
@@ -261,7 +261,7 @@ export function HarnessView() {
       )}
 
       <h2 className="text-sm font-semibold text-text-muted uppercase tracking-wide flex items-center gap-2">
-        <Icon name="Wrench" size={14} /> Движки (агенты)
+        <Icon name="Wrench" size={14} className="shrink-0" /> Движки (агенты)
       </h2>
       {/* Tmux и Zellij раньше попадали сюда как движки — но ими нельзя пользоваться как
           агентом. Tmux это ТРАНСПОРТ: внутри него живут сессии и вкладки Chat, и вкладки
@@ -393,9 +393,9 @@ export function HarnessView() {
             {/* Sticky so Отмена/Установить stay reachable on a phone (modal scrolls). */}
             <div className="sticky bottom-0 -mx-4 sm:-mx-5 px-4 sm:px-5 py-3 mt-1 bg-bg-card/95 backdrop-blur border-t border-border flex gap-2 justify-end">
               <button onClick={() => setInstallOpts(null)}
-                className="px-4 py-2 rounded-lg text-sm border border-border text-text-muted hover:text-text">Отмена</button>
+                className="inline-flex items-center px-4 py-2 rounded-lg text-sm border border-border text-text-muted hover:text-text">Отмена</button>
               <button onClick={confirmInstallOpts}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-accent hover:opacity-90"
+                className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-accent hover:opacity-90"
                 disabled={installOpts.mode !== 'tui' && !installOpts.domain.trim()}>
                 Установить
               </button>
