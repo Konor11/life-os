@@ -150,7 +150,9 @@ function App() {
     scroller.addEventListener('scroll', onScroll, { passive: true })
     onScroll()
     return () => scroller.removeEventListener('scroll', onScroll)
-  }, [activeView])
+    // Зависим и от auth: пока не выполнен вход, <main> ещё не смонтирован,
+    // и эффект навесился бы на window вместо контейнера.
+  }, [activeView, auth.authenticated])
 
   // Тема живёт на СЕРВЕРЕ: телефон и ПК показывают одно и то же, а смена темы на ПК
   // доезжает сюда сама (палитру присылает Life OS Desktop). localStorage остаётся
