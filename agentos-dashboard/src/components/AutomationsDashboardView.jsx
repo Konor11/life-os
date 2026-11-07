@@ -352,7 +352,7 @@ function WorkflowForm({ workflow, editing, onChange, onSubmit, onCancel }) {
             {workflow.actions.map((action, i) => (
               <ActionRow key={i} action={action} index={i} onChange={a => onChange({...workflow, actions: workflow.actions.map((ac, j) => j === i ? a : ac)})} onRemove={() => onChange({...workflow, actions: workflow.actions.filter((_, j) => j !== i)})} />
             ))}
-            <button onClick={() => onChange({...workflow, actions: [...workflow.actions, { type: 'http_request', config: {} }]})} className="w-full py-2 border-2 border-dashed border-border-hover rounded-lg text-text-muted hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-2">
+            <button onClick={() => onChange({...workflow, actions: [...workflow.actions, { type: 'http_request', config: {} }]})} className="add-row">
               <Icon name="Plus" size={16} /> Add Action
             </button>
           </div>

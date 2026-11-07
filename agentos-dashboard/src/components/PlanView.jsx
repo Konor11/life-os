@@ -16,7 +16,7 @@ export function PlanView({ plan, onUpdate }) {
           <h1 className="text-[1.75rem] font-bold tracking-tight text-text">Daily Plan</h1>
           <p className="text-text-muted">Time-blocked schedule with priorities</p>
         </div>
-        <button className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors flex items-center gap-2">
+        <button className="px-4 py-2 bg-accent text-white rounded-[980px] hover:bg-accent-hover transition-colors flex items-center gap-2">
           <Icon name="Plus" size={18} />
           Add Block
         </button>
@@ -92,7 +92,7 @@ export function PlanView({ plan, onUpdate }) {
                   setNewBlock({...newBlock, label: ''})
                 }
               }}
-              className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors"
+              className="px-4 py-2 bg-accent text-white rounded-[980px] hover:bg-accent-hover transition-colors disabled:opacity-40"
               disabled={!newBlock.label || newBlock.endHour <= newBlock.startHour}
             >
               Add
@@ -195,7 +195,7 @@ function PrioritiesEditor({ priorities, onChange }) {
           </button>
         </div>
       ))}
-      <button onClick={addPriority} className="w-full py-2 border-2 border-dashed border-border-hover rounded-lg text-text-muted hover:border-accent hover:text-accent transition-colors flex items-center justify-center gap-2">
+      <button onClick={addPriority} className="add-row">
         <Icon name="Plus" size={18} />
         Add Priority
       </button>
