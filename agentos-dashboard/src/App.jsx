@@ -128,7 +128,7 @@ function App() {
         return (s.overflowY === 'auto' || s.overflowY === 'scroll') && e.scrollHeight > e.clientHeight
       }) || els.find(e => getComputedStyle(e).overflowY === 'auto') || window
     }
-    const scroller = findScroller()
+    let scroller = findScroller()
     const hero = () => document.querySelector('[data-hero]')
     const header = () => document.querySelector('header.nav-blur')
     let raf = 0
@@ -136,7 +136,9 @@ function App() {
       if (raf) return
       raf = requestAnimationFrame(() => {
         raf = 0
-        const y = (scroller === window ? window.scrollY : scroller.scrollTop) || 0
+        // Читаем максимум из обоих источников: страница может скроллиться
+        // и контейнером, и окном (разные раскладки — разные скроллеры).
+        const y = Math.max(window.scrollY || 0, scroller.scrollTop || 0, document.documentElement.scrollTop || 0)
         header()?.classList.toggle('nav-scrolled', y > 8)
         const h = hero()
         if (h) {
@@ -147,11 +149,18 @@ function App() {
         }
       })
     }
+    // Подписываемся на оба: контейнер панели и окно. На мобильных и десктопе
+    // скроллером может быть разное, и промах по одному молча отключал эффект.
+    const onWin = () => onScroll()
     scroller.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('scroll', onWin, { passive: true })
+    document.addEventListener('scroll', onWin, { passive: true, capture: true })
     onScroll()
-    return () => scroller.removeEventListener('scroll', onScroll)
-    // Зависим и от auth: пока не выполнен вход, <main> ещё не смонтирован,
-    // и эффект навесился бы на window вместо контейнера.
+    return () => {
+      scroller.removeEventListener('scroll', onScroll)
+      window.removeEventListener('scroll', onWin)
+      document.removeEventListener('scroll', onWin, { capture: true })
+    }
   }, [activeView, auth.authenticated])
 
   // Тема живёт на СЕРВЕРЕ: телефон и ПК показывают одно и то же, а смена темы на ПК
