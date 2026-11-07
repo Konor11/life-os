@@ -3,84 +3,133 @@ import { cn } from '../lib/utils'
 import { Icon } from './Icons'
 import { Mascot } from './Mascot'
 
-export function AppShell({ sidebarRender, mainRender, onOpenPalette }) {
-  // Mobile: sidebar is an overlay drawer toggled by the burger in the top bar.
-  // Desktop (lg+): sidebar always visible, no burger needed.
-  const [open, setOpen] = useState(false)
+// ── Мобильный нижний таб-бар в стиле apple.com / iOS ────────────────────────
+// 4 главных вкладки + «Ещё» (шторка со всеми разделами). Burger-меню больше
+// не нужен: навигация всегда под пальцем, как в приложениях Apple.
+const TAB_ITEMS = [
+  { id: 'chat', label: 'Chat', icon: 'MessageSquare' },
+  { id: 'plan', label: 'Planner', icon: 'Calendar' },
+  { id: 'tasks', label: 'Tasks', icon: 'CheckSquare' },
+  { id: 'knowledge', label: 'Knowledge', icon: 'BookOpen' },
+]
+
+function TabBar({ activeView, onViewChange, onOpenMore, moreActive }) {
+  return (
+    <nav
+      className="lg:hidden flex-shrink-0 flex items-stretch border-t border-border nav-blur"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      aria-label="Основная навигация"
+    >
+      {TAB_ITEMS.map(t => (
+        <button
+          key={t.id}
+          onClick={() => onViewChange(t.id)}
+          className={cn(
+            'flex-1 flex flex-col items-center gap-1 pt-2 pb-2 transition-colors',
+            activeView === t.id ? 'text-accent' : 'text-text-muted'
+          )}
+        >
+          <Icon name={t.icon} size={22} />
+          <span className="text-[10px] font-medium">{t.label}</span>
+        </button>
+      ))}
+      <button
+        onClick={onOpenMore}
+        className={cn(
+          'flex-1 flex flex-col items-center gap-1 pt-2 pb-2 transition-colors',
+          moreActive ? 'text-accent' : 'text-text-muted'
+        )}
+        aria-label="Все разделы"
+      >
+        <Icon name="Grid" size={22} />
+        <span className="text-[10px] font-medium">Ещё</span>
+      </button>
+    </nav>
+  )
+}
+
+// Шторка «Ещё»: все разделы панели, как список настроек iOS.
+function MoreSheet({ open, onClose, sidebarRender }) {
+  if (!open) return null
+  return (
+    <div className="lg:hidden fixed inset-0 z-50 flex flex-col" role="dialog" aria-label="Все разделы">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div
+        className="relative mt-12 flex-1 overflow-y-auto nav-blur border-t border-border rounded-t-3xl"
+        style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+      >
+        <div className="sticky top-0 nav-blur flex items-center justify-between px-5 py-3 border-b border-border">
+          <span className="font-semibold text-lg">Все разделы</span>
+          <button onClick={onClose} className="p-2 -mr-2 rounded-lg text-text-muted hover:text-text" aria-label="Закрыть">
+            <Icon name="X" size={22} />
+          </button>
+        </div>
+        {sidebarRender}
+      </div>
+    </div>
+  )
+}
+
+export function AppShell({ sidebarRender, mainRender, onOpenPalette, onToggleTheme, theme }) {
+  const [moreOpen, setMoreOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < 1024)
   useEffect(() => {
     const onRz = () => setIsMobile(window.innerWidth < 1024)
     window.addEventListener('resize', onRz)
     return () => window.removeEventListener('resize', onRz)
   }, [])
-  // Close the drawer when the viewport grows to desktop
-  useEffect(() => { if (!isMobile) setOpen(false) }, [isMobile])
-  // Lock body scroll while the drawer is open on mobile
-  useEffect(() => {
-    document.body.style.overflow = open && isMobile ? 'hidden' : ''
-    return () => { document.body.style.overflow = '' }
-  }, [open, isMobile])
+  useEffect(() => { if (!isMobile) setMoreOpen(false) }, [isMobile])
 
-  // Wrap the sidebar's onViewChange so a navigation click also closes the drawer
+  // Навигация из шторки закрывает её; на десктопе пробрасываем как есть.
   let sidebarEl = sidebarRender
   if (sidebarRender && (sidebarRender.props?.onViewChange || onOpenPalette)) {
     sidebarEl = cloneElement(sidebarRender, {
       ...(sidebarRender.props?.onViewChange ? {
-        onViewChange: (v) => { sidebarRender.props.onViewChange(v); setOpen(false) },
+        onViewChange: (v) => { sidebarRender.props.onViewChange(v); setMoreOpen(false) },
       } : {}),
       ...(onOpenPalette ? { onOpenPalette } : {}),
     })
   }
 
+  const tabActive = TAB_ITEMS.some(t => t.id === sidebarRender?.props?.activeView)
+
   return (
     <div className="flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
-      {/* Mobile top bar (burger + title) — hidden on desktop */}
-      {isMobile && (
-        <header className="h-12 flex-shrink-0 flex items-center gap-3 px-3 border-b border-border"
-          style={{ background: 'rgb(var(--cx-bg-card) / 0.92)' }}>
-          <button
-            onClick={() => setOpen(o => !o)}
-            className="p-2 -ml-1 rounded-lg text-text-muted hover:text-text hover:bg-bg-elevated transition-colors"
-            aria-label="Меню"
-          >
-            <Icon name={open ? 'X' : 'Menu'} size={22} />
-          </button>
-          <span className="font-semibold text-base flex items-center gap-2">
-            <Mascot size={22} className="text-accent" title="Life OS" />
-            Life OS
-          </span>
-          {/* Поиск по разделам: на телефоне иначе до нужной вкладки не дойти — их 25. */}
-          <button
-            onClick={onOpenPalette}
-            title="Поиск по разделам (Ctrl+K)"
-            className="ml-auto p-2 -mr-1 rounded-lg text-text-muted hover:text-text hover:bg-bg-elevated transition-colors"
-            aria-label="Поиск"
-          >
-            <Icon name="Search" size={20} />
-          </button>
-        </header>
-      )}
+      {/* Тонкая шапка в стиле глобальной навигации apple.com: 44px, blur, минимум
+          элементов — лого слева, поиск и тема справа. Одинаковая на всех экранах. */}
+      <header className="h-11 flex-shrink-0 flex items-center gap-3 px-4 sm:px-5 border-b border-border nav-blur">
+        <button
+          onClick={() => sidebarRender?.props?.onViewChange?.('dashboard')}
+          className="flex items-center gap-2 font-semibold text-[15px] tracking-tight"
+          aria-label="Life OS — на главную"
+        >
+          <Mascot size={20} className="text-accent shrink-0" title="Life OS" />
+          <span className="hidden sm:inline">Life OS</span>
+        </button>
+        {/* Поиск по разделам — как лупа в навигации apple.com */}
+        <button
+          onClick={onOpenPalette}
+          title="Поиск по разделам (Ctrl+K)"
+          className="ml-auto p-2 -mr-2 rounded-lg text-text-muted hover:text-text transition-colors"
+          aria-label="Поиск"
+        >
+          <Icon name="Search" size={18} />
+        </button>
+        <button
+          onClick={onToggleTheme}
+          title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
+          className="p-2 -mr-1 rounded-lg text-text-muted hover:text-text transition-colors"
+          aria-label="Сменить тему"
+        >
+          <Icon name={theme === 'dark' ? 'Sun' : 'Moon'} size={18} />
+        </button>
+      </header>
+
       <div className="flex flex-1 overflow-hidden relative">
-        {/* Backdrop: taps outside the drawer close it */}
-        {open && isMobile && (
-          <div
-            className="absolute inset-0 z-30 bg-black/50"
-            onClick={() => setOpen(false)}
-            aria-label="Закрыть меню"
-          />
-        )}
+        {/* Desktop: тихая навигация слева, как в System Settings на macOS. */}
         <aside
-          className={cn(
-            'w-64 flex-shrink-0 h-full overflow-y-auto z-40',
-            // Mobile: off-canvas drawer, animated; Desktop: static column.
-            isMobile
-              ? `absolute inset-y-0 left-0 transform transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full'}`
-              : 'relative'
-          )}
-          style={{ background: 'rgb(var(--cx-bg-card) / 0.72)',
-                   backdropFilter: 'blur(18px) saturate(1.4)',
-                   WebkitBackdropFilter: 'blur(18px) saturate(1.4)',
-                   borderRight: '1px solid rgb(var(--cx-border))' }}
+          className="hidden lg:flex flex-col w-60 flex-shrink-0 h-full overflow-y-auto border-r border-border"
+          style={{ background: 'rgb(var(--cx-bg-card) / 0.5)' }}
         >
           {sidebarEl}
         </aside>
@@ -88,6 +137,23 @@ export function AppShell({ sidebarRender, mainRender, onOpenPalette }) {
           {mainRender}
         </main>
       </div>
+
+      {/* Mobile: нижний таб-бар + шторка «Ещё» */}
+      {isMobile && (
+        <>
+          <TabBar
+            activeView={sidebarRender?.props?.activeView}
+            onViewChange={(v) => sidebarRender?.props?.onViewChange?.(v)}
+            onOpenMore={() => setMoreOpen(o => !o)}
+            moreActive={moreOpen || (!tabActive && !!sidebarRender?.props?.activeView)}
+          />
+          <MoreSheet
+            open={moreOpen}
+            onClose={() => setMoreOpen(false)}
+            sidebarRender={sidebarEl}
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -131,57 +197,30 @@ export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme,
 
   return (
     <div className="h-full flex flex-col">
-      {/* Desktop header: brand + theme toggle. Mobile has its own top bar,
-          so here the brand row is hidden to save vertical space in the drawer. */}
-      <div className="hidden lg:flex p-4 border-b border-border items-center justify-between">
-        {/* Маскот рисует собственную скруглённую подложку, поэтому градиентную плитку
-            вокруг него НЕ ставим — иначе квадрат в квадрате. Подложка самого маскота
-            красится градиентом через currentColor и уже меняется вместе с темой. */}
-        <h2 className="font-semibold text-lg flex items-center gap-2.5">
-          <Mascot size={24} className="text-accent shrink-0" title="Life OS" />
-          <span>Life OS</span>
-        </h2>
-        <button
-          onClick={onToggleTheme}
-          title={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-bg-elevated/60 border border-border text-xs font-medium text-text-muted hover:text-text hover:border-border-hover transition-all"
-        >
-          {theme === 'dark' ? '☀️' : '🌙'}
-        </button>
-      </div>
-      {/* Mobile: theme toggle inline above the nav */}
-      <div className="lg:hidden px-3 pt-3 flex justify-end">
-        <button
-          onClick={onToggleTheme}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-bg-elevated/60 border border-border text-xs font-medium text-text-muted"
-        >
-          {theme === 'dark' ? '☀️' : '🌙'} Тема
-        </button>
-      </div>
-      <nav className="flex-1 px-3 py-3 space-y-1">
+      <nav className="flex-1 px-2 py-3 space-y-0.5">
         {views.map(v => (
           <button
             key={v.id}
             onClick={() => onViewChange(v.id)}
-            className={`w-full px-3 py-2.5 rounded-lg transition-all flex items-center gap-3 text-sm font-medium ${
+            className={`w-full px-3 py-2 rounded-[10px] transition-colors flex items-center gap-3 text-[13px] font-medium ${
               activeView === v.id
-                ? 'accent-gradient text-white shadow-card'
-                : 'text-text-muted hover:text-text hover:bg-bg-card/70'
+                ? 'bg-bg-elevated text-text'
+                : 'text-text-muted hover:text-text hover:bg-bg-card/60'
               }`}
           >
-            <Icon name={v.icon} size={20} />
+            <Icon name={v.icon} size={17} />
             <span>{v.label}</span>
           </button>
         ))}
       </nav>
-      <div className="p-3 border-t border-border space-y-3">
-        <div className="grid grid-cols-2 gap-2 text-xs">
+      {/* Компактная сводка внизу. */}
+      <div className="p-3 border-t border-border">
+        <div className="grid grid-cols-2 gap-1.5 text-[11px]">
           <StatCard label="Tasks" value={stats?.tasksPending || 0} icon="CheckSquare" />
           <StatCard label="Habits" value={stats?.habitsActive || 0} icon="Target" />
           <StatCard label="Notes" value={stats?.notesCount || 0} icon="BookOpen" />
           <StatCard label="Deep Work" value={stats?.deepWorkToday ? `${stats.deepWorkToday}h` : '0h'} icon="Clock" />
         </div>
-        <div className="text-xs text-text-muted text-center">Life OS v1.0</div>
       </div>
     </div>
   )
@@ -189,20 +228,18 @@ export function Sidebar({ activeView, onViewChange, stats, theme, onToggleTheme,
 
 function StatCard({ label, value, icon }) {
   return (
-    <div className="glass p-2 rounded-lg">
-      <div className="flex items-center gap-1 text-text-muted mb-0.5">
-        <Icon name={icon} size={12} />
-        <span>{label}</span>
-      </div>
-      <div className="font-semibold text-text">{value}</div>
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-bg-elevated/60">
+      <Icon name={icon} size={12} className="text-text-faint" />
+      <span className="text-text-muted">{label}</span>
+      <span className="ml-auto font-semibold text-text">{value}</span>
     </div>
   )
 }
 
 export function MainContent({ children }) {
   return (
-    <div className="flex-1 overflow-y-auto p-3 md:p-6 lg:p-8">
-      <div className="mx-auto max-w-6xl">
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10">
+      <div className="mx-auto max-w-5xl">
         {children}
       </div>
     </div>

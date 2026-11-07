@@ -13,7 +13,7 @@
 const MODE_RE = ['light', 'dark', 'system']
 // Список палитр держим здесь и в themes.css. Если они разойдутся, палитра из списка
 // не найдёт токенов и панель останется на предыдущей — поэтому проверка строгая.
-const PALETTE_RE = ['glass', 'classic', 'tokyo-night', 'nord', 'catppuccin', 'gruvbox',
+const PALETTE_RE = ['apple', 'glass', 'classic', 'tokyo-night', 'nord', 'catppuccin', 'gruvbox',
   'dracula', 'rose-pine', 'solarized', 'ayu', 'everforest', 'github', 'midnight', 'omarchy']
 
 // ─────────────────────────────── цвет ───────────────────────────────
@@ -146,7 +146,7 @@ export function systemPrefersDark() {
 
 // Режим, который реально применён — им панель должна показывать активную кнопку,
 // а не тот, который нажал и который при палитре Омachi может быть перекрыт системой.
-export function effectiveMode({ mode = 'light', palette = 'glass', desktop = null } = {}) {
+export function effectiveMode({ mode = 'light', palette = 'apple', desktop = null } = {}) {
   const dm = palette === 'omarchy' ? String(desktop?.mode || '').toLowerCase() : ''
   if (dm === 'light' || dm === 'dark') return dm
   if (mode === 'system') return systemPrefersDark() ? 'dark' : 'light'
@@ -159,14 +159,14 @@ let suppressUntil = 0
 export function markLocalChange() { suppressUntil = Date.now() + 5000 }
 export function localChangePending() { return Date.now() < suppressUntil }
 
-export function applyTheme({ mode = 'light', palette = 'glass', desktop = null } = {}) {
+export function applyTheme({ mode = 'light', palette = 'apple', desktop = null } = {}) {
   const el = root()
   const m = MODE_RE.includes(mode) ? mode : 'light'
-  const p = PALETTE_RE.includes(palette) ? palette : 'glass'
+  const p = PALETTE_RE.includes(palette) ? palette : 'apple'
 
   // data-theme — это ПАЛИТРА, а не режим. Режим живёт в data-mode.
   // Так палитра может быть «тёмной» при светлом режиме и наоборот — как в VS Code.
-  el.setAttribute('data-theme', p === 'omarchy' ? 'glass' : p)
+  el.setAttribute('data-theme', p === 'omarchy' ? 'apple' : p)
   el.setAttribute('data-palette', p)
 
   // При палитре Омachi режим приходит с ПК: там уже есть `mode`, и он отражает

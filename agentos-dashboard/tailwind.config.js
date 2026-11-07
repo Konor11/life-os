@@ -23,8 +23,21 @@ export default {
         danger: 'rgb(var(--cx-danger) / <alpha-value>)',
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'monospace'],
+        // SF Pro Display/Text на устройствах Apple; на Linux/Android — Inter,
+        // максимально близкий метрически (тот же x-height, те же пропорции цифр).
+        sans: ['-apple-system', 'BlinkMacSystemFont', 'SF Pro Display', 'SF Pro Text',
+               'Inter', 'system-ui', 'Helvetica Neue', 'Arial', 'sans-serif'],
+        mono: ['SF Mono', 'ui-monospace', 'JetBrains Mono', 'Fira Code', 'monospace'],
+      },
+      // Типографическая шкала apple.com: hero-заголовки 48–80, разделы 40, текст 17.
+      fontSize: {
+        'hero': ['clamp(2.5rem, 6vw, 5rem)', { lineHeight: '1.05', letterSpacing: '-0.025em', fontWeight: '700' }],
+        'display': ['clamp(2rem, 4vw, 2.5rem)', { lineHeight: '1.08', letterSpacing: '-0.02em', fontWeight: '700' }],
+        'section': ['1.75rem', { lineHeight: '1.15', letterSpacing: '-0.015em', fontWeight: '600' }],
+        'lead': ['1.25rem', { lineHeight: '1.4', fontWeight: '400' }],
+        'body-lg': ['1.0625rem', { lineHeight: '1.5' }],
+        'body': ['0.9375rem', { lineHeight: '1.5' }],
+        'caption': ['0.75rem', { lineHeight: '1.3', fontWeight: '500' }],
       },
       boxShadow: {
         card: 'var(--cx-shadow-card)',
@@ -36,13 +49,13 @@ export default {
       borderRadius: {
         none: '0px',
         sm: '8px',
-        DEFAULT: '11px',
+        DEFAULT: '10px',
         md: '12px',
         lg: '14px',
-        xl: '18px',
+        xl: '18px',     // карточки apple.com
         '2xl': '22px',
         '3xl': '28px',
-        full: '9999px',
+        full: '9999px', // кнопки-пилюли
       },
       backdropBlur: { xs: '2px' },
     },

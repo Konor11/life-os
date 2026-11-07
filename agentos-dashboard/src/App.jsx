@@ -80,6 +80,18 @@ function App() {
     }
   }, [])
   useEffect(() => { checkAuth() }, [checkAuth])
+  // Появление секций при скролле (класс .reveal задаётся в разметке).
+  useEffect(() => {
+    const io = new IntersectionObserver(
+      entries => entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('is-visible') }),
+      { threshold: 0.08 }
+    )
+    const scan = () => document.querySelectorAll('.reveal:not(.is-visible)').forEach(el => io.observe(el))
+    scan()
+    const mo = new MutationObserver(scan)
+    mo.observe(document.body, { childList: true, subtree: true })
+    return () => { io.disconnect(); mo.disconnect() }
+  }, [])
   useEffect(() => {
     // Глобальная ловушка 401: один ответ — и мы снова на экране входа (без перезагрузки).
     const orig = window.fetch
@@ -325,6 +337,8 @@ function App() {
       <ToastHost />
       <AppShell
         onOpenPalette={() => setPaletteOpen(true)}
+        onToggleTheme={toggleTheme}
+        theme={theme?.mode || 'light'}
         sidebarRender={(<Sidebar activeView={activeView} onViewChange={setActiveView} stats={stats} theme={theme} onToggleTheme={toggleTheme} installedComponents={components} onOpenPalette={() => setPaletteOpen(true)} isAdmin={auth.isAdmin !== false} />)}
         mainRender={(
           <>
@@ -336,6 +350,14 @@ function App() {
               )}
               {activeView === 'dashboard' && (
                 <>
+                {/* Hero-заголовок в духе apple.com: крупно, по центру, одна фраза. */}
+                <div className="text-center mb-8 mt-2 reveal">
+                  <h1 className="text-hero text-text">Твоя жизнь.</h1>
+                  <h1 className="text-hero text-text-muted mb-4">Под управлением.</h1>
+                  <p className="text-lead text-text-muted mx-auto max-w-xl">
+                    План, задачи, знания, привычки и агенты — в одном месте.
+                  </p>
+                </div>
                 <AgentCard
                   plan={plan}
                   tasks={tasks.filter(t => t.status !== 'done').slice(0, 5)}

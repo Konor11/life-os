@@ -24,7 +24,7 @@ export function ContactsView({ contacts, onUpdate }) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-text">Contacts</h1>
+            <h1 className="text-[1.75rem] font-bold tracking-tight text-text">Contacts</h1>
             <p className="text-text-muted">People • Organizations • Interactions • CRM</p>
           </div>
           <div className="relative">

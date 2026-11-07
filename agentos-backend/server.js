@@ -262,7 +262,7 @@ app.get('/api/theme', (req, res) => {
   const mine = (s && f.users && f.users[s.l]) || {}
   res.json({
     mode: mine.mode || 'light',            // light | dark | system
-    palette: mine.palette || 'glass',     // glass | classic | omarchy
+    palette: mine.palette || 'apple',     // apple | glass | classic | omarchy
     desktop: desktopTheme(),
   })
 })
@@ -279,9 +279,9 @@ app.put('/api/theme', (req, res) => {
   if (palette) {
     // Список держим в одном месте с фронтом (src/lib/themes.js). Здесь — копия:
     // сервер всё равно обязан проверять, иначе в файл попадёт мусор из тела запроса.
-    const KNOWN = ['glass', 'classic', 'tokyo-night', 'nord', 'catppuccin', 'gruvbox',
+    const KNOWN = ['apple', 'glass', 'classic', 'tokyo-night', 'nord', 'catppuccin', 'gruvbox',
       'dracula', 'rose-pine', 'solarized', 'ayu', 'everforest', 'github', 'midnight', 'omarchy']
-    f.users[key].palette = KNOWN.includes(palette) ? palette : (f.users[key].palette || 'glass')
+    f.users[key].palette = KNOWN.includes(palette) ? palette : (f.users[key].palette || 'apple')
   }
   try {
     writeThemeFile(f)

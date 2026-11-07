@@ -33,7 +33,7 @@ export function HealthView({ health, onUpdate }) {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-text">Health</h1>
+          <h1 className="text-[1.75rem] font-bold tracking-tight text-text">Health</h1>
           <p className="text-text-muted">Metrics • Workouts • Sleep • Nutrition</p>
         </div>
         <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors flex items-center gap-2">

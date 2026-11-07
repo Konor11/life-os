@@ -40,6 +40,30 @@ html[data-theme="glass"][data-mode="dark"] {
   --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .3), 0 18px 44px -14px rgb(0 0 0 / .6);
 }
 
+/* ── Apple: монохром и один синий акцент, как на apple.com ──
+   Светлая: белый + #f5f5f7, текст #1d1d1f, вторичный #6e6e73, кнопка #0071e3.
+   Тёмная: чистый чёрный, панели #161617, текст #f5f5f7, акцент #2997ff.
+   Фон — БЕЗ градиентных пятен: вся узнаваемость apple.com в монохроме. */
+html[data-theme="apple"] {
+  --cx-accent: 0 113 227; --cx-accent-hover: 0 100 210; --cx-accent-2: 88 86 214;
+  /* Системные цвета Apple (iOS palette): мягкие, не кричащие. */
+  --cx-success: 52 199 89; --cx-warning: 255 159 10; --cx-danger: 255 69 58;
+}
+html[data-theme="apple"][data-mode="light"] {
+  --cx-bg: 245 245 247; --cx-bg-card: 255 255 255; --cx-bg-elevated: 255 255 255; --cx-surface: 255 255 255;
+  --cx-border: 210 210 215; --cx-border-hover: 178 178 186;
+  --cx-text: 29 29 31; --cx-text-muted: 110 110 115; --cx-text-faint: 134 134 140;
+  --cx-app-bg: linear-gradient(180deg, #ffffff 0%, #f5f5f7 100%);
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px -8px rgb(0 0 0 / .08);
+}
+html[data-theme="apple"][data-mode="dark"] {
+  --cx-bg: 0 0 0; --cx-bg-card: 22 22 23; --cx-bg-elevated: 28 28 30; --cx-surface: 22 22 23;
+  --cx-border: 48 48 51; --cx-border-hover: 70 70 74;
+  --cx-text: 245 245 247; --cx-text-muted: 161 161 168; --cx-text-faint: 120 120 126;
+  --cx-app-bg: #000000;
+  --cx-shadow-card: 0 1px 2px rgb(0 0 0 / .5), 0 12px 32px -10px rgb(0 0 0 / .7);
+}
+
 /* ── Классика: прежняя холодная панель, путь назад ── */
 html[data-theme="classic"] { --cx-accent: 88 101 242; --cx-accent-hover: 81 93 236; --cx-accent-2: 59 130 246; }
 html[data-theme="classic"][data-mode="light"] {

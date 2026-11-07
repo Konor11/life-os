@@ -45,7 +45,8 @@ html[data-mode="light"], html[data-mode="dark"] {
 body {
   background: var(--cx-app-bg);
   background-attachment: fixed;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /* SF Pro на устройствах Apple; Inter метрически близок на Linux/Android. */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   color: rgb(var(--cx-text));
 }
@@ -66,6 +67,41 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(var(--cx-border-hover));
+}
+
+@layer components {
+  /* Поля ввода в стиле Apple: мягкий скруглённый контейнер, синий фокус-ринг. */
+  .input {
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid rgb(var(--cx-border));
+    background: rgb(var(--cx-bg-elevated));
+    color: rgb(var(--cx-text));
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .input:focus {
+    border-color: rgb(var(--cx-accent));
+    box-shadow: 0 0 0 3px rgb(var(--cx-accent) / 0.22);
+  }
+  .input::placeholder { color: rgb(var(--cx-text-faint)); }
+  select.input { appearance: auto; }
+  textarea.input { min-height: 72px; }
+  /* В теме Apple градиентного акцента НЕТ: сплошной синий, как на apple.com. */
+  html[data-theme="apple"] .accent-gradient {
+    background-image: none;
+    background-color: rgb(var(--cx-accent));
+  }
+
+  /* Градиентный акцент вместо сплошного — там, где в макете цвет перетекает. */
+  .accent-gradient {
+    background-image: linear-gradient(120deg,
+      rgb(var(--cx-accent)), rgb(var(--cx-accent-2)));
+  }
+
 }
 
 @layer utilities {
@@ -89,6 +125,102 @@ body {
     background: rgb(var(--cx-surface) / 0.9);
     border: 1px solid rgb(var(--cx-border));
     box-shadow: var(--cx-shadow-card);
+    border-radius: 18px;   /* карточки apple.com */
+  }
+
+
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Базовые токены палитр живут в themes.css. Здесь — только то, что от палитры
+   не зависит.
+
+   ВАЖНО: режим (светлая/тёмная) задаётся атрибутом data-mode, а не data-theme:
+   в data-theme лежит ИМЯ палитры. Раньше здесь стояло html[data-theme="dark"],
+   и после появления галереи палитр такие правила перестали бы срабатывать.
+   Терминальные цвета от палитры не зависят намеренно: их правка — отдельная задача
+   со своим согласованием. */
+html[data-mode="light"] { color-scheme: light; }
+html[data-mode="dark"] { color-scheme: dark; }
+
+/* Терминал красится из палитры панели — тем же CSS, без единого числа.
+   Задавать --term-* отдельно для 14 палитр × 2 режима означало бы 28 блоков,
+   которые разъезжаются при правке палитры. Ссылка на --cx-* работает сама:
+   какую бы палитру ни выбрали, терминал окажется в её цветах. */
+html[data-mode="light"], html[data-mode="dark"] {
+  --term-bg: rgb(var(--cx-bg-card));
+  --term-border: rgb(var(--cx-border));
+  --term-text: rgb(var(--cx-text));
+  --term-muted: rgb(var(--cx-text-muted));
+  --term-cmd: rgb(var(--cx-accent));
+  --term-err: rgb(var(--cx-danger));
+  --term-prompt: rgb(var(--cx-success));
+  --term-accent: rgb(var(--cx-accent-2));
+  --term-header: linear-gradient(180deg,
+    rgb(var(--cx-bg-card)), rgb(var(--cx-bg-elevated)));
+}
+
+body {
+  background: var(--cx-app-bg);
+  background-attachment: fixed;
+  /* SF Pro на устройствах Apple; Inter метрически близок на Linux/Android. */
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: rgb(var(--cx-text));
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(var(--cx-bg));
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--cx-border));
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--cx-border-hover));
+}
+
+@layer components {
+  /* Поля ввода в стиле Apple: мягкий скруглённый контейнер, синий фокус-ринг. */
+  .input {
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 12px;
+    border: 1px solid rgb(var(--cx-border));
+    background: rgb(var(--cx-bg-elevated));
+    color: rgb(var(--cx-text));
+    font-size: 14px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .input:focus {
+    border-color: rgb(var(--cx-accent));
+    box-shadow: 0 0 0 3px rgb(var(--cx-accent) / 0.22);
+  }
+  .input::placeholder { color: rgb(var(--cx-text-faint)); }
+  select.input { appearance: auto; }
+  textarea.input { min-height: 72px; }
+  /* В теме Apple градиентного акцента НЕТ: сплошной синий, как на apple.com. */
+  html[data-theme="apple"] .accent-gradient {
+    background-image: none;
+    background-color: rgb(var(--cx-accent));
   }
 
   /* Градиентный акцент вместо сплошного — там, где в макете цвет перетекает. */
@@ -96,4 +228,89 @@ body {
     background-image: linear-gradient(120deg,
       rgb(var(--cx-accent)), rgb(var(--cx-accent-2)));
   }
+
 }
+
+@layer utilities {
+  /* Стекло. Размытие именно здесь, а не на каждой карточке: backdrop-filter дорогой,
+     и на телефоне 200+ размытых элементов дают заметное подтормаживание. */
+  .glass {
+    background: rgb(var(--cx-bg-card) / 0.72);
+    backdrop-filter: blur(18px) saturate(1.4);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    border: 1px solid rgb(var(--cx-border));
+  }
+
+  .glass-strong {
+    background: rgb(var(--cx-bg-card) / 0.9);
+    backdrop-filter: blur(26px) saturate(1.5);
+    -webkit-backdrop-filter: blur(26px) saturate(1.5);
+    border: 1px solid rgb(var(--cx-border));
+  }
+
+  .card-surface {
+    background: rgb(var(--cx-surface) / 0.9);
+    border: 1px solid rgb(var(--cx-border));
+    box-shadow: var(--cx-shadow-card);
+    border-radius: 18px;   /* карточки apple.com */
+  }
+
+
+}
+
+/* Apple-компоненты — ВНЕ @layer (Tailwind вырезает неиспользуемые классы
+   внутри layers; эти — дизайн-система на будущее). */
+/* Apple-компоненты объявлены ВНЕ @layer: Tailwind вырезает неиспользуемые
+   классы из components-layer, а эти — часть дизайн-системы на будущее. */
+  /* ── Apple-компоненты ─────────────────────────────────────────────── */
+
+  /* Пилюля-кнопка как «Learn more/Buy» на apple.com */
+  .btn-pill {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 8px 20px;
+    border-radius: 9999px;
+    background: rgb(var(--cx-accent));
+    color: #fff;
+    font-size: 14px; font-weight: 500;
+    transition: background .15s ease, transform .1s ease;
+  }
+  .btn-pill:hover { background: rgb(var(--cx-accent-hover)); }
+  .btn-pill:active { transform: scale(.98); }
+  .btn-pill:disabled { opacity: .4; pointer-events: none; }
+
+  /* Вторичная пилюля — прозрачная с рамкой */
+  .btn-pill-ghost {
+    background: transparent;
+    color: rgb(var(--cx-accent));
+    border: 1px solid rgb(var(--cx-border));
+  }
+  .btn-pill-ghost:hover { background: rgb(var(--cx-bg-elevated)); }
+
+  /* Текстовая ссылка с шевроном, как «Подробнее ›» */
+  .link-chevron {
+    color: rgb(var(--cx-accent));
+    font-size: 14px;
+    display: inline-flex; align-items: center; gap: 2px;
+  }
+  .link-chevron::after { content: '›'; font-size: 1.2em; margin-left: 1px; }
+  .link-chevron:hover { text-decoration: underline; }
+
+  /* Полупрозрачная шапка как глобальная навигация apple.com: 44–48px, blur. */
+  .nav-blur {
+    background: rgb(var(--cx-bg-card) / 0.72);
+    backdrop-filter: saturate(1.8) blur(20px);
+    -webkit-backdrop-filter: saturate(1.8) blur(20px);
+  }
+
+  /* Появление секций при скролле — спокойное, как на apple.com */
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity .7s cubic-bezier(.28,.11,.32,1), transform .7s cubic-bezier(.28,.11,.32,1);
+  }
+  .reveal.is-visible { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; transition: none; }
+  }
+
+

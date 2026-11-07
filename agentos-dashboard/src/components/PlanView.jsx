@@ -13,7 +13,7 @@ export function PlanView({ plan, onUpdate }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-text">Daily Plan</h1>
+          <h1 className="text-[1.75rem] font-bold tracking-tight text-text">Daily Plan</h1>
           <p className="text-text-muted">Time-blocked schedule with priorities</p>
         </div>
         <button className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition-colors flex items-center gap-2">
