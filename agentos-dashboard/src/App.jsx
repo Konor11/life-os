@@ -125,20 +125,24 @@ function App() {
       const els = main ? [main, ...main.querySelectorAll('div')] : []
       return els.find(e => {
         const s = getComputedStyle(e)
-        return (s.overflowY === 'auto' || s.overflowY === 'scroll') && e.scrollHeight > e.clientHeight
-      }) || els.find(e => getComputedStyle(e).overflowY === 'auto') || window
+        return (s.overflowY === 'auto' || s.overflowY === 'scroll')
+      }) || null
     }
-    let scroller = findScroller()
     const hero = () => document.querySelector('[data-hero]')
     const header = () => document.querySelector('header.nav-blur')
+    const scrollY = () => {
+      // Скроллер берём в момент события: при входе <main> ещё не смонтирован,
+      // а при смене раздела контейнер остаётся, но его scrollTop сбрасывается.
+      const el = findScroller()
+      return Math.max(window.scrollY || 0, document.documentElement.scrollTop || 0,
+                      el ? el.scrollTop || 0 : 0)
+    }
     let raf = 0
     const onScroll = () => {
       if (raf) return
       raf = requestAnimationFrame(() => {
         raf = 0
-        // Читаем максимум из обоих источников: страница может скроллиться
-        // и контейнером, и окном (разные раскладки — разные скроллеры).
-        const y = Math.max(window.scrollY || 0, scroller.scrollTop || 0, document.documentElement.scrollTop || 0)
+        const y = scrollY()
         header()?.classList.toggle('nav-scrolled', y > 8)
         const h = hero()
         if (h) {
@@ -149,17 +153,14 @@ function App() {
         }
       })
     }
-    // Подписываемся на оба: контейнер панели и окно. На мобильных и десктопе
-    // скроллером может быть разное, и промах по одному молча отключал эффект.
-    const onWin = () => onScroll()
-    scroller.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('scroll', onWin, { passive: true })
-    document.addEventListener('scroll', onWin, { passive: true, capture: true })
+    // Скролл-события не всплывают, поэтому слушаем document в capture-фазе —
+    // это ловит и контейнер панели, и саму страницу, без угадывания элемента.
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+    window.addEventListener('scroll', onScroll, { passive: true })
     onScroll()
     return () => {
-      scroller.removeEventListener('scroll', onScroll)
-      window.removeEventListener('scroll', onWin)
-      document.removeEventListener('scroll', onWin, { capture: true })
+      document.removeEventListener('scroll', onScroll, { capture: true })
+      window.removeEventListener('scroll', onScroll)
     }
   }, [activeView, auth.authenticated])
 
