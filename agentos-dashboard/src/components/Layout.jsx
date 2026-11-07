@@ -238,7 +238,9 @@ function StatCard({ label, value, icon }) {
 
 export function MainContent({ children }) {
   return (
-    <div className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10">
+    /* pb-24 на мобиле: контент прокручивается ЗА таб-баром, и без запаса
+       последняя карточка пряталась под ним (таб-бар непрозрачен до конца). */
+    <div className="flex-1 overflow-y-auto p-4 md:p-8 lg:p-10 pb-24 lg:pb-10">
       <div className="mx-auto max-w-5xl">
         {children}
       </div>
